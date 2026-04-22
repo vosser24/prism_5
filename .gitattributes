@@ -1,0 +1,27 @@
+# Normalize line endings across Windows / macOS / Linux contributors.
+# Text files are stored with LF in the repo; working tree is whatever Git
+# normalises to on checkout per the user's core.autocrlf setting.
+
+* text=auto eol=lf
+
+# Explicit: shell, node, and python sources must always be LF (they're
+# executed on POSIX and CRLF breaks shebangs).
+*.sh  text eol=lf
+*.mjs text eol=lf
+*.js  text eol=lf
+*.py  text eol=lf
+*.json text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+
+# Binary safeguard — never line-convert these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz  binary
+*.db  binary
+*.sqlite binary
