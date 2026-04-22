@@ -82,6 +82,8 @@ Claude is free to use Python, Node, or bash+jq — whichever is cleaner on the t
 
 This is **idempotent**: running step 4 twice produces the same file.
 
+After the merge, the fragment will have registered three tier-enforcement guards under `PreToolUse`: `prism-agent-model-guard.mjs` (fires on every `Agent()` dispatch — classifies cognitive load and nudges/denies under-specified model choices), `prism-task-tier-advisor.mjs` (fires on `TaskCreate` — recommends haiku/sonnet/opus for the new task), and `prism-mutation-guard.mjs` (fires on `Edit`/`Write`/`MultiEdit` — blocks the parent Opus context from mutating files directly, enforcing the orchestrator-plans/subagent-executes boundary). All three share the same `.prism-routing.jsonl` log and follow the same `soft|hard|off` env-var convention.
+
 ---
 
 ## 5. Build the initial KB index

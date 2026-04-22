@@ -42,6 +42,15 @@
             "command": "node ~/.claude/hooks/prism-agent-model-guard.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/prism-mutation-guard.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [
