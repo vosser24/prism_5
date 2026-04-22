@@ -4,6 +4,67 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-04-22
+
+Three bundled fixes based on user-reported gaps after the 2.2.0 rollout.
+No breaking changes; every 2.2.0 routing decision survives this release.
+
+### Changed
+
+- **ECC (`affaan-m/everything-claude-code`) is now OPTIONAL, not Tier 1.**
+  `/prism-init` no longer auto-installs ECC; the 100+ skills catalog
+  imposes a per-turn token tax that outweighs benefits for typical work.
+  Users who explicitly want polyglot reviewers or AgentShield can still
+  install it via `/prism-recommend --include-optional`. Touched docs:
+  `commands/prism-init.md`, `commands/prism-recommend.md`,
+  `commands/prism-health.md`, `agents/master-orchestrator.md`,
+  `skills/prism-plan/references/tools-registry.md`.
+  Before: ECC shown as `installed, active` in default health/init status.
+  After:  ECC shown as optional, install-on-demand only.
+
+- **`/prism-audit` uses PRISM-native grep-based secret scan by default.**
+  Previously the doc said "use ECC's /security-scan". Now runs a
+  root-file check (`.env`, `.env.*`, `credentials.json`, `*.pem`, `*.key`,
+  `id_rsa*`, `*.pfx`), the existing content-grep for known-token shapes
+  (already in Step 1 — sk-/ghp_/AKIA/AIza/JWT), and a new large-binary
+  check (> 50MB). AgentShield remains an OPTIONAL deeper scan if ECC is
+  manually installed.
+
+### Fixed
+
+- **`/prism-init` mutation-guard auto-bypass.** `hooks/prism-mutation-guard.mjs`
+  now detects three bootstrap commands from the sentinel rationale
+  (`/prism-init`, `/prism-update`, `/prism-archive`) and passes through
+  cleanly. Falls back to prompt sniffing if the sentinel is missing
+  (e.g. first-turn race). Before: `/prism-init` bootstrap was blocked by
+  mutation-guard under `hard` mode and users had to set
+  `PRISM_MUTATION_GUARD=off` manually. After: no manual env-var dance
+  needed for legitimate bootstrap writes.
+
+- **`/prism-discover` subagent dispatch-guard deadlock.**
+  `hooks/prism-parent-dispatch-guard.mjs` now has three independent
+  subagent-bypass paths instead of one:
+  1. `input.parent_tool_use_id` present (unchanged from 2.2.0).
+  2. `CLAUDE_CODE_ENTRYPOINT=subagent` env var (new).
+  3. `sentinel.dispatched === true` (hoisted — used to be checked only
+     after ALWAYS_ALLOW filtering; now the primary subagent signal).
+  Defense-in-depth: orchestration-command rationale matches also pass.
+  Before: subagent-spawned `Read`/`Bash`/`Grep`/`Glob` calls were denied
+  mid-execution because the guard re-classified the subagent's internal
+  turn as haiku-tier and demanded another dispatch (which a subagent
+  can't do). After: once the parent dispatched, everything downstream
+  passes cleanly.
+
+### Tests
+
+- 5 new regression tests in `tools/test-prism-gaps.mjs` under
+  `v2.2.1 hook fixes`:
+  - V221.1 `/prism-init` prompt + mutation-guard → allowed
+  - V221.2 `/prism-update` + mutation-guard → allowed
+  - V221.3 subagent with sentinel.dispatched=true → dispatch-guard allowed
+  - V221.4 subagent + haiku-tier sentinel → still allowed (no deny)
+  - V221.5 parent + haiku-tier + NOT dispatched → still denies (2.2.0 regression guard)
+
 ## [2.2.0] - 2026-04-22
 
 ### Added

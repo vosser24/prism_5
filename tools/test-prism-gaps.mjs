@@ -1297,6 +1297,163 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
   }
 }
 
+// ============ PHASE 2.2.1 TESTS — HOOK FIXES (bootstrap + subagent) ============
+// Three bundled fixes:
+//   B: /prism-init, /prism-update, /prism-archive bootstrap writes allowed.
+//   C: Dispatch-guard sentinel.dispatched + env-var subagent bypass.
+//   Regression: 2.2.0 haiku-tier + not dispatched + parent → still denies.
+{
+  const H2 = process.env.HOME || process.env.USERPROFILE;
+  const SENT_DIR = join(H2, '.claude');
+  const sentinelPath = (sid) => join(SENT_DIR, `.prism-turn-tier-${sid}.json`);
+
+  function writeSentinel(sid, obj) {
+    mkdirSync(SENT_DIR, {recursive: true});
+    writeFileSync(sentinelPath(sid), JSON.stringify(obj, null, 2));
+  }
+  function cleanSentinel(sid) {
+    const p = sentinelPath(sid);
+    if (existsSync(p)) try { unlinkSync(p); } catch {}
+  }
+
+  // V221.1 — /prism-init prompt + mutation-guard → allowed (no deny).
+  {
+    const sid = testSessionId + '-v221-1';
+    // Simulate the sentinel the prompt-tier-router would write for /prism-init.
+    writeSentinel(sid, {
+      ts: new Date().toISOString(),
+      tier: 'opus',
+      score: 0, h: 0, s: 0, o: 0, compound: false,
+      force_opus: false, dispatched: false,
+      rationale: 'orchestration command /prism-init',
+      source: 'allowlist',
+    });
+    // Payload: parent context mutation with /prism-init still in prompt.
+    // PRISM_MUTATION_GUARD defaults to hard, so a non-init mutation would be
+    // blocked. With the new bypass, this must pass.
+    const prev = process.env.PRISM_MUTATION_GUARD;
+    process.env.PRISM_MUTATION_GUARD = 'hard';
+    const res = runHook('prism-mutation-guard.mjs', {
+      tool_name: 'Write',
+      tool_input: {file_path: '/tmp/test-init-out.md'},
+      session_id: sid,
+      user_prompt: '/prism-init full',
+    });
+    if (prev === undefined) delete process.env.PRISM_MUTATION_GUARD; else process.env.PRISM_MUTATION_GUARD = prev;
+    assert('V221.1 /prism-init prompt + mutation-guard → allowed (exit 0, no deny)',
+      res.status === 0 && !/permissionDecision":"deny"/.test(res.stdout || ''),
+      `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
+    cleanSentinel(sid);
+  }
+
+  // V221.2 — /prism-update + mutation-guard → allowed.
+  {
+    const sid = testSessionId + '-v221-2';
+    writeSentinel(sid, {
+      ts: new Date().toISOString(),
+      tier: 'opus', score: 0, h: 0, s: 0, o: 0, compound: false,
+      force_opus: false, dispatched: false,
+      rationale: 'orchestration command /prism-update',
+      source: 'allowlist',
+    });
+    const prev = process.env.PRISM_MUTATION_GUARD;
+    process.env.PRISM_MUTATION_GUARD = 'hard';
+    const res = runHook('prism-mutation-guard.mjs', {
+      tool_name: 'Edit',
+      tool_input: {file_path: '/tmp/test-update.md'},
+      session_id: sid,
+      user_prompt: '/prism-update',
+    });
+    if (prev === undefined) delete process.env.PRISM_MUTATION_GUARD; else process.env.PRISM_MUTATION_GUARD = prev;
+    assert('V221.2 /prism-update + mutation-guard → allowed',
+      res.status === 0 && !/permissionDecision":"deny"/.test(res.stdout || ''),
+      `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
+    cleanSentinel(sid);
+  }
+
+  // V221.3 — subagent with sentinel.dispatched=true → dispatch-guard allowed
+  // even though tier is sonnet (would normally deny).
+  {
+    const sid = testSessionId + '-v221-3';
+    writeSentinel(sid, {
+      ts: new Date().toISOString(),
+      tier: 'sonnet', score: 50, h: 0, s: 0, o: 0, compound: false,
+      force_opus: false, dispatched: true, dispatched_ts: new Date().toISOString(),
+      rationale: 'parent already dispatched',
+      source: 'opus',
+    });
+    const prev = process.env.PRISM_DISPATCH_GUARD;
+    process.env.PRISM_DISPATCH_GUARD = 'hard';
+    // No parent_tool_use_id — simulates the lost-id case. Bypass must come
+    // purely from sentinel.dispatched=true.
+    const res = runHook('prism-parent-dispatch-guard.mjs', {
+      tool_name: 'Read',
+      tool_input: {file_path: '/tmp/some.md'},
+      session_id: sid,
+    });
+    if (prev === undefined) delete process.env.PRISM_DISPATCH_GUARD; else process.env.PRISM_DISPATCH_GUARD = prev;
+    assert('V221.3 sentinel.dispatched=true → dispatch-guard allowed (no deny)',
+      res.status === 0 && !/permissionDecision":"deny"/.test(res.stdout || ''),
+      `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
+    cleanSentinel(sid);
+  }
+
+  // V221.4 — subagent context (parent_tool_use_id set) + haiku-tier sentinel
+  // → still allowed (no deny). Exercises Path 1.
+  {
+    const sid = testSessionId + '-v221-4';
+    writeSentinel(sid, {
+      ts: new Date().toISOString(),
+      tier: 'haiku', score: 20, h: 0, s: 0, o: 0, compound: false,
+      force_opus: false, dispatched: false,
+      rationale: 'simple read',
+      source: 'opus',
+    });
+    const prev = process.env.PRISM_DISPATCH_GUARD;
+    process.env.PRISM_DISPATCH_GUARD = 'hard';
+    const res = runHook('prism-parent-dispatch-guard.mjs', {
+      tool_name: 'Bash',
+      tool_input: {command: 'ls'},
+      session_id: sid,
+      parent_tool_use_id: 'toolu_abc123',  // Simulates subagent-spawned call.
+    });
+    if (prev === undefined) delete process.env.PRISM_DISPATCH_GUARD; else process.env.PRISM_DISPATCH_GUARD = prev;
+    assert('V221.4 subagent (parent_tool_use_id set) + haiku sentinel → allowed',
+      res.status === 0 && !/permissionDecision":"deny"/.test(res.stdout || ''),
+      `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
+    cleanSentinel(sid);
+  }
+
+  // V221.5 — REGRESSION GUARD: parent context + haiku-tier + NOT dispatched
+  // → still DENIES. The 2.2.0 tier-gating behavior must survive 2.2.1.
+  {
+    const sid = testSessionId + '-v221-5';
+    writeSentinel(sid, {
+      ts: new Date().toISOString(),
+      tier: 'haiku', score: 20, h: 0, s: 0, o: 0, compound: false,
+      force_opus: false, dispatched: false,
+      rationale: 'simple read',
+      source: 'opus',
+    });
+    const prev = process.env.PRISM_DISPATCH_GUARD;
+    process.env.PRISM_DISPATCH_GUARD = 'hard';
+    // No parent_tool_use_id, no dispatched, no env var — genuine parent call.
+    const prevEntry = process.env.CLAUDE_CODE_ENTRYPOINT;
+    delete process.env.CLAUDE_CODE_ENTRYPOINT;
+    const res = runHook('prism-parent-dispatch-guard.mjs', {
+      tool_name: 'Read',
+      tool_input: {file_path: '/tmp/some.md'},
+      session_id: sid,
+    });
+    if (prev === undefined) delete process.env.PRISM_DISPATCH_GUARD; else process.env.PRISM_DISPATCH_GUARD = prev;
+    if (prevEntry !== undefined) process.env.CLAUDE_CODE_ENTRYPOINT = prevEntry;
+    assert('V221.5 REGRESSION: parent + haiku + not-dispatched → still denies (2.2.0 behavior preserved)',
+      res.status === 2 && /permissionDecision":"deny"/.test(res.stdout || ''),
+      `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
+    cleanSentinel(sid);
+  }
+}
+
 restore();
 
 console.log('ATLAS v2.1.24 Gap-Closure Test Results');
