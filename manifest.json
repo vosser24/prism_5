@@ -1,0 +1,281 @@
+{
+  "name": "PRISM",
+  "version": "2.1.3",
+  "description": "Framework for optimizing Claude Code - modular install",
+  "claude_home": "~/.claude",
+  "files": [
+    {
+      "src": "agents/agent-factory.md",
+      "dest": "~/.claude/agents/agent-factory.md"
+    },
+    {
+      "src": "agents/master-orchestrator.md",
+      "dest": "~/.claude/agents/master-orchestrator.md"
+    },
+    {
+      "src": "agents/prism-updater.md",
+      "dest": "~/.claude/agents/prism-updater.md"
+    },
+    {
+      "src": "commands/prism-app-expert.md",
+      "dest": "~/.claude/commands/prism-app-expert.md"
+    },
+    {
+      "src": "commands/prism-archive.md",
+      "dest": "~/.claude/commands/prism-archive.md"
+    },
+    {
+      "src": "commands/prism-audit.md",
+      "dest": "~/.claude/commands/prism-audit.md"
+    },
+    {
+      "src": "commands/prism-health.md",
+      "dest": "~/.claude/commands/prism-health.md"
+    },
+    {
+      "src": "commands/prism-init.md",
+      "dest": "~/.claude/commands/prism-init.md"
+    },
+    {
+      "src": "commands/prism-recall.md",
+      "dest": "~/.claude/commands/prism-recall.md"
+    },
+    {
+      "src": "commands/prism-recommend.md",
+      "dest": "~/.claude/commands/prism-recommend.md"
+    },
+    {
+      "src": "commands/prism-retire.md",
+      "dest": "~/.claude/commands/prism-retire.md"
+    },
+    {
+      "src": "commands/prism-roster.md",
+      "dest": "~/.claude/commands/prism-roster.md"
+    },
+    {
+      "src": "commands/prism-update.md",
+      "dest": "~/.claude/commands/prism-update.md"
+    },
+    {
+      "src": "hooks/lib/prism-router.mjs",
+      "dest": "~/.claude/hooks/lib/prism-router.mjs"
+    },
+    {
+      "src": "hooks/prism-agent-model-guard.mjs",
+      "dest": "~/.claude/hooks/prism-agent-model-guard.mjs"
+    },
+    {
+      "src": "hooks/prism-config-guard.mjs",
+      "dest": "~/.claude/hooks/prism-config-guard.mjs"
+    },
+    {
+      "src": "hooks/prism-hook.mjs",
+      "dest": "~/.claude/hooks/prism-hook.mjs"
+    },
+    {
+      "src": "hooks/prism-kb-autosync.mjs",
+      "dest": "~/.claude/hooks/prism-kb-autosync.mjs"
+    },
+    {
+      "src": "hooks/prism-safety.mjs",
+      "dest": "~/.claude/hooks/prism-safety.mjs"
+    },
+    {
+      "src": "hooks/prism-session-end.mjs",
+      "dest": "~/.claude/hooks/prism-session-end.mjs"
+    },
+    {
+      "src": "hooks/prism-session-start.mjs",
+      "dest": "~/.claude/hooks/prism-session-start.mjs"
+    },
+    {
+      "src": "hooks/prism-subagent-stop.mjs",
+      "dest": "~/.claude/hooks/prism-subagent-stop.mjs"
+    },
+    {
+      "src": "hooks/prism-task-tier-advisor.mjs",
+      "dest": "~/.claude/hooks/prism-task-tier-advisor.mjs"
+    },
+    {
+      "src": "plans/prism-kb-5phase-plan.md",
+      "dest": "~/.claude/plans/prism-kb-5phase-plan.md"
+    },
+    {
+      "src": "skills/blueprint-prompt/SKILL.md",
+      "dest": "~/.claude/skills/blueprint-prompt/SKILL.md"
+    },
+    {
+      "src": "skills/claude-code-expert/SKILL.md",
+      "dest": "~/.claude/skills/claude-code-expert/SKILL.md"
+    },
+    {
+      "src": "skills/notebooklm/SKILL.md",
+      "dest": "~/.claude/skills/notebooklm/SKILL.md"
+    },
+    {
+      "src": "skills/prism-discover/SKILL.md",
+      "dest": "~/.claude/skills/prism-discover/SKILL.md"
+    },
+    {
+      "src": "skills/prism-plan/SKILL.md",
+      "dest": "~/.claude/skills/prism-plan/SKILL.md"
+    },
+    {
+      "src": "skills/prism-plan/references/adversarial-review.md",
+      "dest": "~/.claude/skills/prism-plan/references/adversarial-review.md"
+    },
+    {
+      "src": "skills/prism-plan/references/benchmarks.md",
+      "dest": "~/.claude/skills/prism-plan/references/benchmarks.md"
+    },
+    {
+      "src": "skills/prism-plan/references/mcp-registry.md",
+      "dest": "~/.claude/skills/prism-plan/references/mcp-registry.md"
+    },
+    {
+      "src": "skills/prism-plan/references/model-matrix.md",
+      "dest": "~/.claude/skills/prism-plan/references/model-matrix.md"
+    },
+    {
+      "src": "skills/prism-plan/references/prompt-effectiveness.md",
+      "dest": "~/.claude/skills/prism-plan/references/prompt-effectiveness.md"
+    },
+    {
+      "src": "skills/prism-plan/references/prompt-templates.md",
+      "dest": "~/.claude/skills/prism-plan/references/prompt-templates.md"
+    },
+    {
+      "src": "skills/prism-plan/references/roster.json",
+      "dest": "~/.claude/skills/prism-plan/references/roster.json"
+    },
+    {
+      "src": "skills/prism-plan/references/skill-effectiveness.md",
+      "dest": "~/.claude/skills/prism-plan/references/skill-effectiveness.md"
+    },
+    {
+      "src": "skills/prism-plan/references/tools-registry.md",
+      "dest": "~/.claude/skills/prism-plan/references/tools-registry.md"
+    },
+    {
+      "src": "skills/prism-plan/references/update-log.json",
+      "dest": "~/.claude/skills/prism-plan/references/update-log.json"
+    },
+    {
+      "src": "skills/video-production/SKILL.md",
+      "dest": "~/.claude/skills/video-production/SKILL.md"
+    },
+    {
+      "src": "skills/workflow-orchestration/SKILL.md",
+      "dest": "~/.claude/skills/workflow-orchestration/SKILL.md"
+    },
+    {
+      "src": "tools/lib/prism-tier-classify.mjs",
+      "dest": "~/.claude/tools/lib/prism-tier-classify.mjs"
+    },
+    {
+      "src": "tools/prism-context-audit.mjs",
+      "dest": "~/.claude/tools/prism-context-audit.mjs"
+    },
+    {
+      "src": "tools/prism-db-migrate.mjs",
+      "dest": "~/.claude/tools/prism-db-migrate.mjs"
+    },
+    {
+      "src": "tools/prism-db.mjs",
+      "dest": "~/.claude/tools/prism-db.mjs"
+    },
+    {
+      "src": "tools/prism-kb-classify.mjs",
+      "dest": "~/.claude/tools/prism-kb-classify.mjs"
+    },
+    {
+      "src": "tools/prism-kb-domains.mjs",
+      "dest": "~/.claude/tools/prism-kb-domains.mjs"
+    },
+    {
+      "src": "tools/prism-kb-indexer.mjs",
+      "dest": "~/.claude/tools/prism-kb-indexer.mjs"
+    },
+    {
+      "src": "tools/prism-kb-notebook-init.mjs",
+      "dest": "~/.claude/tools/prism-kb-notebook-init.mjs"
+    },
+    {
+      "src": "tools/prism-kb-promote-domain.mjs",
+      "dest": "~/.claude/tools/prism-kb-promote-domain.mjs"
+    },
+    {
+      "src": "tools/prism-kb-query.mjs",
+      "dest": "~/.claude/tools/prism-kb-query.mjs"
+    },
+    {
+      "src": "tools/prism-kb-rebuild.mjs",
+      "dest": "~/.claude/tools/prism-kb-rebuild.mjs"
+    },
+    {
+      "src": "tools/prism-kb-sync.mjs",
+      "dest": "~/.claude/tools/prism-kb-sync.mjs"
+    },
+    {
+      "src": "tools/prism-monitor/README.md",
+      "dest": "~/.claude/tools/prism-monitor/README.md"
+    },
+    {
+      "src": "tools/prism-monitor/config.py",
+      "dest": "~/.claude/tools/prism-monitor/config.py"
+    },
+    {
+      "src": "tools/prism-monitor/dashboard.py",
+      "dest": "~/.claude/tools/prism-monitor/dashboard.py"
+    },
+    {
+      "src": "tools/prism-monitor/data_reader.py",
+      "dest": "~/.claude/tools/prism-monitor/data_reader.py"
+    },
+    {
+      "src": "tools/prism-monitor/metrics.py",
+      "dest": "~/.claude/tools/prism-monitor/metrics.py"
+    },
+    {
+      "src": "tools/prism-monitor/prism-monitor.py",
+      "dest": "~/.claude/tools/prism-monitor/prism-monitor.py"
+    },
+    {
+      "src": "tools/prism-monitor/refresh-statusline-cache.sh",
+      "dest": "~/.claude/tools/prism-monitor/refresh-statusline-cache.sh"
+    },
+    {
+      "src": "tools/prism-monitor/views.py",
+      "dest": "~/.claude/tools/prism-monitor/views.py"
+    },
+    {
+      "src": "tools/prism-recall.mjs",
+      "dest": "~/.claude/tools/prism-recall.mjs"
+    },
+    {
+      "src": "tools/prism-rollup-weekly.mjs",
+      "dest": "~/.claude/tools/prism-rollup-weekly.mjs"
+    },
+    {
+      "src": "tools/test-prism-gaps.mjs",
+      "dest": "~/.claude/tools/test-prism-gaps.mjs"
+    },
+    {
+      "src": "statusline-command.sh",
+      "dest": "~/.claude/statusline-command.sh",
+      "chmod": "+x"
+    },
+    {
+      "src": "tools/subagent-summary.py",
+      "dest": "~/.claude/tools/subagent-summary.py"
+    }
+  ],
+  "settings_fragment": "settings.fragment.json",
+  "verify": "node scripts/verify.mjs",
+  "notes": [
+    "File paths in `dest` are relative to claude_home expansion.",
+    "After copying files, merge settings_fragment into ~/.claude/settings.json (deep merge; never overwrite).",
+    "POSIX only: chmod +x on entries with `chmod` key.",
+    "Run verify script last; exit non-zero means install failed."
+  ]
+}
