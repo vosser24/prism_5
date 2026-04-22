@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-session-start.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-session-start.mjs"
           }
         ]
       }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-hook.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-hook.mjs"
           }
         ]
       },
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-prompt-tier-router.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-prompt-tier-router.mjs"
           }
         ]
       },
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-memory-save-nudge.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-memory-save-nudge.mjs"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-safety.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-safety.mjs"
           }
         ]
       },
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-agent-model-guard.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-agent-model-guard.mjs"
           }
         ]
       },
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-mutation-guard.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-mutation-guard.mjs"
           }
         ]
       },
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-parent-dispatch-guard.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-parent-dispatch-guard.mjs"
           }
         ]
       }
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-kb-autosync.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-kb-autosync.mjs"
           }
         ]
       },
@@ -95,7 +95,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-task-tier-advisor.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-task-tier-advisor.mjs"
           }
         ]
       }
@@ -105,7 +105,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-subagent-stop.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-subagent-stop.mjs"
           }
         ]
       }
@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-session-end.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-session-end.mjs"
           }
         ]
       }
@@ -125,7 +125,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-config-guard.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-config-guard.mjs"
           }
         ]
       }
@@ -135,7 +135,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.claude/hooks/prism-session-start.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-session-start.mjs"
           }
         ]
       }
