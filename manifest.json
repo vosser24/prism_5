@@ -81,6 +81,14 @@
       "dest": "~/.claude/hooks/prism-mutation-guard.mjs"
     },
     {
+      "src": "hooks/prism-parent-dispatch-guard.mjs",
+      "dest": "~/.claude/hooks/prism-parent-dispatch-guard.mjs"
+    },
+    {
+      "src": "hooks/prism-prompt-tier-router.mjs",
+      "dest": "~/.claude/hooks/prism-prompt-tier-router.mjs"
+    },
+    {
       "src": "hooks/prism-safety.mjs",
       "dest": "~/.claude/hooks/prism-safety.mjs"
     },
