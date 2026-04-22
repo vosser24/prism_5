@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -55,6 +55,15 @@
     {
       "src": "commands/prism-update.md",
       "dest": "~/.claude/commands/prism-update.md"
+    },
+    {
+      "src": "hooks/lib/prism-exec.sh",
+      "dest": "~/.claude/hooks/lib/prism-exec.sh",
+      "chmod": "+x"
+    },
+    {
+      "src": "hooks/lib/prism-opus-classifier.mjs",
+      "dest": "~/.claude/hooks/lib/prism-opus-classifier.mjs"
     },
     {
       "src": "hooks/lib/prism-router.mjs",
@@ -286,6 +295,7 @@
       "dest": "~/.claude/tools/subagent-summary.py"
     }
   ],
+  "changelog": "CHANGELOG.md",
   "settings_fragment": "settings.fragment.json",
   "verify": "node scripts/verify.mjs",
   "notes": [

@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-// PRISM Prompt Tier Router (v1.0.0) — UserPromptSubmit
+// PRISM Prompt Tier Router (v2.2.0) — UserPromptSubmit
 //
-// Classifies each user prompt with classifyWithScore, writes a per-session
-// sentinel file, and injects a routing directive into the model's context
-// via hookSpecificOutput.additionalContext.
+// BREAKING (vs v2.1.3): replaces the keyword score-classifier with an
+// Opus-backed context classifier. Output format changed from
+//   "PRISM TIER ROUTER: prompt scored N (X-tier, h=N s=N o=N)..."
+// to
+//   "PRISM TIER ROUTER: {tier}. {rationale}"
 //
-// The sentinel is consumed by prism-parent-dispatch-guard.mjs (PreToolUse)
-// which enforces the "dispatch before using work tools" boundary.
+// The sentinel on disk keeps its prior shape so prism-parent-dispatch-guard
+// continues to read it unchanged. The legacy {h, s, o, score, compound}
+// fields are retained as zeros for compatibility; downstream code that
+// routes off them should migrate to `rationale` / `source`.
+//
+// Fallback chain: force-opus prefix → slash-command allowlist → 24h cache →
+// Opus API → Sonnet API → keyword floor. See hooks/lib/prism-opus-classifier.mjs.
 //
 // Modes (PRISM_PROMPT_ROUTER env var, defaults to hard):
 //   hard: sentinel + advice that mentions enforcement
@@ -15,7 +22,8 @@
 
 import {readFileSync, writeFileSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {classifyWithScore} from '../tools/lib/prism-tier-classify.mjs';
+import {spawnSync} from 'node:child_process';
+import {classifyPrompt, toSentinel} from './lib/prism-opus-classifier.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
@@ -32,60 +40,102 @@ function appendLog(obj) {
   } catch {}
 }
 
-try {
-  if (MODE === 'off') process.exit(0);
-
-  const raw = readFileSync(0, 'utf-8');
-  const input = JSON.parse(raw || '{}');
-  const prompt = String(input.prompt || '');
-  const sessionId = input.session_id || 'anon';
-
-  const forceOpus = prompt.includes('!opus-force:');
-  const cls = classifyWithScore(prompt, '');
-  const tier = forceOpus ? 'opus' : cls.tier_by_score;
-
-  const sentinel = {
-    ts: new Date().toISOString(),
-    session_id: sessionId,
-    tier,
-    score: cls.score,
-    h: cls.h, s: cls.s, o: cls.o,
-    compound: !!cls.compound,
-    force_opus: forceOpus,
-    dispatched: false,
-    mode: MODE,
+function gitSnapshot(cwd) {
+  // Best-effort git context for the classifier. Each call is bounded to
+  // 800ms; failure is non-fatal — classifier still runs with empty context.
+  const out = {branch: '', headSha: '', dirty: false, recentCommits: [], stagedFiles: []};
+  if (!cwd) return out;
+  const run = (args) => {
+    try {
+      const r = spawnSync('git', args, {cwd, encoding: 'utf-8', timeout: 800});
+      return r.status === 0 ? (r.stdout || '').trim() : '';
+    } catch { return ''; }
   };
-
-  try {
-    const p = sentinelPath(sessionId);
-    mkdirSync(dirname(p), {recursive: true});
-    writeFileSync(p, JSON.stringify(sentinel, null, 2));
-  } catch {}
-
-  appendLog({event: 'prompt_tier_router', ...sentinel});
-
-  let advice = '';
-  if (tier === 'haiku') {
-    advice = `PRISM TIER ROUTER: prompt scored ${cls.score} (haiku-tier, h=${cls.h} s=${cls.s} o=${cls.o}). ` +
-      `Dispatch via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) instead of running tools directly in parent Opus.`;
-    if (MODE === 'hard') advice += ` Parent tools (Bash/Read/Grep/Glob/WebFetch/WebSearch/Edit/Write) will be DENIED until you dispatch. Override: prefix user prompt with !opus-force:.`;
-  } else if (tier === 'sonnet') {
-    advice = `PRISM TIER ROUTER: prompt scored ${cls.score} (sonnet-tier, h=${cls.h} s=${cls.s} o=${cls.o}${cls.compound ? ', compound' : ''}). ` +
-      `Dispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
-    if (MODE === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
-  } else {
-    advice = `PRISM TIER ROUTER: prompt scored ${cls.score} (opus-tier${forceOpus ? ', force-opus override' : ''}). Direct parent work allowed.`;
-  }
-
-  const out = {
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: advice,
-    },
-  };
-  process.stdout.write(JSON.stringify(out));
-  process.exit(0);
-} catch (e) {
-  appendLog({event: 'prompt_tier_router', error: String(e)});
-  process.exit(0);
+  out.branch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
+  out.headSha = run(['rev-parse', '--short', 'HEAD']);
+  const status = run(['status', '--porcelain']);
+  out.dirty = !!status;
+  const log = run(['log', '-5', '--oneline']);
+  out.recentCommits = log ? log.split('\n').filter(Boolean) : [];
+  const staged = run(['diff', '--cached', '--name-only']);
+  out.stagedFiles = staged ? staged.split('\n').filter(Boolean) : [];
+  return out;
 }
+
+function formatAdvice(tier, rationale, mode) {
+  // New format — intentionally simpler than v2.1.3 so LLMs don't need to
+  // parse h=/s=/o= tokens. The old score fields are preserved in the
+  // sentinel file for debugging but not echoed to the model context.
+  let advice = `PRISM TIER ROUTER: ${tier}. ${rationale || '(no rationale)'}`;
+  if (tier === 'haiku') {
+    advice += `\nDispatch via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) instead of running tools directly in parent Opus.`;
+    if (mode === 'hard') advice += ` Parent tools will be DENIED until you dispatch. Override: prefix user prompt with !opus-force:.`;
+  } else if (tier === 'sonnet') {
+    advice += `\nDispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
+    if (mode === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
+  }
+  // opus-tier: no dispatch advice needed. Direct parent work allowed.
+  return advice;
+}
+
+async function main() {
+  try {
+    if (MODE === 'off') process.exit(0);
+
+    const raw = readFileSync(0, 'utf-8');
+    const input = JSON.parse(raw || '{}');
+    const prompt = String(input.prompt || '');
+    const sessionId = input.session_id || 'anon';
+    const cwd = input.cwd || process.cwd();
+
+    const git = gitSnapshot(cwd);
+    const classification = await classifyPrompt({
+      prompt,
+      cwd,
+      branch: git.branch,
+      headSha: git.headSha,
+      dirty: git.dirty,
+      recentCommits: git.recentCommits,
+      stagedFiles: git.stagedFiles,
+    });
+
+    const sentinel = toSentinel(classification, {
+      session_id: sessionId,
+      mode: MODE,
+    });
+
+    try {
+      const p = sentinelPath(sessionId);
+      mkdirSync(dirname(p), {recursive: true});
+      writeFileSync(p, JSON.stringify(sentinel, null, 2));
+    } catch {}
+
+    appendLog({
+      event: 'prompt_tier_router',
+      ts: sentinel.ts,
+      session_id: sessionId,
+      tier: sentinel.tier,
+      source: classification.source,
+      rationale: classification.rationale,
+      summon_panel: classification.summon_panel,
+      force_opus: sentinel.force_opus,
+      cache_key: classification.cache_key,
+      mode: MODE,
+    });
+
+    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE);
+    const out = {
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: advice,
+      },
+    };
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  } catch (e) {
+    appendLog({event: 'prompt_tier_router', error: String(e && e.message || e)});
+    process.exit(0);
+  }
+}
+
+main();

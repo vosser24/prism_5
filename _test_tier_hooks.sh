@@ -13,7 +13,8 @@ echo "=== Test 1: simple grep prompt haiku ==="
 out=$(echo '{"session_id":"test1","prompt":"find where i have the word test in this document"}' | node "$ROUTER")
 tier=$(node -e "console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.claude/.prism-turn-tier-test1.json')).tier)")
 [ "$tier" = "haiku" ] && pass "sentinel.tier=haiku" || fail "sentinel.tier=$tier"
-echo "$out" | grep -q "haiku-tier" && pass "advice mentions haiku-tier" || fail "advice missing haiku-tier"
+# v2.2.0 output format: "PRISM TIER ROUTER: haiku. {rationale}" (no hyphenated "haiku-tier" token).
+echo "$out" | grep -q "haiku" && pass "advice mentions haiku" || fail "advice missing haiku tier"
 
 echo "=== Test 2: Grep in parent with test1 session DENY ==="
 out=$(echo '{"session_id":"test1","tool_name":"Grep","tool_input":{"pattern":"test"}}' | node "$GUARD"; echo "EXIT:$?")

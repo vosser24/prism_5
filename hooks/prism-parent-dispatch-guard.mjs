@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// PRISM Parent Dispatch Guard (v1.0.0) — PreToolUse
+// PRISM Parent Dispatch Guard (v2.2.0) — PreToolUse
+//
+// v2.2.0: classifier source changed (Opus-backed context scoring), sentinel
+// shape preserved — this guard still reads {tier, force_opus, dispatched}
+// and is unaffected by the new classifier internals. The deny message now
+// surfaces the classifier's `rationale` when present for better debugging.
 //
 // Reads the per-session sentinel written by prism-prompt-tier-router.mjs.
 // If the turn is haiku- or sonnet-tier AND we're in parent context AND the
@@ -84,8 +89,9 @@ try {
   if (!sentinel || sentinel.tier === 'opus' || sentinel.force_opus) process.exit(0);
   if (sentinel.dispatched) process.exit(0);
 
+  const why = sentinel.rationale ? ` Reason: ${sentinel.rationale}` : '';
   const notice = [
-    `PRISM DISPATCH-GUARD: ${toolName} denied in parent context — this turn scored ${sentinel.score} (${sentinel.tier}-tier).`,
+    `PRISM DISPATCH-GUARD: ${toolName} denied in parent context — this turn routed to ${sentinel.tier}-tier.${why}`,
     `Dispatch the work first via Agent({subagent_type:'general-purpose', model:'${sentinel.tier}', prompt:'<task>'}) or TaskCreate/plan.`,
     `After one dispatch, subsequent parent tools are allowed. Override: prefix the user prompt with !opus-force: (or set PRISM_DISPATCH_GUARD=off).`,
   ].join('\n');

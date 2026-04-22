@@ -1,37 +1,33 @@
 #!/usr/bin/env node
-// ATLAS Agent Model Guard (v2.1.27 Phase 3b)
+// PRISM Agent Model Guard (v2.2.0)
 //
-// PreToolUse hook on the `Agent` tool. When the parent spawns a subagent
+// v2.2.0: classifier source changed from keyword scoring to Opus-backed
+// context scoring. Otherwise behaves identically to v2.1.3: emits a
+// soft nudge when Agent() is spawned without an explicit `model` field,
+// or denies in hard mode.
+//
+// PreToolUse on the `Agent` tool. When the parent spawns a subagent
 // WITHOUT an explicit `model` field, classify the prompt's cognitive load
-// and emit a nudge recommending Haiku / Sonnet / Opus. Optionally runs in
-// "hard" mode (PRISM_MODEL_GUARD=hard) to deny the call, forcing the
-// parent to retry with a model set.
-//
-// Classification is score-based, NOT verb-match:
-//   Haiku signals: bounded output (return/list/count/extract/find all/JSON),
-//                  verbatim tasks (quote/copy/dump), schema outputs.
-//   Sonnet signals: cross-file pattern recognition, refactor identification,
-//                   test writing from spec, doc lookup + reformulation.
-//   Opus signals: architecture decisions, trade-off analysis, root-cause
-//                 diagnosis, design, decide whether, multi-stakeholder
-//                 synthesis, security review with reasoning.
-//
-// Max-tier wins. Ties round UP (prefer over-pay to under-perform).
+// and emit a nudge recommending Haiku / Sonnet / Opus. In hard mode
+// (PRISM_MODEL_GUARD=hard), deny the call, forcing the parent to retry
+// with a model set.
 //
 // Modes:
 //   soft (default): emit nudge on stdout, exit 0 (pass-through)
 //   hard (PRISM_MODEL_GUARD=hard): deny call with a reason
-//
-// Cascading: this hook fires on every Agent() call from any nesting depth.
 
 import {readFileSync, appendFileSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
 import {createHash} from 'crypto';
-import {classifyTier, detectCompound, COST_MULTIPLIER} from '../tools/lib/prism-tier-classify.mjs';
+import {classifyPrompt} from './lib/prism-opus-classifier.mjs';
+import {detectCompound} from '../tools/lib/prism-tier-classify.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = (process.env.PRISM_MODEL_GUARD || 'soft').toLowerCase();
+
+// Cost multipliers for the nudge text (e.g. "~15x cheaper").
+const COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
 
 function sha256short(text) {
   return createHash('sha256').update(String(text || '')).digest('hex').slice(0, 16);
@@ -44,7 +40,7 @@ function appendLog(obj) {
   } catch {}
 }
 
-function main() {
+async function main() {
   let input;
   try { input = JSON.parse(readFileSync(0, 'utf-8')); }
   catch { process.exit(0); }
@@ -70,22 +66,35 @@ function main() {
     process.exit(0);
   }
 
-  const {tier, reason} = classifyTier(prompt, description);
-  const compound = detectCompound(prompt, description);
-
+  const cls = await classifyPrompt({
+    prompt: `${description}\n${prompt}`.trim(),
+    cwd: input.cwd || '',
+    branch: '',
+    headSha: '',
+    dirty: false,
+  });
+  const tier = cls.tier;
+  const rationale = cls.rationale || '(no rationale)';
   const msg = [];
   const parentCost = COST_MULTIPLIER.opus;
   const subCost = COST_MULTIPLIER[tier];
   const mult = Math.round(parentCost / subCost);
 
   if (tier === 'haiku' && mult > 1) {
-    msg.push(`ATLAS MODEL GUARD: spawning ${subagentType} without model override. ${tier.toUpperCase()} task detected (${reason}) — add model:'${tier}' to save ~${mult}x vs. Opus.`);
+    msg.push(`PRISM MODEL GUARD: spawning ${subagentType} without model override. HAIKU task detected (${rationale}) — add model:'haiku' to save ~${mult}x vs. Opus.`);
   } else if (tier === 'sonnet' && mult > 1) {
-    msg.push(`ATLAS MODEL GUARD: spawning ${subagentType} without model override. ${tier.toUpperCase()} task detected (${reason}) — consider model:'${tier}' to save ~${mult}x vs. Opus.`);
+    msg.push(`PRISM MODEL GUARD: spawning ${subagentType} without model override. SONNET task detected (${rationale}) — consider model:'sonnet' to save ~${mult}x vs. Opus.`);
   }
 
-  if (compound) {
-    msg.push(`ATLAS MODEL GUARD: compound task detected. Consider SPLITTING into two Agent() calls — (a) cheap retrieval (haiku), (b) reasoning/synthesis (opus) — cheaper and often higher-quality than one large call.`);
+  // Compound-verb detection via legacy regex — a tight, cheap check for
+  // prompts that mix retrieval + synthesis in one call. The classifier's
+  // `summon_panel` is a related but broader signal (novel architecture).
+  // Emit the split suggestion when either fires; the text retains the
+  // "compound task detected" + "SPLITTING" markers that tooling greps for.
+  const compound = detectCompound(prompt, description);
+  if (compound || cls.summon_panel) {
+    const why = compound ? 'compound task detected' : 'novel architecture signal';
+    msg.push(`PRISM MODEL GUARD: ${why}. Consider SPLITTING into two Agent() calls — (a) cheap retrieval (haiku), (b) reasoning/synthesis (opus) — cheaper and often higher-quality than one large call.`);
   }
 
   const action = MODE === 'hard' && tier !== 'opus' ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
@@ -96,7 +105,7 @@ function main() {
     tool: 'Agent',
     subagent_type: subagentType,
     tier_detected: tier,
-    compound_detected: compound,
+    classifier_source: cls.source,
     action,
     mode: MODE,
     prompt_hash: sha256short(prompt),
@@ -118,4 +127,4 @@ function main() {
   process.exit(0);
 }
 
-main();
+main().catch(() => process.exit(0));
