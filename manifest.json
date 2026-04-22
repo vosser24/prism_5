@@ -77,6 +77,10 @@
       "dest": "~/.claude/hooks/prism-kb-autosync.mjs"
     },
     {
+      "src": "hooks/prism-mutation-guard.mjs",
+      "dest": "~/.claude/hooks/prism-mutation-guard.mjs"
+    },
+    {
       "src": "hooks/prism-safety.mjs",
       "dest": "~/.claude/hooks/prism-safety.mjs"
     },
