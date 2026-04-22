@@ -4,6 +4,67 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-04-22
+
+Cross-platform hook reliability. Fixes the long-standing `/bin/sh: node: not found`
+stderr spew on Linux/macOS machines where node is installed via a version
+manager (nvm/fnm/volta/asdf), and adds first-class Windows support for the
+hook layer. No breaking changes; existing installs pick up the fix on
+re-running the install flow.
+
+### Added
+
+- **Node auto-discovery in `hooks/lib/prism-exec.sh`.** The wrapper now
+  resolves node by trying, in order: `$PRISM_NODE`, `~/.claude/prism.env`,
+  `command -v node`, newest `~/.nvm/versions/node/*/bin/node`, newest
+  `~/.fnm/node-versions/*/installation/bin/node`, `~/.volta/bin/node`,
+  `asdf which node`, `/opt/homebrew/bin/node`, `/usr/local/bin/node`.
+  When node is found, its bin dir is prepended to `PATH` so downstream
+  `npm`/`npx` invocations inside hooks also resolve. Before 2.3.0 the
+  wrapper only called `command -v node` and silently exited 0 on miss —
+  so hooks appeared to "work" (no error) but never actually ran on
+  version-manager-only systems.
+- **Windows hook wrapper** `hooks/lib/prism-exec.cmd`. Mirrors the `.sh`
+  discovery logic for cmd.exe: `%PRISM_NODE%`, `prism.env`, `where node`,
+  `%APPDATA%\nvm\<latest>\node.exe` (nvm-windows), `%LOCALAPPDATA%\Volta\bin\node.exe`,
+  `%ProgramFiles%\nodejs\node.exe`. Install flow selects the correct
+  wrapper per OS when merging `settings.fragment.json` into
+  `~/.claude/settings.json` (see INSTALL.md §4a).
+- **`prism.env` install-time pin.** INSTALL.md §2.5 resolves node's
+  absolute path during install and writes `PRISM_NODE=<abs-path>` to
+  `~/.claude/prism.env`. Both wrappers source this first, giving a
+  zero-discovery fast path. Survives `nvm install <newer>` because the
+  wrappers still fall through to discovery if the pinned path is gone.
+- **Stale-entry pruning in INSTALL.md §4b.** The merge step now removes
+  pre-2.3 raw `node ~/.claude/hooks/prism-*.mjs` hook entries from the
+  user's existing `settings.json` before merging the fragment. These
+  entries — present in any install that pre-dates the v2.2.0 wrapper
+  rollout — were the source of the `/bin/sh: node: not found` spew even
+  after 2.2.0 cleaned up the fragment itself. Non-PRISM raw-node entries
+  are left untouched.
+- **`scripts/verify.mjs` wrapper checks.** Verifies the OS-correct
+  wrapper exists (`prism-exec.sh` on POSIX, `prism-exec.cmd` on Windows)
+  and reports presence/absence of `~/.claude/prism.env` as a non-fatal
+  hint.
+
+### Fixed
+
+- **Linux/macOS Stop hook `/bin/sh: node: not found` spew on
+  version-manager-only installs.** Root cause was two-part: (1) the
+  2.2.0 `prism-exec.sh` wrapper couldn't actually find nvm-installed
+  node (it only checked PATH); (2) pre-2.2.0 installs retained stale
+  raw-`node` hook entries in `settings.json` that the 2.2.0 merge never
+  pruned. 2.3.0 fixes both.
+
+### Notes
+
+- No migration required. Re-run the install flow (per INSTALL.md) to pick
+  up the new wrappers, prune stale entries from your existing
+  `settings.json`, and write `prism.env`. The install is idempotent.
+- Users who previously worked around the issue by symlinking node into
+  `~/.local/bin` can safely delete the symlink after 2.3.0 takes effect,
+  but leaving it is harmless.
+
 ## [2.2.1] - 2026-04-22
 
 Three bundled fixes based on user-reported gaps after the 2.2.0 rollout.

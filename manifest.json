@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -60,6 +60,10 @@
       "src": "hooks/lib/prism-exec.sh",
       "dest": "~/.claude/hooks/lib/prism-exec.sh",
       "chmod": "+x"
+    },
+    {
+      "src": "hooks/lib/prism-exec.cmd",
+      "dest": "~/.claude/hooks/lib/prism-exec.cmd"
     },
     {
       "src": "hooks/lib/prism-opus-classifier.mjs",

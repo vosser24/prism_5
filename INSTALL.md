@@ -55,6 +55,49 @@ Tell the user where the backup went.
 
 ---
 
+## 2.5. Resolve node and write `~/.claude/prism.env`
+
+PRISM hooks run under a non-interactive shell. Node installed via a version
+manager (nvm, fnm, volta, asdf) is not on that shell's PATH by default. To
+guarantee hooks can find node regardless of shell state, resolve node's
+absolute path now and pin it.
+
+**POSIX (Linux / macOS):**
+
+Try each of these until one succeeds, and record the absolute path:
+
+1. `command -v node`
+2. newest `~/.nvm/versions/node/*/bin/node` (sort -V)
+3. newest `~/.fnm/node-versions/*/installation/bin/node`
+4. `~/.volta/bin/node`
+5. `asdf which node`
+6. `/opt/homebrew/bin/node`, `/usr/local/bin/node`
+
+**Windows:**
+
+1. `where node`
+2. newest `%APPDATA%\nvm\<version>\node.exe`
+3. `%LOCALAPPDATA%\Volta\bin\node.exe`
+4. `%ProgramFiles%\nodejs\node.exe`
+
+Write the resolved path to `~/.claude/prism.env` as a single line:
+
+```
+PRISM_NODE=/absolute/path/to/node
+```
+
+(Create `~/.claude/` if needed; do not touch other files.) If node cannot be
+found, stop here — step 0 should already have caught this; if you got past
+step 0 but can't resolve an absolute path, something is wrong with the
+environment.
+
+Also: if node was found but is NOT on the non-interactive shell's PATH
+(verify with `/bin/sh -c 'command -v node'` on POSIX), warn the user that
+without `prism.env` the wrappers would have to fall back to discovery each
+hook firing. `prism.env` makes it a fast no-lookup path.
+
+---
+
 ## 3. Copy the files listed in `manifest.json`
 
 Read `manifest.json`. For each entry in `files`:
@@ -70,10 +113,32 @@ Claude is free to use Python, Node, or bash+jq — whichever is cleaner on the t
 
 ## 4. Merge `settings.fragment.json` into `~/.claude/settings.json`
 
-**Never overwrite settings.json.** Deep-merge instead:
+**Never overwrite settings.json.** Deep-merge, OS-aware, with stale-pruning:
 
-- Start from the existing `~/.claude/settings.json` (or `{}` if absent).
-- Load `settings.fragment.json` from the repo.
+### 4a. OS-specific command rendering
+
+`settings.fragment.json` ships POSIX form (`bash ~/.claude/hooks/lib/prism-exec.sh <hook>.mjs`). On Windows, every such hook `command` must be rewritten to use the `.cmd` wrapper before merging:
+
+- POSIX: use the fragment as-is.
+- Windows: replace the `command` string on each hook entry:
+  - from: `bash ~/.claude/hooks/lib/prism-exec.sh <path>`
+  - to:   `cmd /c "%USERPROFILE%\.claude\hooks\lib\prism-exec.cmd" <path-with-backslashes-and-%USERPROFILE%>`
+  - Example: `bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-hook.mjs`
+    → `cmd /c "%USERPROFILE%\.claude\hooks\lib\prism-exec.cmd" "%USERPROFILE%\.claude\hooks\prism-hook.mjs"`
+
+### 4b. Prune stale pre-2.3 hook entries
+
+Older PRISM installs registered raw `node ~/.claude/hooks/*.mjs` entries alongside the wrapper. These fail on any machine where node is not on the non-interactive shell's PATH. Before merging, walk the existing `hooks` object and REMOVE any entry whose `command` matches one of these exact patterns:
+
+- `node ~/.claude/hooks/prism-*.mjs`
+- `node %USERPROFILE%\.claude\hooks\prism-*.mjs`
+
+(Raw `node` entries for non-PRISM hooks — user-added or plugin-added — must be left alone. Only prune `prism-*.mjs` entries.)
+
+### 4c. Deep-merge
+
+- Start from the existing `~/.claude/settings.json` (or `{}` if absent), after 4b pruning.
+- Load `settings.fragment.json` from the repo, apply 4a OS rewrite.
 - For each top-level key in the fragment:
   - `env` → shallow merge (fragment wins on key conflict).
   - `hooks` → for each event (SessionStart, PreToolUse, etc.), append fragment entries only if no existing entry has the same `command` string.
@@ -150,3 +215,4 @@ cp -pr "$LATEST"/* ~/.claude/
 - **Respect user edits.** If `settings.json` already has a `statusLine`, don't overwrite. Report and move on.
 - **No network beyond the clone step.** Everything after `git clone` is local filesystem work.
 - **Safe to re-run.** All steps are idempotent. Running this install twice is a no-op.
+- **Node discovery is belt-and-braces.** Step 2.5 pins node in `prism.env` so hooks have a fast path; the `prism-exec.sh` / `prism-exec.cmd` wrappers also auto-discover nvm/fnm/volta/asdf/homebrew locations at runtime as a fallback. Users can override with `PRISM_NODE=/path/to/node` in their shell env.
