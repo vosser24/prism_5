@@ -28,11 +28,12 @@ SUPERPOWERS:
   +1 if production-facing (CI config, deployment docs)
   +1 if codable (has source files)
 
-ECC:
+ECC (OPTIONAL — high token tax; recommend only when fit ≥ 4):
   +2 if polyglot (2+ language files)
   +1 if team project (multiple contributors)
   +1 if sensitive config (secrets, auth, payments)
   +1 if compliance mentioned (GDPR, SOC2, HIPAA)
+  Note: NOT shown in default output unless fit ≥ 4. User must opt in.
 
 UI-UX-PRO-MAX:
   +3 if frontend framework (React, Vue, Next.js, Svelte, SwiftUI)
@@ -50,13 +51,15 @@ Clamp 0-5.
 
 ### Step 4 — Present recommendations
 
-Format table:
+Format table (Tier 1 auto-installed tools shown by default):
   TOOL                    FIT   STATUS          ACTION
   ─────────────────────────────────────────────────────
   superpowers             5/5   installed       ready to invoke
-  everything-claude-code  3/5   installed       ready to invoke
   ui-ux-pro-max          2/5   installed       ready to invoke
   browser-use             4/5   installed       ready to invoke
+
+ECC is OPTIONAL — shown only if fit ≥ 4 AND user passes --include-optional:
+  everything-claude-code  4/5   not installed   optional — /plugin install
 
 ### Step 5 — Offer to install high-fit Tier 2 tools (fit ≥ 3)
 

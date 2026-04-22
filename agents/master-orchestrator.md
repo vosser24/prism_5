@@ -55,8 +55,11 @@ For the current step's domain, check:
 1. Tier 1 tool (auto-installed) handles this?
    → Route step to that tool directly. No agent needed.
    → Example: "write tests with TDD" → use superpowers
-   → Example: "review Python code" → use ECC @python-reviewer
    → Example: "design landing page" → use ui-ux-pro-max
+   → Example: "automate a browser flow" → use browser-use
+   → OPTIONAL example (only if ECC was manually installed via
+     /prism-recommend): "review Python code" → use ECC @python-reviewer.
+     Otherwise use superpowers' code review or hire a language agent.
 
 2. Tier 2 tool handles this but isn't installed?
    → Present to user: "Install {tool} for this step?"

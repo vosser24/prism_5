@@ -41,18 +41,27 @@ Intent keywords:
 
 Hook tone: INVOCATION (tool is installed)
 
-## 2. affaan-m/everything-claude-code
+## 2. affaan-m/everything-claude-code (OPTIONAL — heavy)
 Category: Polyglot toolbox (10 language reviewers, security scan, skills catalog)
 Install: /plugin marketplace add https://github.com/affaan-m/everything-claude-code
          /plugin install everything-claude-code@everything-claude-code
 Stars: 159k | License: MIT | Maintained: Active
+
+Status: OPTIONAL as of PRISM 2.2.1 — NOT auto-installed during /prism-init.
+Why: 100+ skills catalog imposes a large per-turn token tax. Multiple users
+reported high context costs outweighing benefits for everyday work. Install
+manually via /prism-recommend --include-optional if you explicitly want
+language-specific reviewers or AgentShield's deeper security scan.
 
 Intent keywords:
   Language review: review my {typescript|python|go|java|kotlin|rust|swift|php|perl|c++|ruby} code
   Security: security scan, vulnerabilities, OWASP, CVE, secrets in config
   Polyglot: across multiple languages, frontend X backend Y
 
-Hook tone: INVOCATION
+Hook tone: MID (was INVOCATION in 2.2.0 and earlier — demoted because tool is
+no longer assumed installed). /prism-audit performs a PRISM-native
+grep-based secret scan instead; use ECC's AgentShield for deeper coverage
+only when installed.
 
 ## 3. nextlevelbuilder/ui-ux-pro-max-skill
 Category: UI/UX design system generation (161 industry rules)

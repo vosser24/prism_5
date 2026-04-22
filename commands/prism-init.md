@@ -52,27 +52,30 @@ Detect project name and domain.
 
 Print to user:
 
-  ATLAS composes with 4 companion tools for coding, design, and
+  ATLAS composes with 3 companion tools for coding, design, and
   automation work. Install them now so ATLAS can route tasks to the
   right tool automatically.
 
-  COMPANIONS (install time: ~2-3 min total):
+  COMPANIONS (install time: ~1-2 min total):
 
     [1] obra/superpowers            — TDD, debugging, code review, git worktrees
         /plugin install superpowers@claude-plugins-official
 
-    [2] affaan-m/everything-claude-code — Language reviewers, security scan, skills
-        /plugin marketplace add https://github.com/affaan-m/everything-claude-code
-        /plugin install everything-claude-code@everything-claude-code
-
-    [3] nextlevelbuilder/ui-ux-pro-max-skill — UI/UX design system
+    [2] nextlevelbuilder/ui-ux-pro-max-skill — UI/UX design system
         npm install -g uipro-cli && uipro init --ai claude --global
 
-    [4] browser-use/browser-use     — General browser automation
+    [3] browser-use/browser-use     — General browser automation
         uv init && uv add browser-use && uv sync
 
+  OPTIONAL (high token cost — install only if needed):
+
+    [·] affaan-m/everything-claude-code — Language reviewers + /security-scan
+        Adds 100+ skills and high per-turn token tax. Install manually
+        via /prism-recommend if you explicitly want language-specific
+        reviewers or AgentShield's deeper security scan.
+
   How should I proceed?
-    [A] Install all 4 (recommended)
+    [A] Install all 3 (recommended)
     [B] Show me what each does first
     [C] Skip — I'll install selectively later via /prism-recommend
     [D] Let me choose which to install
@@ -103,9 +106,9 @@ Append section (at top, before other content):
 
   Status (as of {ISO date}):
   - ✓ obra/superpowers              — installed
-  - ✓ affaan-m/everything-claude-code — installed
   - ✓ nextlevelbuilder/ui-ux-pro-max-skill — installed
   - ✓ browser-use/browser-use        — installed
+  - · affaan-m/everything-claude-code — OPTIONAL (install via /prism-recommend)
 
   Registry: ~/.claude/skills/prism-plan/references/tools-registry.md
   Run /prism-recommend for project-specific fit analysis.

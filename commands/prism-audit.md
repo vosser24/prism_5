@@ -3,8 +3,24 @@ name: atlas-audit
 description: Scan ATLAS's own configuration surface for hygiene issues
 ---
 
-Native security scanner for ATLAS-specific files. For broader config audits,
-use ECC's /security-scan (AgentShield, 102 rules).
+Native security scanner for ATLAS-specific files. PRISM-native grep-based
+secret scan runs by default (patterns listed in Step 1 below). For deeper
+coverage (100+ rules, taint analysis), optionally install AgentShield via
+ECC and run ECC's /security-scan — but PRISM does NOT require ECC.
+
+### Root-file check (runs first)
+
+Flag any of these files at repo root (they often contain secrets and
+should never be committed):
+  .env, .env.*, credentials.json, *.pem, *.key, id_rsa*, *.pfx
+
+If present and NOT gitignored: HIGH severity finding.
+
+### Large-binary check (runs after secrets)
+
+Flag any file > 50MB under the repo. Not a security issue, but a
+hygiene/bloat finding (model weights, compiled artifacts, accidental
+log dumps). Report as LOW severity.
 
 ## SCOPE (ATLAS-owned paths only)
 
@@ -86,6 +102,6 @@ Write to ~/.claude/skills/prism-plan/references/audit-log.json
 - Never commit audit-log if secrets in findings
 
 ## NOT THIS
-- Not a replacement for AgentShield (broader scanner)
+- Not a replacement for AgentShield (broader scanner — install via ECC if wanted)
 - Not a code vulnerability scanner
 - Not a credential rotation tool

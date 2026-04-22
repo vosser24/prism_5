@@ -48,9 +48,14 @@ Output:
   EXTERNAL TOOLS
     Tier 1 (companion tools):
       ✓ obra/superpowers              installed, active
-      ✓ affaan-m/everything-claude-code installed, active
       ✓ nextlevelbuilder/ui-ux-pro-max-skill installed, active
       ✗ browser-use/browser-use        NOT INSTALLED (run /prism-recommend)
+
+    Optional:
+      · affaan-m/everything-claude-code  OPTIONAL — not checked by default
+        (high token tax; install only if you want language-specific
+        reviewers or AgentShield's /security-scan. Run
+        /prism-health --include-optional to check install status.)
 
     Tier 2 (on-demand):
       ✗ Filesystem MCP     not installed
