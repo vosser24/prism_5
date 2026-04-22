@@ -48,7 +48,11 @@ export const OPUS_SIGNALS = [
   /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
 ];
 
-export const COMPOUND_VERB_RE = /\b(read|find|search|analyze|extract|research|review|audit)\s+(and|then)\s+(create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate)\b|\b(plan\s+and\s+(implement|build|execute)|design\s+and\s+build|analyze\s+and\s+recommend|summarize\s+and\s+(recommend|decide))\b/i;
+// v2.2.0 fix (P3b.5): allow an object phrase + comma between the two verbs,
+// e.g. "read and analyze this module, then design a refactor".
+// Up to ~60 characters of intervening text; non-greedy. Leading anchor still
+// requires a compound-intent verb and a connector.
+export const COMPOUND_VERB_RE = /\b(read|find|search|analyze|extract|research|review|audit)(?:\s+(?:and|then)\s+(?:create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate)|[^.?!]{0,60}?,\s*(?:and|then)\s+(?:create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate))\b|\b(plan\s+and\s+(implement|build|execute)|design\s+and\s+build|analyze\s+and\s+recommend|summarize\s+and\s+(recommend|decide))\b/i;
 
 export const COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
 

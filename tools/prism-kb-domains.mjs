@@ -44,8 +44,11 @@ export const DOMAIN_TITLES = {
 // Rule table: ordered. First strong match wins. score weights the confidence.
 // Pattern applies to `${name} ${description}` lowercased.
 const RULES = [
-  {domain: 'atlas-core', score: 10, pattern: /\batlas[-:]?(plan|discover|init|audit|health|roster|archive|recommend|retire|app-expert|update|router|kb|recall)\b/},
-  {domain: 'atlas-core', score: 9,  pattern: /\b(master-orchestrator|agent-factory|atlas-updater|claude-code-guide)\b/},
+  // v2.2.0: rebrand — atlas-* is the legacy prefix, prism-* is current.
+  // Keep both matching so historical indexes and current installs both
+  // classify correctly. Fixes P2.11 (command:prism-recall → misc).
+  {domain: 'atlas-core', score: 10, pattern: /\b(atlas|prism)[-:]?(plan|discover|init|audit|health|roster|archive|recommend|retire|app-expert|update|router|kb|recall)\b/},
+  {domain: 'atlas-core', score: 9,  pattern: /\b(master-orchestrator|agent-factory|(atlas|prism)-updater|claude-code-guide)\b/},
   {domain: 'atlas-core', score: 9,  pattern: /\b(claude-code-expert|claude-md-improver|claude-md-management)\b/},
   {domain: 'atlas-core', score: 7,  pattern: /\bexpert panel|expertise gap|agent roster|atlas notice\b/},
 

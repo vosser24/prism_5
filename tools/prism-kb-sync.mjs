@@ -79,15 +79,33 @@ function sanitizeTitle(id) {
   return String(id).replace(/[/\\]/g, '-').slice(0, 120);
 }
 
-export function computePlan(index, meta) {
+// v2.2.0 (P2.19 fix): `opts.mtimeMap` is an optional Map or plain object
+// from body_path -> epoch-seconds. When provided, computePlan reads the
+// mtime from the map instead of calling statSync. Tests use this to pin
+// mtimes and avoid a race where an external process touches a body file
+// between the test's prev-mtime snapshot and computePlan's statSync call.
+// Production callers pass nothing — behavior unchanged.
+function readMapped(map, key) {
+  if (!map) return undefined;
+  if (typeof map.get === 'function') return map.get(key);
+  return map[key];
+}
+
+export function computePlan(index, meta, opts = {}) {
   const plan = {add: [], replace: [], move: [], skip: [], orphan: []};
   const seen = new Set();
+  const mtimeMap = opts.mtimeMap;
 
   for (const entry of index.entries) {
     seen.add(entry.id);
     const prev = meta.entries[entry.id];
     let bodyMtime = 0;
-    try { bodyMtime = Math.floor(statSync(entry.body_path).mtimeMs / 1000); } catch {}
+    const mapped = readMapped(mtimeMap, entry.body_path);
+    if (typeof mapped === 'number') {
+      bodyMtime = mapped;
+    } else {
+      try { bodyMtime = Math.floor(statSync(entry.body_path).mtimeMs / 1000); } catch {}
+    }
     const targetNotebook = meta.notebooks[entry.domain];
 
     if (!targetNotebook || !targetNotebook.id) {
