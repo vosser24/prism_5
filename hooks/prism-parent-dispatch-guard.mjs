@@ -1,5 +1,15 @@
 #!/usr/bin/env node
-// PRISM Parent Dispatch Guard (v2.2.0) — PreToolUse
+// PRISM Parent Dispatch Guard (v2.2.1) — PreToolUse
+//
+// v2.2.1: hardened subagent pass-through. Three independent bypass paths
+// for subagent-spawned tool calls, any of which passes cleanly:
+//   1. input.parent_tool_use_id is set (original v2.2.0 check).
+//   2. CLAUDE_CODE_ENTRYPOINT === 'subagent' (env-var signal from runtime).
+//   3. sentinel.dispatched === true (parent already dispatched THIS turn,
+//      so any downstream tool call — parent or child — is allowed).
+// Also adds a defense-in-depth allowlist for /prism-* orchestration
+// commands whose rationale is already on the sentinel from the
+// orchestration-command allowlist in prism-opus-classifier.mjs.
 //
 // v2.2.0: classifier source changed (Opus-backed context scoring), sentinel
 // shape preserved — this guard still reads {tier, force_opus, dispatched}
@@ -15,7 +25,8 @@
 // .dispatched=true, unlocking subsequent parent-context tool calls for
 // the same turn.
 //
-// Subagent-context calls (input.parent_tool_use_id present) always pass.
+// Subagent-context calls (input.parent_tool_use_id present, OR
+// CLAUDE_CODE_ENTRYPOINT=subagent, OR sentinel.dispatched=true) always pass.
 //
 // Modes (PRISM_DISPATCH_GUARD env var, defaults to hard):
 //   hard: deny blocked tools; exit 2 with deny JSON.
@@ -75,7 +86,14 @@ try {
   const isSubagent = !!input.parent_tool_use_id;
   const sessionId = input.session_id || 'anon';
 
+  // --- v2.2.1: subagent bypass paths (any one passes cleanly) ---
+  // Path 1: parent_tool_use_id present on the payload
   if (isSubagent) process.exit(0);
+  // Path 2: runtime signals subagent context via env var
+  if (String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent') {
+    process.exit(0);
+  }
+  // ----------------------------------------------------------------
 
   if (ALWAYS_ALLOW.has(toolName)) {
     if (DISPATCH_MARKERS.has(toolName)) {
@@ -87,7 +105,17 @@ try {
 
   const sentinel = readSentinel(sessionId);
   if (!sentinel || sentinel.tier === 'opus' || sentinel.force_opus) process.exit(0);
+  // Path 3 (v2.2.1 primary): sentinel.dispatched=true means the parent
+  // already dispatched a subagent on THIS turn. Any subsequent tool call
+  // — parent OR nested inside the subagent that lost its parent_tool_use_id —
+  // is allowed. This is the least-fragile subagent bypass.
   if (sentinel.dispatched) process.exit(0);
+  // Defense-in-depth: if sentinel rationale shows an orchestration allowlist
+  // match, pass. These are PRISM meta-commands that should never be blocked.
+  if (typeof sentinel.rationale === 'string' &&
+      /orchestration command \/prism-/i.test(sentinel.rationale)) {
+    process.exit(0);
+  }
 
   const why = sentinel.rationale ? ` Reason: ${sentinel.rationale}` : '';
   const notice = [
