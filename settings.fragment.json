@@ -31,6 +31,15 @@
             "command": "node ~/.claude/hooks/prism-prompt-tier-router.mjs"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/prism-memory-save-nudge.mjs"
+          }
+        ]
       }
     ],
     "PreToolUse": [
