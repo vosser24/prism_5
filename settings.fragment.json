@@ -22,6 +22,15 @@
             "command": "node ~/.claude/hooks/prism-hook.mjs"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/prism-prompt-tier-router.mjs"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -49,6 +58,15 @@
           {
             "type": "command",
             "command": "node ~/.claude/hooks/prism-mutation-guard.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/prism-parent-dispatch-guard.mjs"
           }
         ]
       }

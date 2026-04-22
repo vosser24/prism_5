@@ -31,6 +31,8 @@ export const SONNET_SIGNALS = [
   /\b(trace|follow)\s+(a|the)?\s*(call|dependency|flow)\b/,
   /\b(port|migrate)\s+(from|to)\b/,
   /\b(fix|patch)\s+(this|the)\s+(bug|issue)\b/,
+  /\b(create|build|scaffold|generate)\s+(a|an|the)\s+(skill|hook|component|agent|module|page|endpoint|api|route|script|tool)\b/,
+  /\b(implement|write|add)\s+(a|an|the)\s+(feature|function|endpoint|component|utility|page|handler)\b/,
 ];
 
 export const OPUS_SIGNALS = [
@@ -42,9 +44,11 @@ export const OPUS_SIGNALS = [
   /\b(security\s+(review|audit)|threat model|attack surface)\b/,
   /\b(performance\s+(analysis|tradeoff)|scalability\s+(review|plan))\b/,
   /\b(adversarial\s+review|deep\s+analysis|holistic\s+(review|analysis))\b/,
+  /\b(design|architect|plan)\s+(a|an|the)\s+(workflow|pipeline|routing|orchestration|skill-?system|agent-?system|framework)\b/,
+  /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
 ];
 
-export const COMPOUND_VERB_RE = /\b(read\s+and\s+(analyze|understand|design|decide|synthesize|plan)|extract\s+(and|then)\s+(analyze|synthesize|design|decide)|find\s+(and|then)\s+(fix|refactor|redesign)|summarize\s+and\s+(recommend|decide))\b/i;
+export const COMPOUND_VERB_RE = /\b(read|find|search|analyze|extract|research|review|audit)\s+(and|then)\s+(create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate)\b|\b(plan\s+and\s+(implement|build|execute)|design\s+and\s+build|analyze\s+and\s+recommend|summarize\s+and\s+(recommend|decide))\b/i;
 
 export const COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
 
@@ -105,7 +109,9 @@ export function scoreToTier(score, thresholds) {
 
 export function classifyWithScore(prompt, description) {
   const c = classifyTier(prompt, description);
-  const score = complexityScore(c.h, c.s, c.o);
+  let score = complexityScore(c.h, c.s, c.o);
+  const compound = detectCompound(prompt, description);
+  if (compound) score += 2;
   const tier = scoreToTier(score);
-  return {...c, score, tier_by_score: tier};
+  return {...c, score, compound, tier_by_score: tier};
 }
