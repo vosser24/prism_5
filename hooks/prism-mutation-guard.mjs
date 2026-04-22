@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Mutation Guard (v1.0.0)
+// PRISM Mutation Guard (v1.1.0 — 2.2.1)
 //
 // PreToolUse hook on Edit, Write, MultiEdit. When the parent (Opus) context
 // calls a mutation tool directly — instead of dispatching the edit to a
@@ -19,9 +19,15 @@
 //
 // Override: if the user prompt contains "!opus-force:", pass through silently.
 //
+// Bootstrap allowlist (v2.2.1): `/prism-init`, `/prism-update`, and
+// `/prism-archive` are legitimate write contexts — these commands MUST
+// write new project files by design. If the user's current prompt is one
+// of these slash commands, the guard passes through. Previously users had
+// to set `PRISM_MUTATION_GUARD=off` manually to run /prism-init.
+//
 // Logs to ~/.claude/.prism-routing.jsonl (same file as prism-agent-model-guard).
 
-import {readFileSync, appendFileSync, mkdirSync} from 'fs';
+import {readFileSync, appendFileSync, mkdirSync, existsSync} from 'fs';
 import {join, dirname} from 'path';
 import {createHash} from 'crypto';
 
@@ -32,6 +38,43 @@ const MODE = (process.env.PRISM_MUTATION_GUARD !== undefined
   : 'hard').toLowerCase();
 
 const MUTATION_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+
+// Bootstrap/write commands — these legitimately need to write project files.
+// If the current turn was routed via the /prism-init, /prism-update, or
+// /prism-archive allowlist entry (v2.2.1+), the sentinel's rationale will
+// mention the command name. Pass through cleanly instead of blocking.
+const BOOTSTRAP_COMMANDS = ['/prism-init', '/prism-update', '/prism-archive'];
+
+function sentinelPath(sessionId) {
+  return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
+}
+
+function readSentinel(sessionId) {
+  try {
+    const p = sentinelPath(sessionId);
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, 'utf-8'));
+  } catch { return null; }
+}
+
+function isBootstrapTurn(input) {
+  // Primary: check sentinel rationale (set by prism-prompt-tier-router /
+  // prism-opus-classifier when the prompt hits the orchestration allowlist).
+  const s = readSentinel(input.session_id);
+  if (s && typeof s.rationale === 'string') {
+    for (const cmd of BOOTSTRAP_COMMANDS) {
+      if (s.rationale.includes(cmd)) return cmd;
+    }
+  }
+  // Fallback: PreToolUse payloads sometimes carry the raw prompt. Sniff
+  // directly in case the sentinel is missing (first turn, no UserPromptSubmit
+  // event fired yet, or the sentinel write raced this hook).
+  const p = String(input.user_prompt || input.prompt || '').trim().toLowerCase();
+  for (const cmd of BOOTSTRAP_COMMANDS) {
+    if (p.startsWith(cmd)) return cmd;
+  }
+  return null;
+}
 
 function sha256short(text) {
   return createHash('sha256').update(String(text || '')).digest('hex').slice(0, 16);
@@ -62,6 +105,23 @@ function main() {
 
   const ti = input.tool_input || {};
   const filePath = getFilePath(ti);
+
+  // Bootstrap command auto-bypass (v2.2.1): /prism-init, /prism-update,
+  // /prism-archive must be able to write project files.
+  const bootstrapCmd = isBootstrapTurn(input);
+  if (bootstrapCmd) {
+    appendLog({
+      ts: new Date().toISOString(),
+      event: 'mutation_guard',
+      mode: MODE,
+      tool: toolName,
+      file: filePath,
+      blocked: false,
+      reason: 'bootstrap-command-passthrough',
+      command: bootstrapCmd,
+    });
+    process.exit(0);
+  }
 
   // Subagent detection: parent_tool_use_id is present when called from inside Agent()
   const isSubagent = !!(input.parent_tool_use_id);
