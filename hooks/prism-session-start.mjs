@@ -54,9 +54,50 @@ try {
   }
 
   // Only emit notice on a FRESH audit that crossed the threshold.
+  const notices = [];
   if (dueForFreshAudit && audit && audit.total_tokens_est >= NOTICE_TOKEN_FLOOR && audit.top_suggestion) {
-    const msg = `PRISM NOTICE: SessionStart context tax ~${audit.total_tokens_est.toLocaleString()}t (~$${audit.total_cost_opus_usd}/session on Opus). ${audit.top_suggestion}. Full breakdown: node ~/.claude/tools/prism-context-audit.mjs`;
-    process.stdout.write(msg);
+    notices.push(`PRISM NOTICE: SessionStart context tax ~${audit.total_tokens_est.toLocaleString()}t (~$${audit.total_cost_opus_usd}/session on Opus). ${audit.top_suggestion}. Full breakdown: node ~/.claude/tools/prism-context-audit.mjs`);
   }
+
+  // ── v2.8.0 Gap: classifier-floor visibility (once per session) ──
+  // When ANTHROPIC_API_KEY isn't visible to hook subprocesses, the tier-
+  // router silently falls to the keyword floor on every prompt. Users had
+  // no signal that the expensive Opus classifier was unreachable. Emit a
+  // one-time hint at session start; throttle to once per 24h (same as the
+  // audit) so it doesn't spam.
+  //
+  // Detection: the classifier writes source='keyword-floor' in its
+  // sentinel + log when it falls through. We don't read the log here
+  // (cheap); instead we probe env and filesystem:
+  //   - If process.env.ANTHROPIC_API_KEY is missing AND no ~/.claude/prism.env
+  //     ANTHROPIC_API_KEY line: floor-only guaranteed
+  //   - Otherwise: may be reaching API; skip hint
+  const floorHintFile = join(H, '.claude', '.prism-floor-hint.last');
+  let lastFloorHint = 0;
+  try {
+    if (existsSync(floorHintFile)) lastFloorHint = parseInt(readFileSync(floorHintFile, 'utf-8').trim(), 10) || 0;
+  } catch {}
+  if ((now - lastFloorHint) >= THROTTLE_SECONDS) {
+    const hasEnvKey = !!process.env.ANTHROPIC_API_KEY;
+    let hasEnvFileKey = false;
+    try {
+      const envFile = join(H, '.claude', 'prism.env');
+      if (existsSync(envFile)) {
+        const txt = readFileSync(envFile, 'utf-8');
+        if (/^\s*ANTHROPIC_API_KEY\s*=/m.test(txt)) hasEnvFileKey = true;
+      }
+    } catch {}
+    if (!hasEnvKey && !hasEnvFileKey) {
+      notices.push(
+        'PRISM NOTICE: Classifier is running in keyword-floor-only mode — ANTHROPIC_API_KEY not set for hook subprocesses. ' +
+        'Tier decisions will use regex signals only (less accurate on ambiguous prompts). ' +
+        'To enable the Opus classifier, set ANTHROPIC_API_KEY system-wide or add a line to ~/.claude/prism.env. ' +
+        'See INSTALL.md §2.7 for Windows/POSIX setup.'
+      );
+      try { writeFileSync(floorHintFile, String(now)); } catch {}
+    }
+  }
+
+  if (notices.length) process.stdout.write(notices.join('\n'));
 } catch {}
 process.exit(0);

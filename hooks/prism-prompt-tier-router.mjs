@@ -20,7 +20,7 @@
 //   soft: sentinel + advice only
 //   off:  no-op
 
-import {readFileSync, writeFileSync, mkdirSync, appendFileSync} from 'node:fs';
+import {readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {classifyPrompt, toSentinel} from './lib/prism-opus-classifier.mjs';
@@ -130,10 +130,24 @@ async function main() {
     });
 
     try {
+      // v2.8.0: atomic write via tempfile + rename. Prevents truncated
+      // sentinel JSON if the hook is killed mid-write. Readers
+      // (dispatch-guard, mutation-guard, agent-model-guard, task-tier-advisor)
+      // never see a partial file.
       const p = sentinelPath(sessionId);
       mkdirSync(dirname(p), {recursive: true});
-      writeFileSync(p, JSON.stringify(sentinel, null, 2));
-    } catch {}
+      const tmp = p + '.tmp';
+      writeFileSync(tmp, JSON.stringify(sentinel, null, 2));
+      renameSync(tmp, p);
+    } catch {
+      // Fallback: direct write if rename fails (e.g., tempdir on different
+      // filesystem from sentinel — shouldn't happen since they're siblings,
+      // but defensive).
+      try {
+        const p = sentinelPath(sessionId);
+        writeFileSync(p, JSON.stringify(sentinel, null, 2));
+      } catch {}
+    }
 
     appendLog({
       event: 'prompt_tier_router',

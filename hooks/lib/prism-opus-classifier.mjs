@@ -251,7 +251,15 @@ async function tryApiClassify({apiKey, model, system, user, timeoutMs}) {
 //   - meta-work tokens (PRISM, tier router, ship, release, 2.2.0)
 //   - /prism-* orchestration commands (also caught by allowlist, but safe belt)
 //   - multi-verb chains ending in a write verb
-const RELEASE_SAFETY_RE = /\b(push\s+(to|origin)|merge\s+(to|into|main|master)|force[-\s]?push|git\s+push|deploy(ment)?|release|ship(ping)?|tier\s+router|PRISM|2\.2\.0)\b/i;
+// v2.8.0: tighter pattern. The v2.2.0 version matched bare `PRISM` and
+// `2.2.0` tokens, which caused every prompt mentioning PRISM by name or
+// quoting a version to fire the release-safety screen → summon_panel →
+// dispatch-guard panel demand. In real use (esp. when API was unreachable
+// so the keyword floor ran on every prompt), this was every prompt about
+// using PRISM itself. Now requires release-like CONTEXT around the token:
+// "release PRISM", "deploy v2.x.x", "ship PRISM v2.8", etc. Bare mentions
+// like "configure PRISM" or "PRISM documentation" no longer trip it.
+const RELEASE_SAFETY_RE = /\b(push\s+(to|origin)|merge\s+(to|into|main|master)|force[-\s]?push|git\s+push|deploy(ment)?|release|ship(ping)?|tier\s+router|(release|deploy|ship|upgrade|publish|bump)\s+(PRISM|v?\d+\.\d+\.\d+)|PRISM\s+(release|deploy|update|upgrade|v\d|v?\d+\.\d+)|v?\d+\.\d+\.\d+\s+(release|deploy|ship))\b/i;
 const MULTI_VERB_CHAIN_RE = /\b(test|check|verify|retest)\b.*\b(and|then)\b.*\b(push|deploy|merge|release|ship)\b/i;
 
 function releaseSafetyScreen(prompt) {
@@ -359,6 +367,12 @@ export async function classifyPrompt(opts = {}) {
     const system = buildSystemPrompt();
     const user = buildUserMessage({prompt: str, cwd, branch, recentCommits, stagedFiles, activeSkills});
 
+    // Collect API errors for the sentinel's `api_errors` field — v2.8.0.
+    // Previously the Sonnet fallback `catch { /* fall through */ }` swallowed
+    // errors without trace, making it impossible to tell whether the floor
+    // fired because of 401 (bad key), 429 (rate limit), 529 (overloaded), or
+    // a network timeout. Now we capture both failure reasons for observability.
+    const apiErrors = [];
     try {
       const norm = await tryApiClassify({apiKey, model, system, user, timeoutMs});
       const out = {
@@ -372,6 +386,7 @@ export async function classifyPrompt(opts = {}) {
       if (!skipCache) cachePut(cachePath, key, {tier: out.tier, summon_panel: out.summon_panel, rationale: out.rationale, source: 'opus'});
       return out;
     } catch (primaryErr) {
+      apiErrors.push({model, status: primaryErr.status || null, message: String(primaryErr.message || primaryErr).slice(0, 150)});
       // 5. Sonnet fallback.
       try {
         const norm = await tryApiClassify({apiKey, model: fallbackModel, system, user, timeoutMs});
@@ -382,14 +397,30 @@ export async function classifyPrompt(opts = {}) {
           source: 'sonnet-fallback',
           force_opus: false,
           cache_key: key,
+          api_errors: apiErrors,
         };
         if (!skipCache) cachePut(cachePath, key, {tier: out.tier, summon_panel: out.summon_panel, rationale: out.rationale, source: 'sonnet-fallback'});
         return out;
-      } catch { /* fall through to keyword floor */ }
+      } catch (fallbackErr) {
+        apiErrors.push({model: fallbackModel, status: fallbackErr.status || null, message: String(fallbackErr.message || fallbackErr).slice(0, 150)});
+        // Fall through to keyword floor — apiErrors attached below.
+      }
     }
+
+    // 6. Keyword floor with API error context — last resort.
+    const floorWithErrs = keywordFloor(str);
+    return {
+      tier: floorWithErrs.tier,
+      summon_panel: floorWithErrs.summon_panel,
+      rationale: floorWithErrs.rationale,
+      source: 'keyword-floor',
+      force_opus: false,
+      cache_key: key,
+      api_errors: apiErrors,
+    };
   }
 
-  // 6. Keyword floor — last resort.
+  // 6. Keyword floor — last resort (no API key path, no errors to attach).
   const floor = keywordFloor(str);
   return {
     tier: floor.tier,

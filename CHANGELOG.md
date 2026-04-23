@@ -4,6 +4,125 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-04-23
+
+Audit-driven hardening release. 13 fixes from the full repo audit,
+bundled into one version bump after the v2.7.x hotfix cadence. No new
+features; all hardening, correctness, and observability. Backward-
+compatible — runtime behavior preserved for all legitimate inputs.
+
+### Fixed
+
+- **`scripts/verify.mjs` now checks every manifest entry.** Previously
+  only 11 of 75 paths were hardcoded-verified. Silent install failures
+  (e.g., `prism-opus-classifier.mjs` missing from disk) would pass
+  verify and crash at first prompt. v2.8.0 reads `manifest.json` at
+  verify time and checks all 75 `dest` paths exist. Hardcoded fallback
+  preserved for the rare case the manifest can't be located.
+- **`RELEASE_SAFETY_RE` no longer fires on bare `PRISM` or `2.x.x`
+  tokens.** Previously every prompt mentioning "PRISM" by name or
+  quoting a version triggered `release/meta-work` in the keyword
+  floor → `summon_panel=true` → dispatch-guard panel demand. On
+  users with API unreachable (classifier stuck in floor), this was
+  nearly every prompt about using PRISM itself. Now requires
+  release-like context: `release PRISM`, `deploy v2.8.0`,
+  `upgrade PRISM to 2.8`, etc. Bare mentions like
+  "configure PRISM for my project" no longer trip the screen.
+- **`install-merge.mjs` stale-prune uses explicit legacy-hook whitelist.**
+  Previously the pattern `prism-[A-Za-z0-9._-]+\.mjs` matched ANY
+  `prism-*` raw-node hook including user-authored custom hooks. v2.8.0
+  ships an explicit 26-name whitelist (13 known PRISM legacy hooks +
+  13 ATLAS-era renames) so users with their own `prism-my-custom.mjs`
+  raw-node entries are preserved intact across upgrades.
+- **`INSTALL.md` §2.6 purge uses explicit path lists (no `atlas-*`
+  catch-all glob).** The old glob matched `~/.claude/atlas-reference-archive/`
+  — a user's legitimate archive directory — and deleted it on any
+  upgrade that hit §2.6. v2.8.0 enumerates the 6 known atlas-era
+  subdirectories by name and uses the glob only for per-session
+  sentinels and counters where the suffix is a UUID (truly unambiguous).
+- **`commands/prism-recall.md` now has `name: prism-recall` in YAML
+  frontmatter.** All other commands declare `name:` explicitly; this
+  was the one outlier. Claude Code may derive name from filename in
+  some builds but the explicit declaration is required for consistency
+  and for builds that require it.
+- **Manifest `chmod +x` entries added for `prism-monitor.py`,
+  `refresh-statusline-cache.sh`, and `subagent-summary.py`.**
+  Previously these 3 shipped without execute bit; POSIX users saw
+  "permission denied" on first invocation. `.sh` and `.py` entries
+  that are import-only (not invoked as scripts) correctly remain
+  non-executable — only the 3 genuinely script-invoked files get +x.
+- **`prism-safety.mjs` fails open on parse error (exit 0, not 1).**
+  Consistent with all other PRISM hooks. Previous behavior printed
+  "Safety hook error: <msg>" to stderr on malformed PreToolUse
+  payloads. Exit 2 (dangerous-pattern match) is preserved — that's
+  the only intentional error path.
+- **Task-tier-advisor now has the v2.7.5 three-path subagent bypass.**
+  Parity with mutation-guard (v2.7.5) and parent-dispatch-guard
+  (v2.2.1). Without this, `PRISM_TASK_TIER=hard` users on Claude Code
+  builds that drop `parent_tool_use_id` could get subagent TaskCreate
+  denied as parent-context. All guards now treat subagent context
+  identically.
+
+### Added
+
+- **Atomic sentinel writes** in `prism-parent-dispatch-guard.mjs` and
+  `prism-prompt-tier-router.mjs`. Tempfile + rename instead of direct
+  writeFileSync. Prevents truncated JSON sentinels from crashes
+  mid-write (disk full, antivirus interference, node process kill).
+  Readers (all four guards, weekly rollup) never see a partial file.
+  Direct-write fallback preserved for edge cases.
+- **Session-start classifier-floor hint** in `prism-session-start.mjs`.
+  Once per 24h, when `ANTHROPIC_API_KEY` is missing from hook env
+  (detected via probe of env var + `~/.claude/prism.env`), emits a
+  visible notice: *"Classifier is running in keyword-floor-only mode
+  — see INSTALL.md §2.7 for setup"*. Users no longer have to tail
+  `.prism-routing.jsonl` to discover they're in floor-only mode.
+- **Classifier API error visibility.** Previously the Sonnet-fallback
+  catch block swallowed errors silently. v2.8.0 collects `api_errors`
+  on both Opus and Sonnet failures (with HTTP status + trimmed
+  message) and attaches to the classifier result. Weekly rollup can
+  now surface which API failure mode is dominant — 401 (bad key),
+  429 (rate limit), 529 (overloaded), or network timeout.
+- **INSTALL.md §2.7 — ANTHROPIC_API_KEY setup guide.** Detection
+  ("am I in floor-only mode?"), setup recipes per OS (POSIX shell
+  profile, POSIX dedicated env file, Windows `setx User`), security
+  notes, and verification. Optional — no PRISM feature requires it,
+  but presence improves classifier accuracy on ambiguous prompts.
+- **INSTALL.md §2.8 — tuning env vars.** All 6 enforcement-mode env
+  vars (`PRISM_PROMPT_ROUTER`, `PRISM_DISPATCH_GUARD`,
+  `PRISM_MUTATION_GUARD`, `PRISM_MODEL_GUARD`, `PRISM_TASK_TIER`,
+  `PRISM_MEMORY_NUDGE`) + 3 classifier-tuning vars
+  (`PRISM_TIER_THRESHOLDS`, `PRISM_MEMORY_NUDGE_FIRST`,
+  `PRISM_MEMORY_NUDGE_INTERVAL`) documented in one table.
+  `!opus-force:` prefix semantics documented inline.
+
+### Changed (doc-only)
+
+- **`tools-registry.md` dangling `/prism-registry` reference** replaced
+  with honest doc: "no dedicated registry command exists — edit the
+  markdown directly and commit". The command never existed; text was
+  aspirational from v1.1.0 planning. Clean now.
+- **`roster.json` `schema_version` bumped from 2.7.0 → 2.8.0.** No
+  schema changes; version sync with current PRISM version.
+
+### Notes
+
+- **Re-install flow for upgrade**: pull the branch, run `node
+  scripts/install-merge.mjs` (v2.7.3 merger). File-copy step 3 picks
+  up all hook/script/command changes. No settings migration needed.
+- **No breaking runtime changes**. The `RELEASE_SAFETY_RE` tightening
+  and stale-prune whitelist both err on the side of fewer actions
+  (less panel-summoning, fewer prunes). Users with custom `prism-*.mjs`
+  hooks now upgrade cleanly.
+- **ANTHROPIC_API_KEY propagation via settings.fragment.json was
+  explicitly out of scope**, per user direction. Users who want the
+  Opus classifier active add the key manually per INSTALL.md §2.7.
+  The session-start hint makes floor-only state visible so they can
+  decide whether to configure it.
+- **Tested clean-room install with mocked missing manifest entries**:
+  `verify.mjs` correctly reports `FAILED: 73 checks did not pass`
+  instead of the pre-2.8.0 false green.
+
 ## [2.7.5] - 2026-04-23
 
 Second hotfix in the v2.7.4 cycle. Closes the final lockout path where

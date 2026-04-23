@@ -185,11 +185,16 @@ done
 # NOTE: PRISM's safety-gate blocks `rm -rf` (pattern `/rm\s+-rf\s/i`).
 # Use `rm -r` (without -f) — the safety gate allows this, and nothing
 # inside `~/.claude/` is write-protected so -f is unnecessary.
+#
+# v2.8.0 note: purge lists are EXPLICIT (no `atlas-*` catch-all glob).
+# The old glob matched `atlas-reference-archive/` — a legitimate user
+# archive that should NEVER be deleted. Every atlas-* directory/file
+# below is listed by name. If you have your own `atlas-*` content that
+# isn't in this list, it is preserved.
 for p in \
   ~/.claude/skills/atlas-plan \
   ~/.claude/skills/atlas-discover \
-  ~/.claude/skills/atlas-updater \
-  ~/.claude/skills/atlas-* ; do
+  ~/.claude/skills/atlas-updater ; do
   for f in $p; do
     if [ -d "$f" ]; then rm -r "$f" && PURGED=$((PURGED+1)); fi
   done
@@ -205,17 +210,52 @@ for p in \
   done
 done
 for p in \
-  ~/.claude/tools/atlas-* \
+  ~/.claude/tools/atlas-kb-query.mjs \
+  ~/.claude/tools/atlas-kb-sync.mjs \
+  ~/.claude/tools/atlas-kb-indexer.mjs \
+  ~/.claude/tools/atlas-kb-rebuild.mjs \
+  ~/.claude/tools/atlas-kb-classify.mjs \
+  ~/.claude/tools/atlas-kb-domains.mjs \
+  ~/.claude/tools/atlas-kb-promote-domain.mjs \
+  ~/.claude/tools/atlas-kb-notebook-init.mjs \
+  ~/.claude/tools/atlas-context-audit.mjs \
+  ~/.claude/tools/atlas-recall.mjs \
+  ~/.claude/tools/atlas-rollup-weekly.mjs \
+  ~/.claude/tools/atlas-db.mjs \
+  ~/.claude/tools/atlas-db-migrate.mjs \
+  ~/.claude/tools/test-atlas-gaps.mjs \
+  ~/.claude/tools/atlas-monitor \
   ~/.claude/plans/atlas-*.md ; do
   for f in $p; do
     if [ -d "$f" ]; then rm -r "$f" && PURGED=$((PURGED+1));
     elif [ -f "$f" ]; then rm "$f" && PURGED=$((PURGED+1)); fi
   done
 done
-# Dot-file state (legacy turn counters, tier caches under old name)
-for f in ~/.claude/.atlas-*; do
+# Dot-file state (legacy turn counters, tier caches under old name).
+# Explicitly enumerated; catch-all `.atlas-*` glob avoided for the same
+# reason as above.
+for f in \
+  ~/.claude/.atlas-state.json \
+  ~/.claude/.atlas-global-state.json \
+  ~/.claude/.atlas-kb-index.json \
+  ~/.claude/.atlas-kb-meta.json \
+  ~/.claude/.atlas-kb-dirty \
+  ~/.claude/.atlas-sessions \
+  ~/.claude/.atlas-rollups \
+  ~/.claude/.atlas-routing.jsonl \
+  ~/.claude/.atlas-spend.jsonl \
+  ~/.claude/.atlas-lessons.jsonl \
+  ~/.claude/.atlas-context-audit.json \
+  ~/.claude/.atlas-context-audit.last \
+  ~/.claude/.atlas-tier-cache.json ; do
   if [ -d "$f" ]; then rm -r "$f" && PURGED=$((PURGED+1));
   elif [ -f "$f" ]; then rm "$f" && PURGED=$((PURGED+1)); fi
+done
+# Also purge glob-matched turn-tier sentinels and memory counters that are
+# per-session (clear prefix match, not a real catch-all — files follow an
+# exact pattern). These are safe glob matches because the suffix is a UUID.
+for f in ~/.claude/.atlas-turn-tier-*.json ~/.claude/.atlas-memory-save-counter-*.json; do
+  [ -f "$f" ] && rm "$f" && PURGED=$((PURGED+1))
 done
 
 # 2.6d — Prune settings.json hook entries that reference the legacy names.
@@ -273,6 +313,138 @@ If the user reports that the purge removed something they needed:
 LATEST=$(ls -1td ~/.claude/backups/atlas-purge-* | head -1)
 cp -pr "$LATEST"/* ~/.claude/
 ```
+
+---
+
+## 2.7. (Optional) Make `ANTHROPIC_API_KEY` visible to hook subprocesses
+
+**Why this matters.** The PRISM tier-router classifier
+(`hooks/prism-prompt-tier-router.mjs` + `hooks/lib/prism-opus-classifier.mjs`)
+calls the Anthropic Messages API on every UserPromptSubmit to classify the
+turn into haiku/sonnet/opus. It needs `ANTHROPIC_API_KEY` in the hook
+subprocess environment.
+
+**Claude Code itself already has your key** (that's how the main
+conversation works). But hook subprocesses are spawned via `bash` or
+`cmd /c`, which doesn't inherit Claude Code's internal env. Without the
+key in hook env, the classifier falls back to the keyword floor —
+regex signals only. The floor works, but classifications are less
+accurate on ambiguous prompts.
+
+**How to tell if you need this.** Look for the session-start hint
+(v2.8.0+):
+
+```
+PRISM NOTICE: Classifier is running in keyword-floor-only mode — ...
+```
+
+Or check the routing log:
+
+```bash
+tail -5 ~/.claude/.prism-routing.jsonl | grep -o '"source":"[^"]*"'
+```
+
+If all entries show `"source":"keyword-floor"`, the API isn't being hit.
+
+**Setup (POSIX — Linux / macOS):**
+
+```bash
+# Method 1: shell profile
+echo 'export ANTHROPIC_API_KEY="sk-ant-api03-..."' >> ~/.zshrc   # or ~/.bashrc
+source ~/.zshrc
+
+# Method 2: dedicated hook env file (higher priority, project-scoped works too)
+cat >> ~/.claude/prism.env <<'EOF'
+ANTHROPIC_API_KEY=sk-ant-api03-...
+EOF
+chmod 600 ~/.claude/prism.env   # recommended — file contains a secret
+```
+
+**Setup (Windows — PowerShell):**
+
+```powershell
+# User-scoped system env var (persists across sessions; Claude Code inherits)
+[System.Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', 'sk-ant-api03-...', 'User')
+# Restart Claude Code after this — env vars set via setx don't propagate
+# to already-running processes.
+```
+
+**Verify** (after restarting Claude Code):
+
+```
+/prism-health
+```
+
+…or probe directly:
+
+```
+Run this Bash: echo ${ANTHROPIC_API_KEY:0:14} && node -e 'console.log(process.env.ANTHROPIC_API_KEY ? "visible" : "missing")'
+```
+
+Expected: the first ~14 chars of your key + `visible`.
+
+**Security notes:**
+
+- Never commit `ANTHROPIC_API_KEY` to a repo. Never put it in `settings.json`
+  if the repo is public (`.claude/settings.json` is typically gitignored
+  per PRISM project convention).
+- `~/.claude/prism.env` is NOT included in any backup or migration — keys
+  stay local.
+- If you're using a Claude Pro/Max subscription (no API key), leave this
+  section alone. The classifier runs keyword-floor only, which is acceptable
+  — just less accurate. No config-panel feature depends on the API
+  classifier; the keyword floor covers every runtime path.
+
+---
+
+## 2.8. Tuning — environment variables for enforcement mode and thresholds
+
+PRISM exposes several env vars to tune enforcement and classifier behavior.
+All are optional — defaults are sensible. Set them in
+`~/.claude/prism.env`, your shell profile, or `.claude/settings.local.json`
+under `env`. Project-scoped overrides in `.claude/settings.local.json` are
+scoped to that one project.
+
+**Enforcement modes:**
+
+| Variable | Default | Values | Effect |
+|---|---|---|---|
+| `PRISM_PROMPT_ROUTER` | `hard` | `hard` / `soft` / `off` | Tier-router. `hard` = sentinel written + advice emitted. `soft` = advice only. `off` = no-op. |
+| `PRISM_DISPATCH_GUARD` | `hard` | `hard` / `soft` / `off` | Parent-dispatch-guard. `hard` = deny work tools on wrong tier. `soft` = nudge only. `off` = pass-through. |
+| `PRISM_MUTATION_GUARD` | `hard` | `hard` / `soft` / `off` | Edit/Write/MultiEdit/Bash-write guard. `hard` = deny parent-context mutations. `soft` = nudge only. `off` = pass-through. |
+| `PRISM_MODEL_GUARD` | `soft` | `hard` / `soft` / `off` | Agent() model-choice guard. `hard` = deny non-opus Agent() without explicit model. `soft` = nudge only. `off` = pass-through. |
+| `PRISM_TASK_TIER` | `soft` | `hard` / `soft` / `off` | Task-tier advisor on TaskCreate. `hard` = deny opus-tier tasks without `tier_ack` or `[opus]` annotation. `soft` = nudge only. `off` = pass-through. |
+| `PRISM_MEMORY_NUDGE` | `on` | `on` / `off` | Turn-15+ memory-save nudge. |
+
+**Classifier tuning:**
+
+| Variable | Default | Format | Effect |
+|---|---|---|---|
+| `PRISM_TIER_THRESHOLDS` | `"2,7"` | `"haiku_max,sonnet_max"` | Keyword-floor score boundaries. Score 0–`haiku_max` = haiku; `haiku_max+1` to `sonnet_max` = sonnet; above = opus. Lower `sonnet_max` to route more prompts to opus (safer, more expensive). Raise to save. |
+| `PRISM_MEMORY_NUDGE_FIRST` | `15` | integer | First memory-save nudge turn. |
+| `PRISM_MEMORY_NUDGE_INTERVAL` | `5` | integer | Cadence after first nudge. |
+
+**Per-prompt overrides:**
+
+- **`!opus-force:` prefix** on any user prompt — bypasses all tier-routing
+  and guard enforcement for that single turn. Sentinel's `force_opus=true`.
+  Parent Opus can write directly. Use for mechanical edits where you don't
+  want the orchestrator pattern.
+
+**Example local override** (`<project>/.claude/settings.local.json`):
+
+```json
+{
+  "env": {
+    "PRISM_MUTATION_GUARD": "off",
+    "PRISM_DISPATCH_GUARD": "off"
+  }
+}
+```
+
+Scoped to just that project — useful during design-system migrations or
+other mechanical refactors where guards get in the way. Remove when the
+migration lands.
 
 ---
 

@@ -1,7 +1,7 @@
 {
-  "version": "2.7.0",
+  "version": "2.8.0",
   "last_updated": "2026-04-23",
-  "schema_version": "2.7.0",
+  "schema_version": "2.8.0",
   "schema_notes": [
     "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
     "default_model=null means 'let orchestrator dynamic selection decide'.",

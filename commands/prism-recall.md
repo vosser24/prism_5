@@ -1,4 +1,5 @@
 ---
+name: prism-recall
 description: Unified recall across PRISM knowledge base (semantic), session state, and spend/metrics (analytical). Auto-routes to the right tier.
 argument-hint: <query>
 allowed-tools: Bash

@@ -105,6 +105,54 @@ async function main() {
   const classPrompt = `${subject}\n${description}`.trim();
   const sessionId = input.session_id || 'anon';
 
+  // v2.8.0: Subagent bypass (parity with mutation-guard v2.7.5 and
+  // parent-dispatch-guard v2.2.1). When a subagent calls TaskCreate
+  // (e.g., blueprint-prompt decomposing a plan), the advisor's hard-mode
+  // deny can block the subagent from writing its plan. Three bypass paths:
+  //   1. input.parent_tool_use_id present (original check)
+  //   2. CLAUDE_CODE_ENTRYPOINT env var === 'subagent'
+  //   3. sentinel.dispatched === true (parent already dispatched this turn)
+  // Any one → pass through silently. Matches the logic in
+  // prism-mutation-guard.mjs so both guards treat subagent context identically.
+  const isSubagentById = !!(input.parent_tool_use_id);
+  const isSubagentByEnv = String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent';
+  const sentinelEarly = readSentinel(sessionId);
+  const isSubagentByDispatched = !!(sentinelEarly && sentinelEarly.dispatched === true);
+  if (isSubagentById || isSubagentByEnv || isSubagentByDispatched) {
+    // Still log to DB so the rollup sees the task, but as an advice-only row
+    // (no deny). This keeps the plan-tier-adherence metric accurate.
+    await logAdvice({
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: taskId,
+      subject: subject.slice(0, 60),
+      tier: 'subagent-passthrough',
+      reason: isSubagentById
+        ? 'subagent-parent-tool-use-id-passthrough'
+        : (isSubagentByEnv ? 'subagent-claude-code-entrypoint-passthrough' : 'subagent-sentinel-dispatched-passthrough'),
+      compound: false,
+      h: 0, s: 0, o: 0,
+      mode: MODE,
+    });
+    process.exit(0);
+  }
+
+  // Force-opus override — the user explicitly bypassed all tier gates.
+  if (sentinelEarly && sentinelEarly.force_opus === true) {
+    await logAdvice({
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      task_id: taskId,
+      subject: subject.slice(0, 60),
+      tier: 'force-opus',
+      reason: 'opus-force-sentinel',
+      compound: false,
+      h: 0, s: 0, o: 0,
+      mode: MODE,
+    });
+    process.exit(0);
+  }
+
   // v2.7.0: three-source tier resolution, in priority order.
   //   1. Plan annotation — [haiku|sonnet|opus] in description → planner intent wins
   //   2. Turn sentinel — written by prompt-tier-router on UserPromptSubmit

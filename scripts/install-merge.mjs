@@ -113,32 +113,69 @@ function applyWindowsRewrite(fragment) {
 }
 
 // Stale-entry patterns (§4b). Match any existing hook entry that uses the
-// pre-2.3 raw-node invocation. Covers POSIX and Windows path forms, plus
-// the legacy atlas-* naming from pre-2.4.
+// pre-2.3 raw-node invocation for KNOWN-LEGACY PRISM/ATLAS hooks.
+//
+// v2.8.0: switched from prefix glob `prism-*.mjs` / `atlas-*.mjs` to an
+// explicit whitelist of names PRISM has actually shipped. This stops the
+// pruner from deleting user-authored custom hooks that happen to follow
+// the `prism-<anything>.mjs` naming convention (e.g., a user wrote
+// `~/.claude/hooks/prism-my-custom.mjs` as a raw-node entry — the old
+// glob pruned it as "stale" and lost the user's work).
+//
+// If future PRISM versions add new hooks, their names must be added here.
+// User-authored hooks with names NOT in this list will be preserved
+// untouched through install/upgrade.
+const KNOWN_LEGACY_HOOKS = [
+  // Pre-2.3 raw-node PRISM hooks that the 2.3 wrapper replaced
+  'prism-hook',
+  'prism-session-start',
+  'prism-session-end',
+  'prism-safety',
+  'prism-subagent-stop',
+  'prism-config-guard',
+  'prism-kb-autosync',
+  'prism-memory-save-nudge',
+  'prism-mutation-guard',
+  'prism-parent-dispatch-guard',
+  'prism-prompt-tier-router',
+  'prism-agent-model-guard',
+  'prism-task-tier-advisor',
+  // Pre-2.4 ATLAS-era hooks (renamed to prism-* in v2.4.0)
+  'atlas-hook',
+  'atlas-session-start',
+  'atlas-session-end',
+  'atlas-safety',
+  'atlas-subagent-stop',
+  'atlas-config-guard',
+  'atlas-kb-autosync',
+  'atlas-memory-save-nudge',
+  'atlas-mutation-guard',
+  'atlas-parent-dispatch-guard',
+  'atlas-prompt-tier-router',
+  'atlas-agent-model-guard',
+  'atlas-task-tier-advisor',
+];
+
 function buildStalePatterns() {
-  const patterns = [
-    // POSIX prism-*.mjs raw-node
-    /^node\s+~\/\.claude\/hooks\/prism-[A-Za-z0-9._-]+\.mjs/,
-    // POSIX atlas-*.mjs raw-node (pre-2.4)
-    /^node\s+~\/\.claude\/hooks\/atlas-[A-Za-z0-9._-]+\.mjs/,
-    // Legacy atlas-exec.sh wrapper (pre-2.4)
-    /^bash\s+~\/\.claude\/hooks\/lib\/atlas-exec\.sh(\s|$)/,
-  ];
-  // Windows-path forms. Build regex at runtime so backslashes are literal
-  // characters in the source string, not escape sequences that need
-  // double-escaping in a regex literal.
-  const winPrismPrefix =
-    '^node\\s+%USERPROFILE%' + BACKSLASH + BACKSLASH +
-    '\\.claude' + BACKSLASH + BACKSLASH +
-    'hooks' + BACKSLASH + BACKSLASH +
-    'prism-[A-Za-z0-9._-]+\\.mjs';
-  const winAtlasPrefix =
-    '^node\\s+%USERPROFILE%' + BACKSLASH + BACKSLASH +
-    '\\.claude' + BACKSLASH + BACKSLASH +
-    'hooks' + BACKSLASH + BACKSLASH +
-    'atlas-[A-Za-z0-9._-]+\\.mjs';
-  patterns.push(new RegExp(winPrismPrefix, 'i'));
-  patterns.push(new RegExp(winAtlasPrefix, 'i'));
+  const patterns = [];
+  // Legacy atlas-exec.sh wrapper (pre-2.4) — not a hook file, but a legacy
+  // wrapper entry form that needs pruning.
+  patterns.push(/^bash\s+~\/\.claude\/hooks\/lib\/atlas-exec\.sh(\s|$)/);
+  for (const hookName of KNOWN_LEGACY_HOOKS) {
+    // Escape dots in hook name for regex (none currently, but defensive).
+    const esc = hookName.replace(/\./g, '\\.');
+    // POSIX form: `node ~/.claude/hooks/<name>.mjs`
+    patterns.push(new RegExp(`^node\\s+~\\/\\.claude\\/hooks\\/${esc}\\.mjs(\\s|$)`, 'i'));
+    // Windows form: `node %USERPROFILE%\.claude\hooks\<name>.mjs`.
+    // Build with runtime literals so backslashes stay backslashes through
+    // any source-string escape mangling.
+    const winPattern =
+      '^node\\s+%USERPROFILE%' + BACKSLASH + BACKSLASH +
+      '\\.claude' + BACKSLASH + BACKSLASH +
+      'hooks' + BACKSLASH + BACKSLASH +
+      esc + '\\.mjs(\\s|$)';
+    patterns.push(new RegExp(winPattern, 'i'));
+  }
   return patterns;
 }
 

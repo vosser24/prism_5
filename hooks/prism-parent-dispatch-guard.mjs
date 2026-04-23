@@ -47,7 +47,7 @@
 //   soft: emit NOTICE only; exit 0.
 //   off:  pass-through.
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 
 const H = process.env.HOME || process.env.USERPROFILE;
@@ -83,10 +83,27 @@ function readSentinel(sessionId) {
   } catch { return null; }
 }
 
+// v2.8.0: atomic write — tempfile + rename. Prevents truncated sentinel JSON
+// from crashes mid-write (disk-full, antivirus interference, or node process
+// kill). Readers downstream (other guards, weekly rollup) never see a
+// partially-written file.
 function writeSentinel(sessionId, sentinel) {
   try {
-    writeFileSync(sentinelPath(sessionId), JSON.stringify(sentinel, null, 2));
-  } catch {}
+    const p = sentinelPath(sessionId);
+    const tmp = p + '.tmp';
+    writeFileSync(tmp, JSON.stringify(sentinel, null, 2));
+    // renameSync is atomic on POSIX + Windows (same filesystem). If the
+    // rename fails mid-operation, either the old file remains (reader gets
+    // stale but valid JSON) or the new file is in place — never both nor
+    // neither.
+    renameSync(tmp, p);
+  } catch {
+    // Fallback: direct write. On catastrophic failure (disk full mid-write),
+    // this could truncate — but readers have try/catch JSON.parse guards,
+    // so worst case is a null sentinel on the next read and one
+    // classifier-floor routing decision. Acceptable degradation.
+    try { writeFileSync(sentinelPath(sessionId), JSON.stringify(sentinel, null, 2)); } catch {}
+  }
 }
 
 function markDispatched(sessionId, sentinel) {

@@ -34,4 +34,11 @@ for(const [pattern, reason] of warned){
 }
 
 process.exit(0);
-}catch(err){process.stderr.write('Safety hook error: '+err.message);process.exit(1);}
+} catch {
+  // v2.8.0: fail-open on parse error. Was `exit(1)` with stderr "Safety hook
+  // error: <msg>" which surfaced to user on every malformed PreToolUse payload.
+  // Other PRISM hooks all exit 0 silently on bad input; this one was
+  // inconsistent. The only intentional error path is exit 2 above (dangerous
+  // pattern matched).
+  process.exit(0);
+}

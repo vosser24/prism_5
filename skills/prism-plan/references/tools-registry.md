@@ -143,7 +143,8 @@ Agent-factory runs weekly (when invoked):
 - 3+ consecutive declines
 - User came back within 7 days with same need after installing
 - Flagged by /prism-audit tool-health check
-- Manual /prism-registry remove
+- Manual edit of this file (no dedicated registry command exists — edit
+  the markdown directly and commit the change)
 
 ---
 

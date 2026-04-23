@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.7.5",
+  "version": "2.8.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -275,11 +275,13 @@
     },
     {
       "src": "tools/prism-monitor/prism-monitor.py",
-      "dest": "~/.claude/tools/prism-monitor/prism-monitor.py"
+      "dest": "~/.claude/tools/prism-monitor/prism-monitor.py",
+      "chmod": "+x"
     },
     {
       "src": "tools/prism-monitor/refresh-statusline-cache.sh",
-      "dest": "~/.claude/tools/prism-monitor/refresh-statusline-cache.sh"
+      "dest": "~/.claude/tools/prism-monitor/refresh-statusline-cache.sh",
+      "chmod": "+x"
     },
     {
       "src": "tools/prism-monitor/views.py",
@@ -304,7 +306,8 @@
     },
     {
       "src": "tools/subagent-summary.py",
-      "dest": "~/.claude/tools/subagent-summary.py"
+      "dest": "~/.claude/tools/subagent-summary.py",
+      "chmod": "+x"
     }
   ],
   "changelog": "CHANGELOG.md",
