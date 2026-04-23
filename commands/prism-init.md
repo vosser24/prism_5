@@ -188,13 +188,49 @@ override. Run these manually outside Claude Code if genuinely required.
 - `/prism-retire @name` — archive unused specialists.
 - `/prism-update` — self-update (model-matrix, registries) every ~15 days.
 
+### 10. CLAUDE.md sizing discipline
+
+This file is a **routing table, not a knowledge base**. Claude Code loads
+every CLAUDE.md along the path from cwd up on every turn, so growth here
+is paid on every prompt forever. Detail lives elsewhere.
+
+- **Target: ≤200 lines for this root CLAUDE.md.** Over that, move
+  detail OUT to one of the destinations below.
+- **What stays here:** project identity, stack summary, operating
+  rules, build/test/lint commands, 1–2 line routing pointers like
+  *"for DB schema, read `.claude/references/db-index.md`"*.
+- **What moves OUT:**
+  - Indexed scans (DB schema, codebase map, API specs) →
+    `.claude/references/<domain>-{index,full}.md` via `/prism-discover`.
+  - Subdomain-specific conventions (backend vs frontend stack rules) →
+    nested `CLAUDE.md` in that subdir (auto-loaded only when working
+    there — not always-on). `/prism-discover` detects candidates.
+  - Accumulated code-level lessons → `tasks/lessons-tactical.md`
+    (append-only).
+  - Architecture decisions + trade-off rationale → `tasks/lessons-strategic.md`.
+  - Per-session recap → written by the Stop hook to
+    `~/.claude/.prism-sessions/<session_id>.md`.
+  - Personal overrides that must not be committed → `CLAUDE.local.md`
+    (gitignored).
+- **Nested CLAUDE.md files** (only when subdomains diverge):
+  - Each stays ≤100 lines.
+  - Covers ONLY what differs from root — never repeats project-wide
+    rules (those cascade from root automatically).
+  - `/prism-discover` proposes nested files when it detects distinct
+    tech-stack subdomains; user approves per-subdomain.
+  - Scaffolded subdomain map lives at `.claude/references/subdomain-map.md`.
+- **Health check:** `/prism-discover --check-claude-chain` walks the
+  repo and warns on size or duplication violations.
+
 ## Build / Test / Lint
 
-(fill in per stack — `npm run dev`, `pytest`, `ruff`, etc.)
+(fill in per stack — `npm run dev`, `pytest`, `ruff`, etc. Keep to the
+exact shell commands PRISM subagents should run — nothing else.)
 
 ## Conventions
 
-(fill in — naming, testing strategy, file layout)
+(Project-wide conventions that apply everywhere. Subdomain-specific
+ones go in nested `CLAUDE.md` files if needed.)
 ```
 
 ---

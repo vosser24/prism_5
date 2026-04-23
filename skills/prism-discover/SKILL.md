@@ -103,3 +103,108 @@ Produce TWO files per resource:
 - Indexes older than 7 days: suggest refresh
 - After database migration: auto-refresh schema index
 - Agent hits error on missing table/column: trigger re-scan
+
+## Step 4: Subdomain detection + nested CLAUDE.md proposal (v2.6.0)
+
+After writing the index and full files, do ONE pass to detect whether
+this project has distinct subdomains that would benefit from their own
+scoped `CLAUDE.md`. This is opt-in per subdomain — you propose, user
+approves.
+
+### Detection signals (a subdomain exists when ≥2 of these hold in a subdir)
+
+- Distinct stack manifest: a nested `package.json`, `pyproject.toml`,
+  `requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`,
+  or `Dockerfile` at depth ≥1 that declares a DIFFERENT primary language
+  or framework from the repo root.
+- Distinct test runner: subdir has its own `pytest.ini`, `jest.config.*`,
+  `vitest.config.*`, `playwright.config.*`, `.rspec`, etc. different from
+  root's test runner.
+- Distinct build/lint config: `.eslintrc`, `ruff.toml`, `rustfmt.toml`,
+  `tsconfig.json` with different compilerOptions than root.
+- Distinct service boundary: folder named `src/backend`, `src/frontend`,
+  `services/<name>`, `apps/<name>`, `packages/<name>` in a workspaces-style
+  repo.
+- Distinct conventions in existing code: majority of files in the subdir
+  use a language/framework different from root.
+
+### Propose, don't impose
+
+For each detected subdomain, ask the user ONCE (batched, not one-by-one):
+
+```
+Detected N potential subdomain(s) that may benefit from scoped CLAUDE.md files:
+
+  1. src/backend/       (Python 3.11, FastAPI, pytest)   → recommend nested CLAUDE.md
+  2. src/frontend/      (TypeScript, Next.js 15, vitest) → recommend nested CLAUDE.md
+  3. packages/shared/   (TypeScript, no tests)           → probably not needed — too thin
+
+Nested CLAUDE.md files are auto-loaded by Claude Code only when working in
+their subdirectory — they reduce per-session context vs one monolithic
+root CLAUDE.md. Each stays ≤100 lines, covers only subdomain-specific
+rules (not project-wide ones).
+
+Options per detected subdomain:
+  [Y] Scaffold nested CLAUDE.md     — stack-specific conventions + test/lint commands
+  [R] Write to .claude/references/  — keep detail out of CLAUDE.md chain entirely
+  [N] Skip                          — root CLAUDE.md already suffices
+  [all-Y] / [all-R] / [all-N]       — apply same choice to all detected
+
+How would you like to proceed?
+```
+
+### Nested CLAUDE.md template (when user says Y)
+
+Keep it tight (target: 60-100 lines). Structure:
+
+```markdown
+# <Subdomain Name> (<path>)
+
+## Stack
+- Language: <detected>
+- Framework: <detected>
+- Test runner: <detected>
+- Linter: <detected>
+
+## Build / Test / Lint
+(exact commands for THIS subdomain — different from root)
+
+## Conventions
+(only rules that differ from project root — do NOT repeat root rules)
+
+## Directory layout
+(brief map of this subdomain's internal structure)
+
+## Cross-subdomain boundaries
+- What this subdomain CONSUMES from other parts of the project
+- What it EXPOSES to other parts
+- Contracts / type-sharing mechanism (shared package, OpenAPI, etc.)
+```
+
+### Non-goals for nested CLAUDE.md
+
+- Do NOT duplicate PRISM Operating Rules from root (they cascade anyway).
+- Do NOT duplicate project-wide conventions, coding standards, or stack
+  rules shared across subdomains — those stay at root.
+- Do NOT scaffold for micro-subdomains (<10 files, no distinct tooling).
+- Do NOT create CLAUDE.md in `node_modules/`, `dist/`, `build/`,
+  `.next/`, `__pycache__/`, or any gitignored path.
+
+### Record the proposal
+
+Write the proposal + outcome (Y/R/N per subdomain) to
+`.claude/references/subdomain-map.md` so re-running `/prism-discover`
+doesn't re-propose subdomains the user already declined.
+
+## State of the nested-CLAUDE.md chain (health check)
+
+`/prism-discover --check-claude-chain` walks the repo, reports every
+CLAUDE.md file found, their token size, and any violations of the
+lean-template rules:
+
+- Root CLAUDE.md > 200 lines → warn: "detail should move to references/"
+- Nested CLAUDE.md > 100 lines → warn: "split or move detail out"
+- Content duplicated parent↔child → warn: "child repeats root rules"
+- CLAUDE.md in excluded paths (node_modules, dist, etc.) → warn: "should not exist"
+
+Report is non-blocking — user decides whether to trim.

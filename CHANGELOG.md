@@ -4,6 +4,78 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-04-23
+
+CLAUDE.md sizing discipline and nested-file scaffolding. Closes the
+last context-bloat vector after the 2.4.0/2.5.0 install rescope: the
+root `CLAUDE.md` now has an explicit ≤200-line budget, and
+`/prism-discover` proposes subdomain-scoped `CLAUDE.md` files that
+Claude Code auto-loads only when working in the relevant subdir — so
+per-session token load shrinks instead of growing as the project gains
+subdomains.
+
+### Added
+
+- **`commands/prism-init.md` template rule 10: CLAUDE.md sizing
+  discipline.** Explicit ≤200-line budget for the root `CLAUDE.md`,
+  concrete destinations for growth (`.claude/references/` via
+  `/prism-discover`, `tasks/lessons-tactical.md`,
+  `tasks/lessons-strategic.md`, nested `CLAUDE.md` files,
+  `~/.claude/.prism-sessions/`), and explicit anti-patterns (no
+  always-on knowledge base, no duplicated rules across nested files).
+- **`skills/prism-discover/SKILL.md` Step 4 — subdomain detection +
+  nested `CLAUDE.md` scaffolding.** After writing index/full files,
+  `/prism-discover` detects distinct tech-stack subdomains (nested
+  manifests, distinct test runners, workspace packages, service
+  boundaries) and proposes nested `CLAUDE.md` scaffolds per subdomain.
+  User approves case-by-case with `[Y]` scaffold, `[R]` write to
+  references instead, or `[N]` skip. Per-subdomain outcomes recorded
+  to `.claude/references/subdomain-map.md` so re-runs don't
+  re-propose declined domains.
+- **Nested CLAUDE.md template.** Target 60–100 lines, subdomain-only
+  rules (never duplicate root), explicit non-goals (no PRISM rules
+  copy, no shared conventions, no files in `node_modules`/`dist`/
+  `build`/`.next`).
+- **`/prism-discover --check-claude-chain` health check.** Walks the
+  repo, reports every `CLAUDE.md` found, their token size, and
+  violations of the lean-template rules (root > 200 lines, nested >
+  100 lines, content duplicated parent↔child, files in excluded
+  paths). Non-blocking — reports only.
+
+### Why this matters
+
+Claude Code loads every `CLAUDE.md` along the cwd → root path on
+every turn of every session. A monolithic 7k-token root `CLAUDE.md`
+covering backend + frontend + tests loads its full cost on every
+prompt even when you're only working in one subdomain. Nested files
+loaded only along the active path cut per-session context by 40–70%
+on multi-domain projects without losing any semantic coverage.
+
+Worked example — project with root (1.5k) + backend (1k) + frontend
+(1k) + tests (0.8k):
+
+| Where you open Claude Code | Monolithic root | Nested |
+|---|---|---|
+| repo root | 4.3k | 1.5k |
+| `src/backend/` | 4.3k | 2.5k |
+| `src/frontend/` | 4.3k | 2.5k |
+| `tests/` | 4.3k | 2.3k |
+
+Nested files are strictly a speed win — never a slowdown — when the
+template rules (≤100 lines each, no duplication) are followed. The
+`--check-claude-chain` health check surfaces drift early.
+
+### Unchanged
+
+- Runtime semantics. This is a docs + `/prism-discover` behavior
+  upgrade; no hook or guard changes.
+- Subagent dispatch. `@master-orchestrator`'s PHASE 0a inventory
+  (v2.5.0) already considers the active CLAUDE.md chain via Claude
+  Code's default loading — nothing further needed there.
+- `/prism-init` still creates exactly ONE root CLAUDE.md. Nested
+  files are only ever scaffolded by `/prism-discover` with explicit
+  user approval — never at init time.
+
 ## [2.5.0] - 2026-04-23
 
 Closes the NOVEL-tier orchestrator-bypass bug, bumps the model matrix to
