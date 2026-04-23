@@ -1,12 +1,24 @@
 {
-  "prism_version": "2.1.24",
+  "prism_version": "2.5.0",
   "installed_date": "2026-04-20T10:10:21.359481",
-  "last_update_check": "2026-04-20T10:10:21.359481",
-  "next_scheduled_update": "2026-05-05T10:10:21.359481",
+  "last_update_check": "2026-04-23T00:00:00.000000",
+  "next_scheduled_update": "2026-05-08T00:00:00.000000",
   "update_history": [
     {
       "date": "2026-04-20T10:10:21.359481",
       "action": "Installed PRISM v2.1.24"
+    },
+    {
+      "date": "2026-04-22T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.3.0 (cross-platform node discovery, Windows wrapper)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.4.0 (ATLAS→PRISM rename completed, Tier 1 trimmed to superpowers + ui-ux-pro-max)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.5.0 (summon_panel enforcement, model-matrix Opus 4.7 bump, /prism-deps, PHASE 0a inventory, legacy purge)"
     }
   ]
 }

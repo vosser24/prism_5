@@ -98,56 +98,150 @@ hook firing. `prism.env` makes it a fast no-lookup path.
 
 ---
 
-## 2.6. Migrate legacy ATLAS-named assets (PRISM 2.4.0+)
+## 2.6. Migrate + purge legacy ATLAS-named assets (PRISM 2.5.0+)
 
-PRISM 2.4.0 completed the ATLAS → PRISM rename. Installs from before 2.4.0
-may have `atlas-plan/`, `atlas-discover/`, or `atlas-updater.md` still on
-disk under `~/.claude/`. These don't break the new install (the new code
-reads `prism-*` paths only), but the old files become orphans and — more
-importantly — the roster history and agent effectiveness data sits in the
-old location.
+PRISM 2.4.0 completed the ATLAS → PRISM rename; 2.5.0 turns migration
+into a clean purge. Installs from before 2.4.0 may have `atlas-plan/`,
+`atlas-discover/`, `atlas-updater.md`, or raw `atlas-*` hook entries on
+disk under `~/.claude/`. These don't break the new install (the new
+code reads `prism-*` paths only), but they become dead weight that
+shadows the new layout and bloats file listings.
 
-Migration is idempotent and non-destructive: old files are archived, not
-deleted.
+Two-step process: (a) safe migration of user-valuable state; (b) purge
+of everything atlas-named once migration succeeds. A pre-step backup to
+`~/.claude/backups/atlas-purge-<ts>/` guarantees rollback.
 
 ```bash
 TS=$(date +%Y%m%d-%H%M%S)
-MIG=~/.claude/backups/atlas-rename-$TS
-mkdir -p "$MIG"
+BKP=~/.claude/backups/atlas-purge-$TS
+mkdir -p "$BKP"
+PURGED=0
 
-# 2.6a — Migrate skill reference state (roster, update log) if present.
-if [ -d ~/.claude/skills/atlas-plan ]; then
+# 2.6a — Migrate skill reference state BEFORE purging.
+#        Copy (not move) each file so the purge step has a clean source
+#        to delete and we never lose data mid-migration.
+if [ -d ~/.claude/skills/atlas-plan/references ]; then
   mkdir -p ~/.claude/skills/prism-plan/references
-  for f in roster.json update-log.json skill-effectiveness.md audit-log.json; do
+  for f in roster.json update-log.json skill-effectiveness.md audit-log.json prompt-effectiveness.md benchmarks.md adversarial-review.md prompt-templates.md; do
     src=~/.claude/skills/atlas-plan/references/$f
     dst=~/.claude/skills/prism-plan/references/$f
+    # Only copy if destination doesn't exist or is older (user's old state wins
+    # when new code hasn't touched the target yet).
     if [ -f "$src" ] && [ ! -f "$dst" ]; then
       cp -p "$src" "$dst"
     fi
   done
-  mv ~/.claude/skills/atlas-plan "$MIG/"
 fi
 
-# 2.6b — Archive legacy atlas-* skill/agent files.
-for d in ~/.claude/skills/atlas-discover ~/.claude/skills/atlas-*; do
-  [ -d "$d" ] && mv "$d" "$MIG/"
-done
-for f in ~/.claude/agents/atlas-*.md; do
-  [ -f "$f" ] && mv "$f" "$MIG/"
+# 2.6b — Back up EVERY atlas-* artifact to $BKP before touching anything.
+for p in \
+  ~/.claude/skills/atlas-plan \
+  ~/.claude/skills/atlas-discover \
+  ~/.claude/skills/atlas-updater \
+  ~/.claude/skills/atlas-* \
+  ~/.claude/agents/atlas-*.md \
+  ~/.claude/commands/atlas-*.md \
+  ~/.claude/hooks/atlas-*.mjs \
+  ~/.claude/hooks/lib/atlas-exec.sh \
+  ~/.claude/hooks/lib/atlas-*.mjs \
+  ~/.claude/tools/atlas-* \
+  ~/.claude/plans/atlas-*.md \
+  ~/.claude/.atlas-* ; do
+  # glob-expand; skip if nothing matches
+  for f in $p; do
+    if [ -e "$f" ]; then
+      cp -pr "$f" "$BKP/" 2>/dev/null || true
+    fi
+  done
 done
 
-# 2.6c — Prune any atlas-* hook entries from settings.json (see §4b for the
-# settings.json edit pattern — extend it with /atlas-.*\.mjs/ matches).
+# 2.6c — PURGE the atlas-* artifacts. The backup in $BKP is the safety net.
+for p in \
+  ~/.claude/skills/atlas-plan \
+  ~/.claude/skills/atlas-discover \
+  ~/.claude/skills/atlas-updater \
+  ~/.claude/skills/atlas-* ; do
+  for f in $p; do
+    if [ -d "$f" ]; then rm -rf "$f"; PURGED=$((PURGED+1)); fi
+  done
+done
+for p in \
+  ~/.claude/agents/atlas-*.md \
+  ~/.claude/commands/atlas-*.md \
+  ~/.claude/hooks/atlas-*.mjs \
+  ~/.claude/hooks/lib/atlas-exec.sh \
+  ~/.claude/hooks/lib/atlas-*.mjs ; do
+  for f in $p; do
+    if [ -f "$f" ]; then rm -f "$f"; PURGED=$((PURGED+1)); fi
+  done
+done
+for p in \
+  ~/.claude/tools/atlas-* \
+  ~/.claude/plans/atlas-*.md ; do
+  for f in $p; do
+    if [ -e "$f" ]; then rm -rf "$f"; PURGED=$((PURGED+1)); fi
+  done
+done
+# Dot-file state (legacy turn counters, tier caches under old name)
+for f in ~/.claude/.atlas-*; do
+  [ -e "$f" ] && rm -f "$f" && PURGED=$((PURGED+1))
+done
+
+# 2.6d — Prune settings.json hook entries that reference the legacy names.
+#        See §4b for the settings.json edit pattern — it already matches:
+#          node ~/.claude/hooks/atlas-*.mjs
+#          node %USERPROFILE%\.claude\hooks\atlas-*.mjs
+#          bash ~/.claude/hooks/lib/atlas-exec.sh *
+#        so no extra work here — §4b handles it.
+
+echo "Legacy purge: $PURGED artifact(s) removed, backup at $BKP"
 ```
 
-If the migration moved anything, tell the user:
+### What gets purged
 
-> Moved N legacy ATLAS-named file(s) to `~/.claude/backups/atlas-rename-<ts>/`.
-> Your specialist agents, session history, and settings are preserved.
-> Roster history migrated to `skills/prism-plan/references/roster.json`.
+| Path pattern | Action |
+|---|---|
+| `~/.claude/skills/atlas-plan/` | state migrated to `prism-plan/`, then directory purged |
+| `~/.claude/skills/atlas-*/` (anything else) | purged |
+| `~/.claude/agents/atlas-*.md` | purged (system agents are replaced by new `prism-*` in §3) |
+| `~/.claude/commands/atlas-*.md` | purged (replaced by `prism-*` in §3) |
+| `~/.claude/hooks/atlas-*.mjs` | purged |
+| `~/.claude/hooks/lib/atlas-exec.sh`, `atlas-*.mjs` | purged |
+| `~/.claude/tools/atlas-*` | purged |
+| `~/.claude/plans/atlas-*.md` | purged |
+| `~/.claude/.atlas-*` state dots | purged |
 
-If `~/.claude/skills/atlas-plan/` didn't exist, skip silently — nothing to
-migrate.
+### What NEVER gets touched (owned by the user)
+
+| Path | Why |
+|---|---|
+| `~/.claude/agents/<any non-atlas-named agent>/` | user's specialists (greek-ecommerce-seo, demand-forecasting, etc.) |
+| `~/.claude/.prism-sessions/*.md` | memory — session summaries |
+| `~/.claude/.prism-routing.jsonl` | event ledger |
+| `~/.claude/.prism-*` state files (non-atlas) | hook state, caches |
+| `~/.claude/settings.json` MCP servers, permissions, statusLine | user config (§4 merges, never overwrites) |
+| `~/.claude/CLAUDE.md` global | user's global instructions |
+| `~/.claude/backups/` and `~/.claude/agents-archive/` | prior backups |
+
+### Report to the user after §2.6 runs
+
+If `$PURGED > 0`:
+
+> Purged N legacy ATLAS artifact(s). Backup at `~/.claude/backups/atlas-purge-<ts>/`.
+> User-created specialists, session history, MCP servers, and personal
+> CLAUDE.md are untouched. Roster history migrated to the new path.
+
+If `$PURGED == 0`, skip silently — nothing to clean up.
+
+### Rollback
+
+If the user reports that the purge removed something they needed:
+
+```bash
+# Restore everything from the backup (most recent purge)
+LATEST=$(ls -1td ~/.claude/backups/atlas-purge-* | head -1)
+cp -pr "$LATEST"/* ~/.claude/
+```
 
 ---
 

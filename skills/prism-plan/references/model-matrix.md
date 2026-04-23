@@ -1,23 +1,32 @@
 # Model Capability Matrix
-# Update via /prism-update or @prism-updater
+# Last updated: 2026-04-23 (PRISM v2.5.0)
+# Update via /prism-update or @prism-updater (15-day cadence)
 
-## Opus 4.6 (claude-opus-4-6)
-- Cost: $5/MTok input, $25/MTok output | Context: 1M tokens
+## Opus 4.7 (claude-opus-4-7)
+- Cost: $15/MTok input, $75/MTok output (cache: $18.75 write / $1.50 read)
+- Context: 1M tokens (with `[1m]` suffix); 200K tokens otherwise
 - Use for: architecture, system design, security review, complex debugging,
-  contract/legal, strategy, financial modeling, new agent creation, orchestration
+  contract/legal, strategy, financial modeling, new agent creation,
+  master-orchestrator dispatch, adversarial review synthesis, panel chairing
 - Never for: boilerplate, scaffolding, simple edits, file discovery
+- Note: supersedes Opus 4.6. The PRISM classifier (`hooks/lib/prism-opus-classifier.mjs`)
+  uses `claude-opus-4-7` as DEFAULT_MODEL. Model IDs 4.6 and earlier still
+  work if explicitly requested.
 
 ## Sonnet 4.6 (claude-sonnet-4-6)
-- Cost: $3/MTok input, $15/MTok output | Context: 1M tokens
-- Use for: 80% of tasks — implementation, bug fixes, tests, code review,
-  docs, refactoring, data transformation, agent upgrades
-- Never for: architecture decisions, complex system design
+- Cost: $3/MTok input, $15/MTok output (cache: $3.75 write / $0.30 read)
+- Context: 1M tokens
+- Use for: ~80% of tasks — implementation, bug fixes, tests, code review,
+  docs, refactoring, data transformation, agent upgrades, classifier fallback
+- Never for: architecture decisions, complex system design, adversarial review
 
 ## Haiku 4.5 (claude-haiku-4-5-20251001)
-- Cost: $1/MTok input, $5/MTok output | Context: 200K tokens
+- Cost: $1/MTok input, $5/MTok output (cache: $1.25 write / $0.10 read)
+- Context: 200K tokens
 - Use for: exploration, file discovery, scaffolding, data extraction,
-  schema scanning, formatting, boilerplate, Pass 1 of two-pass pattern
-- Never for: nuanced reasoning, complex trade-offs, architecture
+  schema scanning, formatting, boilerplate, Pass 1 of two-pass pattern,
+  trivial edits (typo fix, rename, docstring)
+- Never for: nuanced reasoning, complex trade-offs, architecture, panel work
 
 ## Routing Table
 | Task | Model |

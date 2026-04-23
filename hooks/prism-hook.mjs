@@ -141,7 +141,7 @@ try {
     const design_reference = /\b(similar to|like) (notion|linear|stripe|apple|airbnb|figma|vercel|arc browser)\b/i;
     const design_visual = /\b(make (it|this) look (good|nice|professional|beautiful|modern|polished)|polish the (UI|design)|make it (look )?(prettier|sleek|stylish))\b/i;
     if ((design_strong.test(prompt) || design_styles.test(prompt) || design_reference.test(prompt) || design_visual.test(prompt)) && shouldSuggest('uiux_design')) {
-      messages.push("PRISM: Design task — ui-ux-pro-max is installed, invoke its design engine (161 industry rules → pattern + palette + typography + anti-patterns).");
+      messages.push("PRISM: Design task — if ui-ux-pro-max is installed (Tier 1 companion), invoke its design engine (161 industry rules → pattern + palette + typography + anti-patterns). Otherwise run /prism-recommend to consider installation, or dispatch a Sonnet subagent with explicit design-system criteria.");
       recordSuggestion('uiux_design'); matchedInvocation = true;
     }
 

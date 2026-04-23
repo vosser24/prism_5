@@ -4,6 +4,105 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-04-23
+
+Closes the NOVEL-tier orchestrator-bypass bug, bumps the model matrix to
+Opus 4.7, ships `/prism-deps`, adds a skill+notebook inventory phase to
+`@master-orchestrator`, and turns the legacy ATLAS migration from
+archive-only into full purge with backup.
+
+### Changed (breaking behavior)
+
+- **NOVEL-tier parent dispatch now requires `@master-orchestrator`.**
+  `hooks/prism-parent-dispatch-guard.mjs` previously let parent Opus do
+  anything directly when the classifier returned `opus` tier. Now, when
+  the classifier ALSO sets `summon_panel=true` (novel architectural
+  request), direct Write/Edit/Bash in parent context is denied until
+  the parent calls `Agent({subagent_type:'master-orchestrator', ...})`.
+  Haiku dispatches for file I/O don't satisfy the gate — only an
+  explicit master-orchestrator dispatch flips
+  `sentinel.orchestrator_dispatched=true` and unlocks work tools.
+  Fixes the failure mode where Opus was writing multi-phase design
+  migration plans solo instead of assembling an expert panel.
+  Override: `!opus-force:` prefix skips the panel requirement;
+  `PRISM_DISPATCH_GUARD=off` disables the guard entirely.
+- **Tier-router notice on panel turns is a hard directive.** When
+  `summon_panel=true`, the `additionalContext` emitted by
+  `hooks/prism-prompt-tier-router.mjs` now reads "PANEL-SUMMONING TURN.
+  You MUST spawn @master-orchestrator as your next action…" with the
+  exact `Agent()` call form and enumerated responsibilities.
+- **INSTALL.md §2.6 upgraded from archive to purge.** Legacy
+  `atlas-*` skill/agent/command/hook/tool/plan files are now deleted
+  from `~/.claude/` after a full backup to
+  `~/.claude/backups/atlas-purge-<ts>/`. User-created specialists,
+  session summaries, MCP servers, and personal CLAUDE.md are never
+  touched. Rollback is one `cp -pr` from the backup. Runs before §3.
+
+### Added
+
+- **Model matrix bumped to Opus 4.7 / Sonnet 4.6 / Haiku 4.5.**
+  `skills/prism-plan/references/model-matrix.md` and
+  `skills/prism-plan/references/update-log.json`. The classifier
+  (`hooks/lib/prism-opus-classifier.mjs`) has been running Opus 4.7
+  since the code-level bump; the docs now match. Pricing, context, and
+  cache costs enumerated per model.
+- **`/prism-deps` command** (`commands/prism-deps.md`) — autonomous
+  dependency auditor. Reads
+  `skills/prism-plan/references/dependency-manifest.md` as source of
+  truth, OS-detects, tier-gates by project relevance
+  (notebooklm-py / ffmpeg / kokoro / Remotion / playwright / gh / jq),
+  proposes OS-specific install commands interactively. Writes results
+  to `.claude/deps-scan.json` for `/prism-health` cross-reference.
+  Closes the dangling `/prism-deps` reference in `/prism-init` §6 and
+  `/prism-health` §4.
+- **`dependency-manifest.md`**
+  (`skills/prism-plan/references/dependency-manifest.md`) — 4-tier
+  manifest (A: agent research, B: video production, C: app-expert,
+  D: dev helpers). Each entry has capability, check command, OS-specific
+  install command, and fallback-if-absent behavior.
+- **PHASE 0a — Skill + Notebook Inventory** in
+  `agents/master-orchestrator.md`. Before stakes detection or team
+  assembly, the orchestrator now enumerates: installed skills, Tier 1/2
+  external tools with status, rostered specialists with staleness
+  flags, per-agent NotebookLM notebooks (`notebooklm list` +
+  cross-ref with `roster.json`'s `notebooklm_notebook_id` fields),
+  connected MCP servers. Emits a compact inventory summary and a gap
+  hypothesis for the request before anything else. Answers "do I have
+  a design skill?" with evidence, not a guess.
+- **Conditional design-intent nudge.** `hooks/prism-hook.mjs` line 144
+  UI-UX-PRO-MAX message changed from assertive "is installed, invoke"
+  to conditional "if installed, invoke; otherwise run /prism-recommend
+  or dispatch a Sonnet subagent with explicit design-system criteria."
+  Matches the 2.4.0 treatment of ECC and browser-use nudges.
+
+### Fixed
+
+- **Dangling `/prism-deps` references** in `/prism-init` §6 and
+  `/prism-health` §4 now resolve to a real command.
+- **Missing `dependency-manifest.md` reference** expected by the User
+  Guide v1.1 Ch.8 and by `/prism-deps` is now shipped.
+
+### Notes
+
+- The `summon_panel` enforcement only fires on `tier=opus AND
+  summon_panel=true`. Opus-tier requests that the classifier judges as
+  *not* panel-worthy (single-expert review, direct architecture
+  question, one-pass refactor reasoning) still allow direct parent
+  work. This preserves the "don't force subagent dispatch when parent
+  Opus IS the right model" behavior while fixing the "panel never got
+  assembled" bug.
+- `/prism-deps` is opt-in per session — not auto-run by `/prism-init`.
+  Users can trigger at any time with `/prism-deps` or `/prism-deps --check`.
+- The PHASE 0a inventory is synthesized from commands the user's
+  system already runs (`notebooklm list`, `/plugin list`, reading
+  `roster.json`, `settings.json` mcpServers). No new subprocess
+  overhead per turn — it only runs when `@master-orchestrator` is
+  spawned, which is already gated to NOVEL-tier panel turns.
+- After upgrade, re-run the install flow (`INSTALL.md`) to pick up the
+  purge step. If you prefer to keep the archive-only behavior, skip
+  §2.6 manually — the runtime works either way since the new code
+  only reads `prism-*` paths.
+
 ## [2.4.0] - 2026-04-23
 
 Completion of the ATLAS → PRISM rename that began in 2.0, plus a rescoped

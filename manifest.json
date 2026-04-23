@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -27,6 +27,10 @@
     {
       "src": "commands/prism-audit.md",
       "dest": "~/.claude/commands/prism-audit.md"
+    },
+    {
+      "src": "commands/prism-deps.md",
+      "dest": "~/.claude/commands/prism-deps.md"
     },
     {
       "src": "commands/prism-health.md",
@@ -176,6 +180,10 @@
     {
       "src": "skills/prism-plan/references/roster.json",
       "dest": "~/.claude/skills/prism-plan/references/roster.json"
+    },
+    {
+      "src": "skills/prism-plan/references/dependency-manifest.md",
+      "dest": "~/.claude/skills/prism-plan/references/dependency-manifest.md"
     },
     {
       "src": "skills/prism-plan/references/skill-effectiveness.md",

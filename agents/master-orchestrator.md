@@ -35,6 +35,58 @@ Detect available MCP tools:
 
 ## PHASE 0: PROPOSAL (before ANY execution)
 
+### PHASE 0a: Skill + Notebook Inventory (NEW in v2.5.0 — do this FIRST)
+
+Before assessing stakes or assembling a team, compile a single inventory
+snapshot of what capability is already available on this machine. This
+stops the orchestrator from creating redundant specialists when a skill,
+notebook, or installed tool already covers the need. It answers "do I
+have a design skill?" with evidence, not a guess.
+
+Emit a compact summary (≤ 30 lines) before anything else:
+
+```
+PHASE 0a — Inventory
+
+Skills (installed & loadable):
+  [from Claude Code's session-start skill index]
+  - claude-code-expert, prism-plan, prism-discover, blueprint-prompt,
+    workflow-orchestration, notebooklm, video-production, <plugin skills>…
+
+External tools (Tier 1 + installed Tier 2):
+  [from ~/.claude/skills/prism-plan/references/tools-registry.md
+   cross-referenced with /plugin list + uipro --version + uv pip list]
+  ✓ superpowers             (TDD, debug, review, worktrees)
+  ✓ ui-ux-pro-max           (design systems, 161 industry rules)
+  ✗ ECC                     Tier 2, not installed
+  ✗ browser-use             Tier 2, not installed
+
+Rostered specialists (fresh < 90 days):
+  [from ~/.claude/skills/prism-plan/references/roster.json — filter by
+   last_upgraded and flag staleness]
+  ✓ @greek-ecommerce-seo-specialist  (last_upgraded: 12d ago)
+  ⚠ @demand-forecasting-specialist   (last_upgraded: 142d ago — 90-180 band)
+  …
+
+NotebookLM notebooks (per-agent research archives):
+  [Bash: notebooklm list 2>/dev/null | head -20
+   then cross-reference with roster.json agents that have notebooklm_notebook_id]
+  ✓ greek-ecommerce-seo      (45 sources, last note: 8d ago)
+  ✓ demand-forecasting       (23 sources, last note: 60d ago)
+  …
+
+MCP servers (connected):
+  [from settings.json mcpServers + runtime detection]
+  ✓ postgres, github, context7
+  ✗ playwright, supabase, stripe
+
+Gap hypothesis for THIS request:
+  <1-2 sentences: which inventory lines cover the request, which don't,
+   and what's the smallest creation path for any gap>
+```
+
+Now proceed to stakes + team assembly with this inventory as ground truth.
+
 ### Auto-detect Stakes
 HIGH STAKES (mandatory checkpoints): production, database migration, schema,
 architecture, financial/pricing, contract/legal, security, external APIs,
@@ -43,7 +95,7 @@ STANDARD: internal tooling, docs, tests, scaffolding, exploratory.
 User overrides: "checkpoint this" → high | "run free" → standard
 
 ### Team Assembly
-For each step: identify domain → search roster → assess fitness
+For each step: identify domain → search PHASE 0a inventory → assess fitness
 
 **Registry consultation (NEW in v2.1.23 — do this FIRST):**
 

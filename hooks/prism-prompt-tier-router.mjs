@@ -62,10 +62,14 @@ function gitSnapshot(cwd) {
   return out;
 }
 
-function formatAdvice(tier, rationale, mode) {
+function formatAdvice(tier, rationale, mode, summonPanel) {
   // New format — intentionally simpler than v2.1.3 so LLMs don't need to
   // parse h=/s=/o= tokens. The old score fields are preserved in the
   // sentinel file for debugging but not echoed to the model context.
+  //
+  // v2.5.0: when summon_panel=true on opus tier, the advice becomes a hard
+  // directive to spawn @master-orchestrator. Parent-dispatch-guard enforces
+  // this by denying work tools until orchestrator_dispatched=true.
   let advice = `PRISM TIER ROUTER: ${tier}. ${rationale || '(no rationale)'}`;
   if (tier === 'haiku') {
     advice += `\nDispatch via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) instead of running tools directly in parent Opus.`;
@@ -73,8 +77,16 @@ function formatAdvice(tier, rationale, mode) {
   } else if (tier === 'sonnet') {
     advice += `\nDispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
     if (mode === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
+  } else if (tier === 'opus' && summonPanel) {
+    advice += `\n\nPANEL-SUMMONING TURN. This is a novel architectural request. Spawn @master-orchestrator as your NEXT action — do NOT synthesize the plan yourself in parent context. The orchestrator will:`;
+    advice += `\n  1. Enumerate available skills, notebooks, and rostered specialists (PHASE 0a).`;
+    advice += `\n  2. Assemble a panel of 3–5 expert subagents with different biases.`;
+    advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
+    advice += `\n  4. Return a synthesized phased plan with explicit exclusions for you to relay.`;
+    advice += `\nUse: Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'})`;
+    if (mode === 'hard') advice += `\nParent Write/Edit/Bash DENIED until orchestrator is dispatched. Override: !opus-force: (single-model Opus) or PRISM_DISPATCH_GUARD=off.`;
   }
-  // opus-tier: no dispatch advice needed. Direct parent work allowed.
+  // opus-tier without summon_panel: no dispatch advice needed. Direct parent work allowed.
   return advice;
 }
 
@@ -123,7 +135,7 @@ async function main() {
       mode: MODE,
     });
 
-    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE);
+    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel);
     const out = {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
