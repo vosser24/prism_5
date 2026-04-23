@@ -240,7 +240,31 @@ function main() {
     process.exit(0);
   }
 
-  // User override prefix.
+  // User override via !opus-force: prefix.
+  //
+  // v2.7.4 fix: the prefix is detected on UserPromptSubmit (the tier-router
+  // sets sentinel.force_opus=true). PreToolUse payloads do NOT reliably
+  // carry user_prompt, so the old `input.user_prompt.includes('!opus-force:')`
+  // check was effectively dead — the prefix correctly gated tier routing but
+  // never reached this guard. v2.7.4 reads the sentinel as authoritative,
+  // matching what parent-dispatch-guard.mjs does (and has done since v2.5.0).
+  const sentinel = readSentinel(input.session_id);
+  if (sentinel && sentinel.force_opus === true) {
+    appendLog({
+      ts: new Date().toISOString(),
+      event: 'mutation_guard',
+      mode: MODE,
+      tool: toolName,
+      file: filePath,
+      blocked: false,
+      reason: 'opus-force-sentinel',
+      file_hash: sha256short(filePath),
+    });
+    process.exit(0);
+  }
+  // Legacy path: some Claude Code versions may still include user_prompt on
+  // PreToolUse. Keep this as defense-in-depth so the prefix works even in
+  // environments where the sentinel write somehow raced this hook.
   const userPrompt = input.user_prompt || input.prompt || '';
   if (String(userPrompt).includes('!opus-force:')) {
     appendLog({
@@ -250,7 +274,7 @@ function main() {
       tool: toolName,
       file: filePath,
       blocked: false,
-      reason: 'opus-force-override',
+      reason: 'opus-force-prompt',
       file_hash: sha256short(filePath),
     });
     process.exit(0);

@@ -1,5 +1,5 @@
 {
-  "prism_version": "2.7.3",
+  "prism_version": "2.7.4",
   "installed_date": "2026-04-20T10:10:21.359481",
   "last_update_check": "2026-04-23T00:00:00.000000",
   "next_scheduled_update": "2026-05-08T00:00:00.000000",
@@ -40,6 +40,10 @@
     {
       "date": "2026-04-23T00:00:00.000000",
       "action": "Upgraded to PRISM v2.7.3 (install-experience fixes based on v2.7.2 install friction: scripts/install-merge.mjs consolidates §4 merge logic with correct Windows escape handling; INSTALL.md §2.5 switches from printf to heredoc; §2.6 switches from rm -rf to rm -r; updated stale P5a.2 + V220.11 test assertions to match v2.7.0 advisor-PreToolUse + cacheKey-no-dirty behavior)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.4 (mutation-guard !opus-force: override fix — mutation-guard now reads sentinel.force_opus (set by tier-router on UserPromptSubmit) instead of relying on input.user_prompt which is not in PreToolUse payloads; dispatch-guard parity restored)"
     }
   ]
 }

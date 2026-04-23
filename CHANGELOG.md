@@ -4,6 +4,62 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.4] - 2026-04-23
+
+Hotfix: `!opus-force:` prefix now actually bypasses the mutation-guard.
+Discovered during a real Phase 2 design-migration session — prefix gated
+tier routing correctly but parent `Edit`/`Write`/`Bash` still got denied.
+
+### Fixed
+
+- **`prism-mutation-guard.mjs` now reads `sentinel.force_opus`** as
+  authoritative. The v2.2.1 → v2.7.3 implementations checked
+  `input.user_prompt` for the `!opus-force:` substring, but Claude Code
+  PreToolUse payloads do not reliably include `user_prompt` — that's a
+  `UserPromptSubmit`-scoped field. The guard was effectively blind to
+  the override despite emitting "Override: prefix the user prompt with
+  !opus-force:" in its deny message.
+
+  The tier-router (`hooks/prism-prompt-tier-router.mjs` + classifier)
+  correctly sets `sentinel.force_opus = true` when it sees the prefix
+  on `UserPromptSubmit`. `parent-dispatch-guard.mjs` has read that
+  sentinel since v2.5.0. `mutation-guard.mjs` now matches the pattern:
+  reads sentinel at the same phase as the bootstrap-command check,
+  passes through immediately when `force_opus === true`.
+
+  The legacy `input.user_prompt` path is retained as defense-in-depth
+  for any Claude Code version that does include `user_prompt` on
+  PreToolUse — it runs after the sentinel check, logs
+  `reason: 'opus-force-prompt'` vs `'opus-force-sentinel'` so the
+  source is observable in `.prism-routing.jsonl`.
+
+### Why this matters
+
+On a guards-on session (`PRISM_MUTATION_GUARD=hard`,
+`PRISM_DISPATCH_GUARD=hard`), users must either:
+- Turn off guards entirely (`=off` in settings.local.json), OR
+- Use `!opus-force:` prefix per prompt to bypass.
+
+v2.7.0–v2.7.3 users who picked the prefix approach discovered the
+prefix worked for the dispatch-guard (which stopped asking for
+`@master-orchestrator` dispatch) but the mutation-guard still denied
+their `Edit`/`Write`/`Bash` calls. The two guards were inconsistent.
+Now both honor `sentinel.force_opus` identically.
+
+### Notes
+
+- **Backward-compatible.** Existing sessions keep working. If a user
+  ran a turn without `!opus-force:`, sentinel.force_opus is false,
+  guard behaves exactly as v2.7.3 did.
+- **No runtime perf change.** One additional `readSentinel()` call per
+  PreToolUse, which was already happening in `isBootstrapTurn()`
+  anyway — now we just read the flag field alongside the rationale.
+- **No config change needed.** Existing `PRISM_MUTATION_GUARD=off` in
+  settings.local.json still works exactly the same.
+- **No INSTALL.md change.** Re-running `node scripts/install-merge.mjs`
+  is a no-op since the hook file content is the only thing that
+  changed — file-copy step 3 covers it.
+
 ## [2.7.3] - 2026-04-23
 
 Install-experience fixes from real-world v2.7.2 install friction. No
