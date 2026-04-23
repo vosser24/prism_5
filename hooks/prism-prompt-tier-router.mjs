@@ -70,13 +70,20 @@ function formatAdvice(tier, rationale, mode, summonPanel) {
   // v2.5.0: when summon_panel=true on opus tier, the advice becomes a hard
   // directive to spawn @master-orchestrator. Parent-dispatch-guard enforces
   // this by denying work tools until orchestrator_dispatched=true.
+  // v2.7.2: Windows BOM note appended to every dispatch advice — subagents
+  // should use Edit/Write (not Bash/PowerShell) to avoid the default
+  // UTF-8-with-BOM from Set-Content/Out-File/`>` redirect.
+  const isWin = process.platform === 'win32';
   let advice = `PRISM TIER ROUTER: ${tier}. ${rationale || '(no rationale)'}`;
+  let emittedDispatchAdvice = false;
   if (tier === 'haiku') {
     advice += `\nDispatch via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) instead of running tools directly in parent Opus.`;
     if (mode === 'hard') advice += ` Parent tools will be DENIED until you dispatch. Override: prefix user prompt with !opus-force:.`;
+    emittedDispatchAdvice = true;
   } else if (tier === 'sonnet') {
     advice += `\nDispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
     if (mode === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
+    emittedDispatchAdvice = true;
   } else if (tier === 'opus' && summonPanel) {
     advice += `\n\nPANEL-SUMMONING TURN. This is a novel architectural request. Spawn @master-orchestrator as your NEXT action — do NOT synthesize the plan yourself in parent context. The orchestrator will:`;
     advice += `\n  1. Enumerate available skills, notebooks, and rostered specialists (PHASE 0a).`;
@@ -85,6 +92,12 @@ function formatAdvice(tier, rationale, mode, summonPanel) {
     advice += `\n  4. Return a synthesized phased plan with explicit exclusions for you to relay.`;
     advice += `\nUse: Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'})`;
     if (mode === 'hard') advice += `\nParent Write/Edit/Bash DENIED until orchestrator is dispatched. Override: !opus-force: (single-model Opus) or PRISM_DISPATCH_GUARD=off.`;
+    emittedDispatchAdvice = true;
+  }
+  // v2.7.2 Windows note — only emit on turns where we're actually telling the
+  // model to dispatch (not on plain opus parent-work turns).
+  if (isWin && emittedDispatchAdvice) {
+    advice += `\n\nWINDOWS NOTE: inside subagent prompts, instruct them to use the Edit/Write/MultiEdit tools for file changes — NOT Bash/PowerShell. PowerShell's Set-Content, Out-File, and \`>\` redirection default to UTF-8 with BOM, which mangles files and breaks downstream tools. The Edit/Write tools produce clean UTF-8 (no BOM). If Bash is genuinely needed for a write, append \`-Encoding UTF8NoBOM\` to Set-Content/Out-File.`;
   }
   // opus-tier without summon_panel: no dispatch advice needed. Direct parent work allowed.
   return advice;

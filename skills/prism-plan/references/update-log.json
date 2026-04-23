@@ -1,5 +1,5 @@
 {
-  "prism_version": "2.7.1",
+  "prism_version": "2.7.2",
   "installed_date": "2026-04-20T10:10:21.359481",
   "last_update_check": "2026-04-23T00:00:00.000000",
   "next_scheduled_update": "2026-05-08T00:00:00.000000",
@@ -32,6 +32,10 @@
     {
       "date": "2026-04-23T00:00:00.000000",
       "action": "Upgraded to PRISM v2.7.1 (parallel-dispatch enforcement: prism-hook parallel-opportunity detector, master-orchestrator Task() phrasing replaced with parallel-Agent()-in-single-message, blueprint [pgroup=N] as execution contract)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.2 (Windows BOM trap closed: mutation-guard now watches Bash writes with 15+ file-write patterns, blocks parent-context PowerShell writes that would introduce UTF-8 BOM; tier-router appends Windows note to dispatch advice recommending Edit/Write tools over Bash/PowerShell)"
     }
   ]
 }

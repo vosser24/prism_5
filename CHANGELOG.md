@@ -4,6 +4,100 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.2] - 2026-04-23
+
+Windows BOM trap closed. Fixes the compensation-pattern failure surfaced
+during the migration: mutation-guard blocks parent-context `Edit/Write`,
+Claude routes writes through Bash/PowerShell, PowerShell defaults to
+UTF-8-with-BOM, files get corrupted. Prior sessions had to manually
+strip BOMs before commit or set `PRISM_MUTATION_GUARD=off`. Neither is
+a real fix. This release makes the guard aware of file-writing Bash
+and tells the model to use Edit/Write tools instead.
+
+### Added
+
+- **Bash file-write patterns in `hooks/prism-mutation-guard.mjs`.**
+  Matcher extended from `Edit|Write|MultiEdit` to `Edit|Write|MultiEdit|Bash`.
+  When Bash is called from parent context, the guard inspects the
+  command string against 15+ write-pattern regexes:
+    - PowerShell writers: `Set-Content`, `Add-Content`, `Out-File`,
+      `Export-Csv`, `Export-Clixml`, `Tee-Object -FilePath`,
+      `[System.IO.File]::WriteAllText`, `ConvertTo-Json | Set-Content`
+    - Shell redirect to file: `> foo.json`, `>> file.ts` with
+      extension whitelist to avoid matching `> /dev/null` or `>&2`
+    - `echo` / `printf` / `cat` redirects and heredocs
+    - In-place editors: `sed -i`, `awk > file`, `perl -i`
+    - Language one-liners: `python -c "open(...'w')"`, `node -e
+      "...writeFileSync..."`, `ruby -e "File.write..."`
+    - Downloaders with file output: `curl -o foo.json`, `wget -O foo.md`
+    - Mutation commands into project paths: `cp`/`mv` into
+      `src/`, `app/`, `lib/`, `.claude/`, etc.
+    - `git restore`/`checkout` on code files
+  Non-write Bash (`git status`, `ls`, `npm run`, etc.) passes cleanly.
+  Subagent callers (via `parent_tool_use_id`) always pass. Bootstrap
+  commands (`/prism-init`, `/prism-update`, `/prism-archive`) continue
+  to pass via the existing allowlist.
+- **BOM-safe acknowledgement.** When the Bash command includes
+  `-Encoding UTF8NoBOM`, `-Encoding ASCII`, or
+  `[System.Text.UTF8Encoding]::new($false)`, the guard's notice drops
+  the BOM warning (the user knows what they're doing). Still blocks
+  in hard mode on parent context — the mutation-guard is about
+  orchestrator pattern, not just encoding — but message is shorter.
+- **Windows BOM warning in deny/nudge messages.** When
+  `process.platform === 'win32'` AND Bash-write is detected AND
+  command is not BOM-safe, the guard's message enumerates the three
+  safe alternatives:
+    1. Prefer Edit/Write tools (no BOM).
+    2. Append `-Encoding UTF8NoBOM` to Set-Content/Out-File.
+    3. Use `[System.IO.File]::WriteAllText` with explicit
+       non-BOM UTF-8 encoder.
+- **Tier-router Windows note.** `hooks/prism-prompt-tier-router.mjs`
+  now appends a Windows-specific note to every dispatch advice
+  (haiku / sonnet / summon_panel turns): *"inside subagent prompts,
+  instruct them to use Edit/Write/MultiEdit for file changes — NOT
+  Bash/PowerShell. PowerShell's Set-Content, Out-File, and `>` redirect
+  default to UTF-8 with BOM..."*  Early warning before the model even
+  starts dispatching.
+
+### Changed
+
+- **`settings.fragment.json` mutation-guard matcher** updated to
+  `Edit|Write|MultiEdit|Bash`. Bash calls now pass through the
+  mutation-guard, which short-circuits to pass-through on
+  non-write Bash.
+
+### Fixed
+
+- **PowerShell `Set-Content`/`Out-File`/`>` redirect bypassing the
+  mutation-guard.** Previously parent Opus, blocked on `Edit`/`Write`,
+  would "compensate" using Bash/PowerShell — which went through only
+  the safety-gate (blocks `rm -rf` etc.) and the parent-dispatch-guard
+  (tier enforcement), not the mutation-guard. The resulting
+  UTF-8-with-BOM output corrupted JSON/YAML/TS files in subtle ways
+  (git diff shows `﻿` prefix, some parsers fail). 2.7.2 catches these
+  at the mutation-guard layer with the same orchestrator-pattern
+  enforcement that applies to Edit/Write.
+
+### Notes
+
+- **Backward compatible runtime.** Existing PRISM_MUTATION_GUARD
+  settings (`hard`/`soft`/`off`) apply to Bash the same way they
+  apply to Edit. `off` remains a clean escape hatch.
+- **Bootstrap-command allowlist preserved.** `/prism-init`,
+  `/prism-update`, `/prism-archive` can still write project files
+  via Bash (they legitimately need to — file creation during install
+  often uses `mkdir`, `cp`, `>` redirect).
+- **False-positive floor.** The write-pattern list is deliberately
+  non-exhaustive — designed to catch the 90%+ common writes without
+  flagging `git status`, `ls`, `node --version`, or test-running
+  commands. If you find a false positive, set
+  `PRISM_MUTATION_GUARD=soft` for the session (nudge only, no block)
+  or `=off` (silent).
+- **Migration unchanged.** No data migration. Re-running
+  `INSTALL.md` copies the updated hook + fragment; existing
+  `settings.json` gets re-merged via §4c (fragment's expanded
+  matcher replaces the old Edit|Write|MultiEdit matcher cleanly).
+
 ## [2.7.1] - 2026-04-23
 
 Parallel-dispatch enforcement. Three-file patch that closes the "PRISM
