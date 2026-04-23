@@ -4,6 +4,75 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.5] - 2026-04-23
+
+Second hotfix in the v2.7.4 cycle. Closes the final lockout path where
+an installed PRISM + guards-on + Claude Code build that doesn't
+propagate `parent_tool_use_id` to subagent tool calls → every
+Agent()-dispatched `Edit`/`Write`/`Bash` denied as "parent context".
+
+### Context — the real-world lockout
+
+v2.7.4 fixed `!opus-force:` via `sentinel.force_opus`, but a user on a
+Claude Code build that doesn't send `parent_tool_use_id` to subagent
+tool calls discovered a deeper problem: **every documented
+mutation-guard override was non-functional in that build**:
+
+- `!opus-force:` prefix: pre-v2.7.4 only checked `input.user_prompt`
+  (empty on PreToolUse in most builds). v2.7.4 added sentinel path.
+- Subagent dispatch: `input.parent_tool_use_id` wasn't populated, so
+  haiku-dispatched Edit/Write hit the same guard deny as parent calls.
+- `PRISM_MUTATION_GUARD=off` in settings.local.json env: works, but
+  the user couldn't edit the file — the mutation-guard was blocking
+  writes to the very file that would turn it off. Bootstrap deadlock.
+
+Only escape: manual edit of `.claude/settings.local.json` outside
+Claude Code (Notepad etc.). That's a terrible UX for a "hotfix guard".
+
+### Fixed
+
+- **`prism-mutation-guard.mjs` now checks all 3 subagent bypass paths**
+  the dispatch-guard has used since v2.2.1:
+    1. `input.parent_tool_use_id` present (original v2.2.1 check)
+    2. `CLAUDE_CODE_ENTRYPOINT` env var === `'subagent'`
+    3. `sentinel.dispatched === true` (parent has already dispatched an
+       Agent() this turn; subsequent tool calls — parent or subagent
+       that lost its parent_tool_use_id — all pass)
+  Parity restored with `prism-parent-dispatch-guard.mjs`. Both guards
+  now treat subagent calls identically.
+
+  Path 3 is the critical one for builds that drop `parent_tool_use_id`:
+  once parent Opus has made ANY Agent() dispatch on the turn, the
+  sentinel.dispatched flag flips (dispatch-guard does this), and
+  thereafter both guards allow any work-tool call regardless of
+  payload shape.
+
+### Logged reasons (for `.prism-routing.jsonl` observability)
+
+- `subagent-parent-tool-use-id-passthrough` — path 1 fired
+- `subagent-claude-code-entrypoint-passthrough` — path 2 fired
+- `subagent-sentinel-dispatched-passthrough` — path 3 fired
+
+Weekly rollup (v2.7.0+) can now report which path is most common per
+user. On builds with broken `parent_tool_use_id`, path 3 will dominate;
+that's a signal the Claude Code build has the propagation bug.
+
+### Notes
+
+- **Bootstrap deadlock remains for users still on pre-2.7.5.** If
+  `PRISM_MUTATION_GUARD=off` isn't already set in settings.local.json,
+  the only way to add it is to edit the file manually outside Claude
+  Code. Once done, `=off` turns the guard off system-wide for that
+  project, and the user can subsequently install v2.7.5 normally and
+  switch the guard back to `hard` (or remove the env override).
+- **No INSTALL.md change.** Re-running `node scripts/install-merge.mjs`
+  is a no-op; this is a hook-file-content update — §3 file-copy covers
+  it on any re-install.
+- **Backward-compatible.** Existing `PRISM_MUTATION_GUARD=off` overrides
+  continue to work. Existing `!opus-force:` prefix from v2.7.4 works.
+  All three paths are OR-combined with the existing checks — no
+  regression possible.
+
 ## [2.7.4] - 2026-04-23
 
 Hotfix: `!opus-force:` prefix now actually bypasses the mutation-guard.

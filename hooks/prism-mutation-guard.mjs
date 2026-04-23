@@ -224,9 +224,35 @@ function main() {
     process.exit(0);
   }
 
-  // Subagent detection.
-  const isSubagent = !!(input.parent_tool_use_id);
-  if (isSubagent) {
+  // Subagent detection — three bypass paths (parity with parent-dispatch-guard
+  // since v2.7.5). Any one of them means the caller is a subagent and the
+  // mutation tool call should pass.
+  //
+  //   1. input.parent_tool_use_id present — the original v2.2.1 check.
+  //   2. CLAUDE_CODE_ENTRYPOINT env var === 'subagent' — some Claude Code
+  //      runtimes set this instead of (or in addition to) parent_tool_use_id.
+  //   3. sentinel.dispatched === true — the parent already dispatched an
+  //      Agent() this turn, so subsequent tool calls (parent OR child whose
+  //      parent_tool_use_id was lost) all pass. This matches the v2.2.1
+  //      "dispatch-guard path 3" reasoning and covers Claude Code builds
+  //      where parent_tool_use_id isn't propagated to subagent tool calls.
+  //
+  // Observed in the wild (2.7.4 → 2.7.5 root cause): some Claude Code
+  // builds send Agent() calls whose subagent tool-use payloads have NEITHER
+  // parent_tool_use_id NOR CLAUDE_CODE_ENTRYPOINT. Without path 3, subagent
+  // Edit/Write/Bash get denied as if they were parent-context calls. The
+  // dispatch-guard has always had all three paths. The mutation-guard was
+  // stuck on only path 1 — this parity fix closes the gap.
+  const isSubagentById = !!(input.parent_tool_use_id);
+  const isSubagentByEnv = String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent';
+  // Read sentinel now — this is BEFORE the force_opus check below (which will
+  // re-read via the same helper, cheap because the sentinel file is small).
+  // `sentinelEarly` intentionally scoped local to avoid TDZ with the force_opus
+  // block's `sentinel` declaration later in main().
+  const sentinelEarly = readSentinel(input.session_id);
+  const isSubagentByDispatched = !!(sentinelEarly && sentinelEarly.dispatched === true);
+
+  if (isSubagentById || isSubagentByEnv || isSubagentByDispatched) {
     appendLog({
       ts: new Date().toISOString(),
       event: 'mutation_guard',
@@ -234,7 +260,11 @@ function main() {
       tool: toolName,
       file: filePath,
       blocked: false,
-      reason: 'subagent-caller-passthrough',
+      reason: isSubagentById
+        ? 'subagent-parent-tool-use-id-passthrough'
+        : (isSubagentByEnv
+            ? 'subagent-claude-code-entrypoint-passthrough'
+            : 'subagent-sentinel-dispatched-passthrough'),
       bash_write: isBash && bashClass?.isWrite ? true : undefined,
     });
     process.exit(0);
