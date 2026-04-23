@@ -165,9 +165,44 @@ Where an MCP tool covers a domain: substitute tool call for reasoning-only exper
 - `sonnet` — cross-file refactor, test writing from spec, doc lookup + reformulation, bug reproduction
 - `opus` — architecture decisions, trade-off synthesis, root-cause diagnosis, security review
 
-**Parallel dispatch (optional):** `[pgroup=X]` labels tasks that can run concurrently. Same group = dispatch in ONE assistant message with multiple `Agent()` tool uses. Missing/different group = sequential. A group is parallel-safe only if no two tasks write the same file AND no task depends on another's output.
+**Parallel dispatch (v2.7.1 — EXECUTION CONTRACT, not a hint):** `[pgroup=N]`
+labels tasks that can run concurrently. **Same `pgroup=N` on two or more
+steps is a BINDING contract at execution time** — those steps MUST be
+dispatched in ONE assistant message with N `Agent()` tool_use blocks,
+run concurrently. Dispatching them sequentially violates the plan.
 
-Why required: the PostToolUse TaskCreate hook (`~/.claude/hooks/prism-task-tier-advisor.mjs`) classifies each task and the weekly rollup checks whether the execution actually used the advised tier. Annotating upfront prevents silent Opus-tier drift on Haiku subtasks.
+Wall-clock savings: N parallel subagents finish in `max(each)`, not
+`sum(each)`. Plus each sequential `Agent()` pays a fresh prompt-cache
+prime (~2–4 s on Opus). Batching a 3-way parallel group cuts ~70% of
+wall-clock on a typical scan/implement/review fan-out.
+
+Rules for `pgroup` safety:
+  - No two tasks in the same group write the same file.
+  - No task in a group depends on another group member's output.
+  - If either rule breaks, the tasks belong in different groups
+    (sequential dependency) or must be merged into one task.
+  - Missing `pgroup` OR different `pgroup` values = sequential.
+
+Example — plan writes:
+
+```
+- [ ] [haiku] [pgroup=1] Scan src/auth/ for deprecated APIs
+- [ ] [haiku] [pgroup=1] Scan src/payments/ for deprecated APIs
+- [ ] [haiku] [pgroup=1] Scan src/notifications/ for deprecated APIs
+- [ ] [sonnet] Merge scan results and produce migration plan
+```
+
+Execution MUST emit ONE assistant message with three `Agent()` tool uses
+(all of pgroup=1, one per scan), then the merge step sequentially.
+NOT three separate messages with one `Agent()` each.
+
+Why enforced: the PreToolUse TaskCreate hook
+(`~/.claude/hooks/prism-task-tier-advisor.mjs`, v2.7.0+) reads the
+`[tier]` annotation as authoritative, and the weekly rollup's Classifier
+Calibration section (v2.7.0+) flags sequential-dispatch of same-pgroup
+tasks as `{event:'pgroup_violation'}`. Annotating upfront prevents silent
+Opus-tier drift on Haiku subtasks AND silent sequential-dispatch of
+parallel-safe groups.
 
 ONE PLAN RULE: Blueprint Execution Plan and Workflow todo.md are the same artifact.
 Blueprint writes it. Workflow tracks it. Never create two plans.

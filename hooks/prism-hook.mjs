@@ -190,6 +190,25 @@ try {
       recordSuggestion('delegate'); matchedInvocation = true;
     }
 
+    // ─── NEW v2.7.1: PARALLEL-OPPORTUNITY DETECTOR ───
+    // Detect obviously parallelizable patterns that aren't already caught by
+    // the explicit-delegation block above. Nudges toward batched Agent()
+    // dispatch in ONE assistant message (N parallel subagents, wall-clock =
+    // max(each), not sum(each)). 5-turn cooldown.
+    const parallel_enum     = /\b(these|each (of )?(the )?|all (of )?(the )?)\s*\d+\s+(files?|packages?|modules?|components?|tests?|endpoints?|repos?|PRs?|directories|services|functions?|classes|tables?|views?|queries|requests?)\b/i;
+    const parallel_multi    = /\b(run|scan|read|index|analyze|review|test|check|verify|process|audit|validate|benchmark|profile)\s+[^.?!]{0,80}\b(across|for each|for all|for every|on each|over (all|each|every))\b/i;
+    const parallel_compare  = /\b(compare|contrast|A\/B|evaluate|benchmark)\s+[^.?!]{0,80}\b(vs\.?|versus|against)\b/i;
+    const parallel_list     = /\b(research|investigate|explore|look into|evaluate)\s+[A-Z][a-z]+(,\s+[A-Z][a-z]+){1,}(,?\s+(and|or)\s+[A-Z][a-z]+)?\b/;
+    const parallel_explicit = /\b(in parallel|concurrent(ly)?|simultaneously|at (the )?same time|side.?by.?side)\b/i;
+    if (
+      (parallel_enum.test(prompt) || parallel_multi.test(prompt) || parallel_compare.test(prompt) || parallel_list.test(prompt) || parallel_explicit.test(prompt)) &&
+      !delegate.test(prompt) &&   // avoid double-firing with the explicit-delegation nudge
+      shouldSuggest('parallel_opportunity', 5)
+    ) {
+      messages.push("PRISM: Parallelizable work detected. Dispatch as MULTIPLE Agent() tool uses in a SINGLE assistant message — they run concurrently (wall-clock = max(each), not sum(each)). Sequential Agent() calls are strictly slower. Recipe: one assistant message with N Agent() tool_use blocks, one per independent subtask, each with the minimum model that clears the bar (haiku for scan/extract, sonnet for implement/review, opus only for architecture).");
+      recordSuggestion('parallel_opportunity'); matchedInvocation = true;
+    }
+
     // ─── TIER 2 — MID tone ───
     const context7_intent = /\b(latest docs for|use the .+ API|how does .+ (v\d|version \d)|deprecated in)\b/i;
     if (context7_intent.test(prompt) && shouldSuggest('context7', 10)) {

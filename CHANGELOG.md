@@ -4,6 +4,74 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.1] - 2026-04-23
+
+Parallel-dispatch enforcement. Three-file patch that closes the "PRISM
+misses parallelism opportunities on non-NOVEL work" gap identified in
+the scoring-mechanics review.
+
+### Context
+
+Current Claude Code runtime has ONE spawn tool, `Agent()`. Parallelism
+comes from dispatching **multiple `Agent()` tool_use blocks in a SINGLE
+assistant message** — Claude Code fans them out concurrently, wall-clock
+cost = `max(each)` not `sum(each)`. Sequential `Agent()` calls are
+strictly slower.
+
+Prior PRISM docs referenced a separate `Task()` spawn tool that no
+longer exists. That stale terminology hid the actual speed mechanism
+from the model and caused the orchestrator to reason about parallelism
+in a way that didn't match the runtime.
+
+### Added
+
+- **Parallel-opportunity detector in `hooks/prism-hook.mjs`.** Five
+  new regex patterns fire an INVOCATION nudge when the user prompt
+  carries enumerative, comparative, or explicit-parallel cues:
+    - `parallel_enum`: "these 5 modules", "each of the 3 packages"
+    - `parallel_multi`: "run tests across", "scan for X over every"
+    - `parallel_compare`: "compare X vs Y", "A/B", "benchmark against"
+    - `parallel_list`: "research Redis, Memcached, and Dragonfly"
+    - `parallel_explicit`: "in parallel", "concurrently", "simultaneously"
+  Nudge text: *"Parallelizable work detected. Dispatch as MULTIPLE
+  Agent() tool uses in a SINGLE assistant message..."* — includes the
+  recipe (N tool_use blocks, cheap-model-per-task rule). Cooldown 5
+  turns. Doesn't fire if the existing `delegate` nudge already fired
+  on the same prompt (avoids double-emit).
+
+- **`[pgroup=N]` as an execution contract** in
+  `skills/blueprint-prompt/SKILL.md` Phase 6. Previously *"labels
+  tasks that can run concurrently"* (hint); now *"BINDING contract
+  at execution time"* (must batch into one message). Plus worked
+  example with the anti-pattern. Plus a `{event:'pgroup_violation'}`
+  hook event described for future weekly-rollup surfacing.
+
+### Changed
+
+- **Master-orchestrator Phase 1 parallelism decision** rewritten.
+  Stale "Method A: Task() Subagents" / "Method B: Agent Teams"
+  dichotomy replaced with:
+    - **PARALLEL**: multiple `Agent()` tool_use blocks in ONE
+      assistant message. Cap 4 per batch (coordination cost).
+    - **SPLIT-AND-MERGE**: same pattern, different data subsets.
+    - **AGENT TEAMS** (experimental, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`):
+      for teammates that must message each other mid-execution.
+  Explicit anti-pattern call-out: emitting one `Agent()` per
+  successive assistant message when batch is possible is strictly
+  slower AND pays a fresh prompt-cache miss per spawn.
+
+### Notes
+
+- Backward-compatible — no hook or manifest changes. Purely docs +
+  one new regex block in `prism-hook.mjs`.
+- No classifier or sentinel changes. The new nudge fires independently
+  of the tier router; useful on ROUTINE and NOVEL tiers alike where
+  blueprint/orchestrator aren't engaged.
+- Terminology correction: **"subagent" and "agent" refer to the same
+  runtime primitive** (a child spawned via `Agent()`). There is no
+  speed difference between them — the speed variable is
+  *sequential vs parallel dispatch*, not tool choice.
+
 ## [2.7.0] - 2026-04-23
 
 Classifier reconciliation + orchestration quality. Seven concrete fixes

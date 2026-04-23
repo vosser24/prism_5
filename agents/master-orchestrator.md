@@ -285,59 +285,85 @@ Steps, pros, risks, mitigation. Still generate task-id. WAIT for approval.
 
 ## PHASE 1: EXECUTION (after approval)
 
-### Parallelism Decision (evaluate for EVERY plan)
-Before executing, classify each step pair AND choose the execution method:
+### Parallelism Decision (evaluate for EVERY plan — v2.7.1 corrected)
 
-SEQUENTIAL — Step B needs Step A's output:
-  "Design schema" → "Build API from schema" → "Write tests for API"
-  Execute one at a time. Pass summary between steps.
+**Current Claude Code runtime (2.7.1):** there is ONE spawn tool, `Agent()`.
+Parallelism comes from dispatching **multiple `Agent()` tool_use blocks in
+a SINGLE assistant message** — Claude Code fans them out concurrently. The
+wall-clock cost is `max(each subagent)`, NOT `sum(each)`. Sequential
+`Agent()` calls (one per assistant message) are strictly slower.
 
-PARALLEL — Steps are independent (no shared inputs/outputs):
-  Choose execution method based on coordination needs:
+This supersedes earlier PRISM docs that referenced a separate `Task()`
+tool — no such tool exists in current Claude Code. `TaskCreate` /
+`TaskUpdate` are *plan-tracking* tools (write to `tasks/todo.md`), not
+spawn tools.
 
-  **Method A: Task() Subagents** (default, cheaper)
-    Best for: independent steps that only report results back
-    "Scan 3 schema groups" → 3 haiku subagents → merge
-    "Build frontend" + "Build backend" when spec is clear
-    Each gets: scope, output path, completion criteria.
-    Parent waits, merges, validates.
+Before executing, classify each step pair AND choose dispatch shape:
 
-  **Method B: Agent Teams** (when teammates need to coordinate)
-    Best for: steps that need to DISCUSS, CHALLENGE, or BUILD ON each other
-    "Research approaches" → 3 teammates investigate, share findings, debate
-    "Build + Review" → implementer + reviewer work simultaneously, reviewer
-    challenges implementation as it progresses
-    "Debug competing hypotheses" → teammates test different theories in parallel
-    
-    To use: tell Claude "create an agent team with teammates for X, Y, Z"
-    Each teammate: gets own context window, loads CLAUDE.md + MCP + skills,
-    can message other teammates directly.
-    
-    Use Agent Teams when:
-    - 3+ agents need to challenge each other's work (not just report back)
-    - Cross-layer coordination (frontend + backend + tests simultaneously)
-    - Research where multiple perspectives need to converge
-    - Debugging with competing hypotheses
-    
-    DON'T use Agent Teams when:
-    - Steps are truly independent (cheaper to use Task() subagents)
-    - Sequential dependencies (Agent Teams add overhead for no benefit)
-    - Simple split-and-merge operations (Task() is faster)
-    - Budget is constrained (each teammate = separate Claude instance)
-    
-    WINDOWS NOTE: Split panes (tmux) NOT supported on Windows Terminal.
-    Always use in-process mode (Shift+Down to cycle between teammates).
-    This works but you can't see all teammates simultaneously.
+**SEQUENTIAL** — Step B needs Step A's output:
+  Example: "Design schema" → "Build API from schema" → "Write tests for API"
+  Execute one at a time. Pass **summary** between steps (not raw output).
 
-SPLIT-AND-MERGE — Same task on different data subsets:
-  Always use Task() subagents (no coordination needed):
-  "Index 600 tables" → split by schema group → 3 haiku subagents → merge
-  "Migrate 50 files" → split by directory → 3 sonnet subagents → merge
+**PARALLEL** — Steps are independent (no shared inputs/outputs):
+  Emit ALL parallel steps as `Agent()` tool_use blocks in ONE assistant
+  message. Each gets: specific scope, output file path, completion
+  criteria, explicit `model:` (haiku for scan/extract, sonnet for
+  implement/review, opus only for architecture).
+
+  Examples:
+    "Scan 3 schema groups" → 3 `Agent(model:'haiku')` in one message → merge
+    "Build frontend" + "Build backend" + "Write tests" when specs are
+     clear → 3 `Agent(model:'sonnet')` in one message
+    "Research Redis vs Memcached vs Dragonfly" → 3 `Agent(model:'sonnet')`
+     in one message, each with one technology → synthesis afterward
+
+  Cap: 4 parallel `Agent()` calls per message. Beyond that, coordination
+  cost (merge, contention, context prep) starts to dominate. If you need
+  more, stage them as successive parallel batches.
+
+**SPLIT-AND-MERGE** — Same task on different data subsets:
+  Always parallel `Agent()` in one message.
+  "Index 600 tables" → split by schema group → 3 haiku subagents in one
+   message → merge
+  "Migrate 50 files" → split by directory → 3 sonnet subagents in one
+   message → merge
   Best for discovery, scanning, migration, bulk review.
 
-Mark parallel/split steps in the plan. Show the user:
-  "Steps 2a, 2b, 2c run in parallel (independent). Step 3 waits for all."
-  "Steps 4a, 4b use Agent Teams (need cross-layer coordination)."
+**AGENT TEAMS** (experimental — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`):
+  Specialized form for when teammates need to MESSAGE EACH OTHER during
+  execution, not just report back. Higher coordination overhead; use ONLY
+  when direct teammate-to-teammate messaging is required.
+
+  Use Agent Teams when:
+  - 3+ agents need to challenge each other's work mid-execution
+  - Cross-layer coordination (frontend + backend + tests simultaneously,
+    with shared task list)
+  - Research where multiple perspectives need to converge through debate
+  - Debugging with competing hypotheses (teammates test different theories,
+    compare notes)
+
+  DON'T use Agent Teams when:
+  - Steps are truly independent (parallel `Agent()` is cheaper)
+  - Sequential dependencies (Teams add overhead for no benefit)
+  - Simple split-and-merge operations (parallel `Agent()` is faster)
+  - Budget is constrained (each teammate = separate Claude instance with
+    its own prompt-cache prime)
+
+  **WINDOWS NOTE:** Split panes (tmux) NOT supported on Windows Terminal.
+  In-process mode works (Shift+Down to cycle between teammates); you just
+  can't see all teammates simultaneously.
+
+**Mark parallel/sequential in the plan and SHOW the dispatch shape:**
+  "Steps 2a, 2b, 2c run in parallel (independent) — dispatched in ONE
+   assistant message with 3 Agent() tool_use blocks. Step 3 waits for
+   all three to return before proceeding."
+  "Steps 4a, 4b use Agent Teams (cross-layer coordination required)."
+
+**ANTI-PATTERN — one Agent() per message when batch is possible:**
+  If your plan has 3 independent haiku scans and you emit them as 3
+  successive assistant messages, each with 1 `Agent()`, the wall-clock
+  is 3× what it should be AND each spawn pays a fresh prompt-cache
+  miss. Always batch when you can.
 
 ### Execution Patterns
 
