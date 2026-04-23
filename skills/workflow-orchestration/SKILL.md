@@ -27,7 +27,7 @@ This skill defines how to approach complex tasks: methodically, elegantly, and a
 - Use plan mode for verification steps, not just building
 - Write detailed specs upfront to reduce ambiguity
 
-### todo.md structure (ATLAS model-aware):
+### todo.md structure (PRISM model-aware):
 ```markdown
 # Task: <name>
 
@@ -56,7 +56,7 @@ This skill defines how to approach complex tasks: methodically, elegantly, and a
 
 ---
 
-## 2. Self-Improvement Loop (ATLAS lesson routing)
+## 2. Self-Improvement Loop (PRISM lesson routing)
 
 After ANY correction, classify and route:
 

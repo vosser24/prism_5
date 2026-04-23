@@ -1,5 +1,5 @@
 ---
-name: atlas-archive
+name: prism-archive
 description: Consolidate agent learnings into RAG-queryable sources
 ---
 

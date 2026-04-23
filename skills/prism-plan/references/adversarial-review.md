@@ -1,7 +1,7 @@
 # Adversarial Review Protocol
 
 **Version:** 1.1 (April 2026)
-**Applies to:** PRISM, PRISM Code, ATLAS.
+**Applies to:** PRISM, PRISM Code, PRISM.
 **Invoked by:** master-orchestrator (Phase 0d), blueprint-prompt (panel stage).
 
 The adversarial review is the step where weak expert positions get caught

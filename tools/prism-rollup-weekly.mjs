@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS weekly rollup (Phase 4)
+// PRISM weekly rollup (Phase 4)
 //
 // Aggregates the last 7 days from ~/.claude/.prism.db and writes a markdown
 // digest to ~/.claude/.prism-rollups/<YYYY-Www>.md. Idempotent: re-running
@@ -20,7 +20,7 @@ import {openDb, close} from './prism-db.mjs';
 import {COST_MULTIPLIER} from './lib/prism-tier-classify.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
-const OUT_DIR = join(H, '.claude', '.atlas-rollups');
+const OUT_DIR = join(H, '.claude', '.prism-rollups');
 
 const quiet = process.argv.includes('--quiet');
 const log = (...a) => { if (!quiet) console.log(...a); };
@@ -147,7 +147,7 @@ function main() {
   close(db);
 
   const md = [];
-  md.push(`# ATLAS Weekly Rollup — ${week}`);
+  md.push(`# PRISM Weekly Rollup — ${week}`);
   md.push('');
   md.push(`_Generated ${todayIso} from last-7-day window (since ${sinceIso})._`);
   md.push('');

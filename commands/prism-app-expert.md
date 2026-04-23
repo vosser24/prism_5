@@ -1,5 +1,5 @@
 ---
-name: atlas-app-expert
+name: prism-app-expert
 description: Create or update an app expert agent for a specific application
 ---
 

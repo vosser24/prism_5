@@ -1,6 +1,6 @@
 ---
-name: atlas-retire
-description: Archive an unused ATLAS agent
+name: prism-retire
+description: Archive an unused PRISM agent
 ---
 
 Usage: /prism-retire @agent-name

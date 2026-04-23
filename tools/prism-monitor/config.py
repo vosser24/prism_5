@@ -1,4 +1,4 @@
-"""ATLAS Monitor configuration — paths, pricing, plan limits."""
+"""PRISM Monitor configuration — paths, pricing, plan limits."""
 from __future__ import annotations
 from pathlib import Path
 import os

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS KB Auto-Sync (v2.1.28 Phase 3c)
+// PRISM KB Auto-Sync (v2.1.28 Phase 3c)
 //
 // PostToolUse hook on Write / Edit / MultiEdit. When a tool write targets
 // a KB-relevant path (~/.claude/{skills,agents,commands,rules}/** or plugin
@@ -80,7 +80,7 @@ function main() {
 
   const added = appendDirty(paths);
   if (added.length) {
-    process.stdout.write(`ATLAS KB: ${added.length} KB file(s) marked dirty. Cloud sync will fire at session end.`);
+    process.stdout.write(`PRISM KB: ${added.length} KB file(s) marked dirty. Cloud sync will fire at session end.`);
   }
   process.exit(0);
 }

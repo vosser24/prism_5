@@ -61,7 +61,7 @@ If available:
      GOOD: "retail demand forecasting Greek market seasonality Prophet LightGBM sparse data"
   
   c) Ask precision questions from prompt templates (FREE):
-     Select template from ~/.claude/skills/atlas-plan/references/prompt-templates.md
+     Select template from ~/.claude/skills/prism-plan/references/prompt-templates.md
      Adapt Q1-Q5 with project context. For each:
        notebooklm ask "{adapted question}" --save-as-note --note-title "{{agent-name}}: {{topic}}"
      Gemini synthesizes across ALL imported sources — 10-50 sources, zero cost.
@@ -115,7 +115,7 @@ If available:
    ~/.claude/agents/{name}.md
    
    Both must exist:
-   ~/.claude/agents/{name}/agent.md   ← for ATLAS (references, lessons, experience)
+   ~/.claude/agents/{name}/agent.md   ← for PRISM (references, lessons, experience)
    ~/.claude/agents/{name}.md         ← for Claude Code (@agent loading)
    
    Without the flat file, @{name} will return "agent not found" even though
@@ -123,7 +123,7 @@ If available:
    
    The user must restart Claude Code (/exit + claude) for new agents to appear
    in the @agent registry. /clear is not enough — agent scan happens at process start.
-4. ALWAYS update GLOBAL roster: ~/.claude/skills/atlas-plan/references/roster.json
+4. ALWAYS update GLOBAL roster: ~/.claude/skills/prism-plan/references/roster.json
    NOT a project-local roster. One roster, one source of truth.
    Each agent entry must include:
    - name, version, domains, model, created_date, last_used
@@ -142,7 +142,7 @@ If available:
    - If any questions scored <3/7:
      Add a ### Lessons note to the template about what went wrong
 7. LOG TO EFFECTIVENESS LEDGER — MANDATORY, DO NOT SKIP:
-   Read ~/.claude/skills/atlas-plan/references/prompt-effectiveness.md
+   Read ~/.claude/skills/prism-plan/references/prompt-effectiveness.md
    APPEND a new entry under ## Log Entries with ALL fields filled:
    - Agent: {name}
    - Date: {today ISO}
@@ -160,7 +160,7 @@ If available:
    - Learning: {what to improve next time}
    
    Then update the ## Template Leaderboard table with new averages.
-   This is the data that proves whether ATLAS research adds value.
+   This is the data that proves whether PRISM research adds value.
    Without this log, we can't answer "is the factory worth it?"
 
 ## NOTEBOOKLM KNOWLEDGE STORE (when Tier 1 is available)
@@ -197,7 +197,7 @@ Agent.md must include:
          --save-as-note --note-title "<my-name>: <topic>"
      IMPORTANT: This is a CLI command (notebooklm-py), NOT an MCP tool.
      The --save-as-note flag persists my answer as a note in the notebook.
-     Over time these notes are consolidated via /atlas-archive into 
+     Over time these notes are consolidated via /prism-archive into 
      RAG-queryable sources.
      Run it via Bash, not via any MCP server. It works like any other
      terminal command. The output is Gemini's answer from 20+ sources.
@@ -243,7 +243,7 @@ After writing all agent files, verify the agent is production-ready:
    If notebooklm_notebook_id exists: verify agent queries the notebook.
    Compare: answer WITH references vs answer WITHOUT.
    Skip by default to save tokens. Report: "Smoke test skipped —
-   run /atlas-test @agent-name to verify interactively."
+   run /prism-test @agent-name to verify interactively."
 5. SCORING: Rate the agent 1-5:
    1 = Generic (Claude's general knowledge would be the same)
    2 = Light expertise (some domain terms but shallow)
@@ -292,7 +292,7 @@ Research existing Claude Code skills/plugins that solve a specific user need.
   CONTEXT: Remotion project, CPU-only
 
 ### STEP 1: Consult registry first (Tier 0 — free, instant)
-Read ~/.claude/skills/atlas-plan/references/tools-registry.md
+Read ~/.claude/skills/prism-plan/references/tools-registry.md
 If "recommend when" keywords match the NEED: return that entry immediately.
 Log: research_tier = 0 (registry hit)
 
@@ -352,7 +352,7 @@ Cutoff: 3/7. Present top 3 above cutoff.
   [2] {name} ...
   [3] {name} ...
 
-  ATLAS RECOMMENDATION: [1] — {specific reasoning}
+  PRISM RECOMMENDATION: [1] — {specific reasoning}
 
   How should I proceed?
     [A] Install [1] now

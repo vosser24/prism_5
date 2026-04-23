@@ -1,22 +1,23 @@
 ---
-name: atlas-init
-description: Initialize ATLAS structure + install companion tools
+name: prism-init
+description: Initialize PRISM project structure, write CLAUDE.md operating rules, offer Tier 1 companion tools
 ---
 
 Two modes:
-  /prism-init       → FAST mode (~1 min): structure + offer companion installs
-  /prism-init full  → COMPREHENSIVE (3-5 min): full setup + auto-install companions
-                      + stack detection + MCP suggestions + dependencies check
+  /prism-init       → FAST mode (~1 min): structure + CLAUDE.md + offer companion installs
+  /prism-init full  → COMPREHENSIVE (3-5 min): everything above + native /init + stack
+                      detection + MCP suggestions + dependency check
 
 ## BOTH MODES — STEP 0: Ensure Git Repository
 
-ATLAS agents require a git repo to spawn (worktree isolation).
+PRISM agents require a git repo to spawn (worktree isolation).
 
-Run: git rev-parse --is-inside-work-tree
+Run: `git rev-parse --is-inside-work-tree`
 
 If NOT a git repo:
-  Run: git init
-  Create .gitignore with:
+  Run: `git init`
+  Create `.gitignore` with:
+    ```
     node_modules/
     .env
     .env.local
@@ -28,35 +29,186 @@ If NOT a git repo:
     kokoro-v1.0.onnx
     voices-v1.0.bin
     out/*.mp4
-  Run: git add -A && git commit -m "Initial commit — ATLAS project init"
-  Report: "Initialized git repo (required for ATLAS agent spawning)."
+    ```
+  Run: `git add -A && git commit -m "Initial commit — PRISM project init"`
+  Report: "Initialized git repo (required for PRISM agent spawning)."
 
 If ALREADY a git repo: skip silently.
 
 ## FAST MODE (default)
 
-### Step 1 — Read README.md if exists
-Detect project name and domain.
+### Step 1 — Read README.md if it exists
+Detect project name, domain, stack. Capture as `{name}`, `{domain}`, `{stack}` for later templating.
 
-### Step 2 — Create ATLAS project structure
-  CLAUDE.md                            ← Project Identity section
-  .claude/references/                  ← Indexed knowledge
-  .claude/rules/                       ← Project-specific rules
-  tasks/todo.md                        ← Active work
-  tasks/lessons-tactical.md            ← Execution lessons
-  tasks/lessons-strategic.md           ← Architecture lessons
-  CLAUDE.local.md                      ← Gitignored personal notes
-  .mcp.json                            ← Empty MCP config
+### Step 2 — Create PRISM project structure
 
-### Step 3 — Offer companion tool installation (v2.1.23)
+```
+CLAUDE.md                            ← Project identity + PRISM operating rules (see Step 3)
+.claude/references/                  ← Indexed knowledge (filled by /prism-discover)
+.claude/rules/                       ← Project-specific rules
+tasks/todo.md                        ← Active work
+tasks/lessons-tactical.md            ← Execution lessons (code-level)
+tasks/lessons-strategic.md           ← Architecture decisions (cross-cutting)
+CLAUDE.local.md                      ← Personal overrides (gitignored)
+.mcp.json                            ← Empty MCP config
+```
 
-Print to user:
+Do NOT overwrite an existing `CLAUDE.md`. If one is present:
+- Read it.
+- Detect whether it already contains a `## PRISM Operating Rules` section.
+- If yes: skip Step 3.
+- If no: APPEND the template from Step 3 at the end (do not reorder existing content).
 
-  ATLAS composes with 3 companion tools for coding, design, and
-  automation work. Install them now so ATLAS can route tasks to the
-  right tool automatically.
+### Step 3 — Write the PRISM CLAUDE.md template
 
-  COMPANIONS (install time: ~1-2 min total):
+This is the canonical scaffold. It encodes how PRISM routes every prompt, which
+model handles what, when to dispatch to subagents, and the memory / context
+hygiene habits. Write it to `CLAUDE.md` verbatim, substituting `{name}`,
+`{domain}`, `{stack}` where indicated.
+
+---
+
+```markdown
+# {name}
+
+## Project Identity
+- **Domain:** {domain}
+- **Stack:** {stack}
+- **Related projects:** (list siblings that share infra or conventions, if any)
+
+## PRISM Operating Rules
+
+PRISM is active on this project. These rules govern every prompt.
+
+### 1. Classification — every prompt is tier-routed
+
+The UserPromptSubmit hook classifies each prompt via
+`hooks/lib/prism-opus-classifier.mjs` (Opus primary → Sonnet fallback →
+24h cache → keyword floor). The classification is written to
+`~/.claude/.prism-turn-tier-<session>.json` and drives downstream behaviour.
+
+| Tier | Budget | Who executes | Example |
+|---|---|---|---|
+| **LIGHTWEIGHT** | ~2k tokens | Parent directly | "What's the flexbox centering syntax?" |
+| **ROUTINE** | ~15k tokens | Single subagent (Haiku or Sonnet) | "Review this React component for bugs." |
+| **NOVEL** | ~50k+ tokens | Master-orchestrator + expert panel | "Plan a real-time analytics dashboard." |
+
+### 2. Orchestrator pattern — parent plans, subagents execute
+
+The parent conversation (Opus) does: classification, planning, evaluation,
+dispatch, synthesis. Subagents do: the actual work (reads, edits, searches,
+tests). The mutation-guard (`hooks/prism-mutation-guard.mjs`) and
+parent-dispatch-guard (`hooks/prism-parent-dispatch-guard.mjs`) enforce this
+boundary for ROUTINE+ tiers:
+
+- Parent calling `Edit`/`Write`/`MultiEdit` directly on ROUTINE/NOVEL tiers
+  → blocked with a dispatch-first nudge.
+- Subagent calls always pass (detected via `parent_tool_use_id`,
+  `CLAUDE_CODE_ENTRYPOINT=subagent`, or `sentinel.dispatched=true`).
+- Override for one-shot mutations: prefix prompt with `!opus-force:`.
+
+### 3. Model selection — cheapest viable
+
+Use the cheapest model that clears the quality bar. The
+agent-model-guard (`hooks/prism-agent-model-guard.mjs`) nudges you on
+every `Agent()` call without an explicit `model` field.
+
+| Work | Model | Cost vs Opus |
+|---|---|---|
+| Typo fix, rename, docstring, trivial edit | `haiku` | ~1/15 |
+| Single-file implementation, standard review | `sonnet` | ~1/5 |
+| Cross-cutting architecture, novel domain, adversarial review | `opus` | 1× |
+
+Always pass `model=` explicitly on `Agent()` calls. No default implicit to Opus.
+
+### 4. NOVEL flow — panel of experts + master orchestrator
+
+When the classifier returns `opus` tier OR the prompt contains novel
+architectural stakes, the flow is:
+
+1. `@master-orchestrator` is invoked (Opus).
+2. It reads `~/.claude/skills/prism-plan/references/model-matrix.md`,
+   `roster.json`, `mcp-registry.md`, `tools-registry.md`.
+3. It identifies required specialists. For each gap it checks
+   `tools-registry.md` FIRST (compose-first — see rule 7).
+4. It assembles a panel (3–5 expert subagents, each pick their own stance).
+5. It chairs **adversarial review** — every position must survive at least
+   two substantive challenges before making the final plan.
+6. It presents a phased plan with explicit "Deliberately NOT doing" section
+   and waits for user approval.
+7. On approval, it dispatches work to subagents in parallel where
+   dependencies allow.
+
+### 5. Parallel execution
+
+When you have independent work, send multiple `Agent()` tool uses in a
+single message. One turn = N parallel subagents, not N sequential turns.
+This is the primary speed lever.
+
+### 6. Memory + context hygiene
+
+The session-start hook runs a daily context tax audit. The
+UserPromptSubmit hook counts turns per session and nudges:
+
+- **Turn 15:** `/clear` reminder + `memory-save-nudge` fires (save durable
+  lessons to `tasks/lessons-*.md` BEFORE clearing).
+- **Turn 20+:** strong `/clear` recommendation — quality degrades in long
+  sessions.
+- **Every 5 turns after 15:** repeat memory-save nudge.
+- **Stop hook:** writes a rich session summary to
+  `~/.claude/.prism-sessions/<session_id>.md`.
+
+When you see a memory-save nudge, review the session and write any durable
+insights to:
+- `tasks/lessons-tactical.md` — code-level patterns, gotchas, fixes
+- `tasks/lessons-strategic.md` — architecture decisions, trade-off rationale
+
+### 7. Compose-first (Tier 1 tools)
+
+Before building a new specialist agent, check
+`~/.claude/skills/prism-plan/references/tools-registry.md`. If a Tier 1
+tool handles the need, invoke it. If not, check Tier 2 and consider
+installing via `/prism-recommend`. Only spawn the agent-factory when no
+existing tool fits.
+
+### 8. Safety
+
+`hooks/prism-safety.mjs` hard-blocks: `rm -rf`, `DROP TABLE/DATABASE/SCHEMA`,
+`TRUNCATE TABLE`, `git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No
+override. Run these manually outside Claude Code if genuinely required.
+
+### 9. Persistence + evolution
+
+- `~/.claude/.prism-routing.jsonl` — every hook decision appended here. Use
+  `tools/prism-monitor` to tail it.
+- `skills/prism-plan/references/roster.json` — agent usage counts,
+  effectiveness, last-used dates. Updated by `hooks/prism-subagent-stop.mjs`.
+- `/prism-roster` — inspect the roster.
+- `/prism-health` — overall PRISM state.
+- `/prism-retire @name` — archive unused specialists.
+- `/prism-update` — self-update (model-matrix, registries) every ~15 days.
+
+## Build / Test / Lint
+
+(fill in per stack — `npm run dev`, `pytest`, `ruff`, etc.)
+
+## Conventions
+
+(fill in — naming, testing strategy, file layout)
+```
+
+---
+
+### Step 4 — Offer Tier 1 companion tools
+
+Print:
+
+```
+PRISM composes with 2 Tier 1 companion tools that plug into the
+orchestrator pattern. Optional Tier 2 tools are available via
+/prism-recommend when the project genuinely needs them.
+
+  TIER 1 (recommended, ~1 min total):
 
     [1] obra/superpowers            — TDD, debugging, code review, git worktrees
         /plugin install superpowers@claude-plugins-official
@@ -64,153 +216,143 @@ Print to user:
     [2] nextlevelbuilder/ui-ux-pro-max-skill — UI/UX design system
         npm install -g uipro-cli && uipro init --ai claude --global
 
-    [3] browser-use/browser-use     — General browser automation
-        uv init && uv add browser-use && uv sync
+  TIER 2 (on-demand via /prism-recommend, install only if needed):
 
-  OPTIONAL (high token cost — install only if needed):
+    [·] affaan-m/everything-claude-code — Polyglot reviewers + AgentShield
+        Heavy (~12k tokens of skill index per session). Install only if the
+        project genuinely needs language-specific reviewers beyond
+        Sonnet-subagent review.
 
-    [·] affaan-m/everything-claude-code — Language reviewers + /security-scan
-        Adds 100+ skills and high per-turn token tax. Install manually
-        via /prism-recommend if you explicitly want language-specific
-        reviewers or AgentShield's deeper security scan.
+    [·] browser-use/browser-use — General browser automation
+        Heavy (~400 MB chromium). Install only if the project needs
+        general-purpose form-filling, scraping, or booking flows.
+        Consider Playwright MCP first for app-scoped work.
 
   How should I proceed?
-    [A] Install all 3 (recommended)
-    [B] Show me what each does first
-    [C] Skip — I'll install selectively later via /prism-recommend
-    [D] Let me choose which to install
+    [A] Install Tier 1 (both — recommended)
+    [B] Show me what each Tier 1 tool does first
+    [C] Skip — I will use /prism-recommend later
+    [D] Let me pick individually
+```
 
-### Step 4 — Execute user's choice
-
-If [A] install all:
-  - Check if already installed before running each command
-  - Run sequentially (don't parallelize — plugin marketplace adds are fragile)
-  - Report per-tool: INSTALLED | ALREADY PRESENT | FAILED
-
-If [B] show details:
-  - Display registry entries for each tool
-  - Re-present menu [A/C/D]
-
-If [C] skip:
-  - Write note to CLAUDE.md (Companion Tools section)
-  - Continue with step 5
-
-If [D] choose:
-  - List each, ask yes/no, install selected
+Execute the user's choice. Skip silently if a tool is already installed.
+Never install Tier 2 tools from this step — they go through `/prism-recommend`.
 
 ### Step 5 — Write tool status to CLAUDE.md
 
-Append section (at top, before other content):
+Append to `CLAUDE.md` at the end (after PRISM Operating Rules):
 
-  ## ATLAS — External Tools
+```markdown
+## External Tools
 
-  Status (as of {ISO date}):
-  - ✓ obra/superpowers              — installed
-  - ✓ nextlevelbuilder/ui-ux-pro-max-skill — installed
-  - ✓ browser-use/browser-use        — installed
-  - · affaan-m/everything-claude-code — OPTIONAL (install via /prism-recommend)
+Status (as of {ISO date}):
+- Tier 1:
+  - {✓|·} obra/superpowers — {installed|skipped}
+  - {✓|·} nextlevelbuilder/ui-ux-pro-max-skill — {installed|skipped}
+- Tier 2 (on-demand):
+  - affaan-m/everything-claude-code — Tier 2, install via /prism-recommend
+  - browser-use/browser-use — Tier 2, install via /prism-recommend
 
-  Registry: ~/.claude/skills/prism-plan/references/tools-registry.md
-  Run /prism-recommend for project-specific fit analysis.
-  Run /prism-audit to scan ATLAS surface for hygiene issues.
+Registry: `~/.claude/skills/prism-plan/references/tools-registry.md`
+Run `/prism-recommend` for project-specific fit analysis.
+Run `/prism-audit` to scan PRISM surface for hygiene issues.
+```
 
 ### Step 6 — Autonomous dependency check
 
 Scan for:
-  - notebooklm-py (always, enables free Tier 1 agent research)
-  - ffmpeg (check if Remotion detected — needed for video production)
-  - kokoro-tts (if video-production will be used — highly recommended)
-  - kokoro model files (kokoro-v1.0.onnx, voices-v1.0.bin)
-  - playwright + chromium (if app-expert pattern may be used)
+- `node >= 18` (required)
+- `python >= 3.10` (required)
+- `notebooklm-py` (optional — enables free Tier 1 agent research)
+- `ffmpeg` (optional — needed only if video-production skill will be used)
+- `playwright` (optional — needed only for app-expert pattern)
 
-If missing:
-  "Your project uses {stack}. ATLAS features need:
-
-   · kokoro-tts — free TTS for video voiceover
-     Install: pip install kokoro-tts
-     Models: ~620MB download, one-time
-
-   · ffmpeg — audio mixing, final render
-     Install (macOS): brew install ffmpeg
-     Install (Linux): apt install ffmpeg
-     Install (Windows): https://ffmpeg.org/download.html
-
-   · playwright — app-expert screenshot automation
-     Install: npm install -D @playwright/test
-              npx playwright install chromium
-
-   Run /atlas-deps to install these now."
+For each missing one, print the exact install command and the capability it
+unlocks. Do NOT auto-install. Tell the user they can run `/prism-deps` to
+install any or all.
 
 ### Step 7 — Final report
 
-  ═══════════════════════════════════════════════════════════
-  ATLAS — Project Initialized
-  ═══════════════════════════════════════════════════════════
+```
+═══════════════════════════════════════════════════════════
+PRISM — Project Initialized
+═══════════════════════════════════════════════════════════
 
-  PROJECT: {name}
-  STACK:   {detected}
-  DOMAIN:  {domain}
+PROJECT: {name}
+STACK:   {stack}
+DOMAIN:  {domain}
 
-  CREATED: (list of created files/directories)
+CREATED:
+  - CLAUDE.md (with PRISM Operating Rules)
+  - .claude/references/
+  - .claude/rules/
+  - tasks/{todo,lessons-tactical,lessons-strategic}.md
+  - CLAUDE.local.md
+  - .mcp.json
 
-  COMPANION TOOLS: {N}/4 installed
-    {list}
+COMPANION TOOLS (Tier 1): {N}/2 installed
+  {list}
 
-  DEPENDENCIES: {N}/4 ready
-    notebooklm-py: ✓/✗
-    ffmpeg:        ✓/✗
-    kokoro-tts:    ✓/✗
-    playwright:    ✓/✗
+DEPENDENCIES:
+  node:       {✓/✗}
+  python:     {✓/✗}
+  notebooklm: {✓/✗}
+  ffmpeg:     {✓/✗}
+  playwright: {✓/✗}
 
-  NEXT STEPS:
-    → /prism-recommend     Get project-specific tool fit analysis
-    → /prism-discover      Index database/codebase/APIs
-    → /prism-health        Check overall ATLAS status
-    → /prism-audit         Scan ATLAS surface for secrets + hygiene
-    → /prism-archive       Consolidate agent learnings
-    → /prism-app-expert    Create a Playwright app companion
+NEXT STEPS:
+  → /prism-discover      Index database, codebase, APIs into .claude/references/
+  → /prism-recommend     Project-specific Tier 2 fit analysis
+  → /prism-health        Overall PRISM status
+  → /prism-roster        Inspect specialist agents
 
-  ═══════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════
+```
 
-## COMPREHENSIVE MODE (/prism-init full)
+## COMPREHENSIVE MODE (`/prism-init full`)
 
 Everything in FAST mode, PLUS:
 
-### A — Run Claude Code native /init first
-Claude Code generates a project CLAUDE.md based on codebase analysis.
-ATLAS then enriches it.
+### A — Run Claude Code's native `/init` first
+Claude Code generates a deep project CLAUDE.md based on codebase analysis.
+PRISM then appends its Operating Rules section (Step 3) if not already present.
 
 ### B — Detailed stack detection
-Parse package.json, requirements.txt/pyproject.toml, Gemfile, go.mod,
-composer.json, Dockerfile, .env.example.
+Parse `package.json`, `requirements.txt`/`pyproject.toml`, `Gemfile`,
+`go.mod`, `composer.json`, `Dockerfile`, `.env.example`. Populate the
+**Build / Test / Lint** section of CLAUDE.md with detected commands.
 
 ### C — Language-specific rules
-Based on detected stack, create .claude/rules/{lang}.md templates.
+For each detected language, create `.claude/rules/{lang}.md` with a
+minimal template (naming, testing pattern, typing discipline).
 
 ### D — MCP suggestions based on stack
-Read mcp-registry.md, match detected stack to relevant MCPs.
+Read `mcp-registry.md`, match detected stack to relevant MCPs, print a
+list of suggested installs with exact commands.
 
-### E — Install companion tools automatically
-Unlike FAST mode (asks), COMPREHENSIVE mode defaults to installing
-all 4 companions unless user explicitly declined.
+### E — Install Tier 1 companions automatically
+Unlike FAST mode (asks), COMPREHENSIVE mode defaults to installing both
+Tier 1 tools unless the user explicitly declines.
 
-### F — Offer to install dependencies automatically
-kokoro-tts, ffmpeg, playwright if relevant to detected work.
+### F — Offer to install optional dependencies
+`notebooklm-py`, `ffmpeg`, `playwright` — offer with exact commands.
 
 ## CRITICAL RULES
 
-- Never install without showing command first
-- Never install paid tiers (Browser Use Cloud, ElevenLabs, etc.)
-- Respect OS (brew on macOS, apt on Debian, manual on Windows)
-- Skip already-installed tools
-- If install fails, continue — don't abort init
-- Report honestly what succeeded/failed
-- Never re-init existing projects — offer to merge/update
+- Never install without showing the command first.
+- Never install Tier 2 tools from `/prism-init` — use `/prism-recommend`.
+- Never install paid tiers (Browser Use Cloud, ElevenLabs, etc.).
+- Respect OS (brew on macOS, apt on Debian, manual on Windows).
+- Skip already-installed tools.
+- If an install fails, continue — don't abort init.
+- Report honestly what succeeded / failed.
+- Never re-init an existing project destructively — APPEND to existing CLAUDE.md only.
 
-## WHAT /prism-init DOES NOT DO
+## WHAT `/prism-init` DOES NOT DO
 
-- Doesn't install MCP servers automatically (suggests only)
-- Doesn't install paid services
-- Doesn't modify existing CLAUDE.md content (appends only)
-- Doesn't commit changes to git (user decides)
-- Doesn't download Kokoro model files automatically (asks first — 620MB)
+- Does NOT install MCP servers automatically (suggests only, in COMPREHENSIVE mode).
+- Does NOT install paid services.
+- Does NOT overwrite existing CLAUDE.md content — only appends.
+- Does NOT commit changes to git (user decides).
+- Does NOT download large model files (Kokoro, Whisper) automatically.
+- Does NOT install Tier 2 companions (ECC, browser-use) — those require `/prism-recommend`.

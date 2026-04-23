@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS KB Query (v2.1.26 Phase 2.5)
+// PRISM KB Query (v2.1.26 Phase 2.5)
 //
 // Tier-2 cloud lookup. Routes prompt through local router -> picks top-N
 // domains -> asks each domain's NotebookLM notebook -> returns answers.
@@ -95,7 +95,7 @@ export function runQuery(prompt, {limitDomains = 2, explicitDomain = null, json 
   if (json) {
     process.stdout.write(JSON.stringify(out, null, 2));
   } else {
-    console.log(`ATLAS KB Query`);
+    console.log(`PRISM KB Query`);
     console.log(`  Prompt: ${prompt}`);
     console.log(`  Routed to: ${domains.map(d => `${d.domain}(${d.score.toFixed(1)})`).join(', ')}`);
     for (const a of answers) {

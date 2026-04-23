@@ -4,6 +4,79 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-04-23
+
+Completion of the ATLAS → PRISM rename that began in 2.0, plus a rescoped
+install flow that trims the default surface area. Install is still
+idempotent and non-destructive; existing specialists, session history,
+and settings are preserved via an automated migration step.
+
+### Changed (breaking)
+
+- **Terminology: `ATLAS` → `PRISM` everywhere in code, comments, docs,
+  agent frontmatter, skill names, env vars, and paths.** 56 files
+  rewritten, 264 references. Legacy `ATLAS_CACHE` / `ATLAS_LOCK` env
+  vars are renamed to `PRISM_CACHE` / `PRISM_LOCK`. Slash-command and
+  skill frontmatter `name:` fields are now all `prism-*`. Legacy
+  `atlas-*` artifacts on disk are archived — not deleted — by the
+  installer (INSTALL.md §2.6).
+- **Tier 1 companions reduced to 2.** `/prism-init` now offers only
+  `obra/superpowers` (coding workflow) and `nextlevelbuilder/ui-ux-pro-max-skill`
+  (UI/UX design system). Both `affaan-m/everything-claude-code` and
+  `browser-use/browser-use` are moved to Tier 2 (on-demand via
+  `/prism-recommend`). Rationale: ECC's ~12k-token skill index and
+  browser-use's ~400 MB chromium stack were net-negative for most users
+  in the default install path; they remain available for projects that
+  genuinely need them.
+
+### Added
+
+- **New canonical `CLAUDE.md` template** written by `/prism-init`
+  (commands/prism-init.md §3). Encodes the operating rules explicitly:
+  tier classification drives every prompt, parent plans + subagents
+  execute, cheapest-viable model per step, NOVEL tier triggers
+  master-orchestrator + adversarial review, memory-save nudges at
+  turn 15+ and `/clear` reminders at 15/20/30+, compose-first stance on
+  Tier 1 tools, safety-gate enforcement, and persistence via
+  `.prism-routing.jsonl` + `roster.json`. Appended non-destructively if
+  a `CLAUDE.md` already exists.
+- **INSTALL.md §2.6 — legacy ATLAS migration.** Idempotent step that
+  moves `atlas-plan/references/{roster.json,update-log.json,...}` into
+  the new `prism-plan/references/` location, archives orphan
+  `atlas-*.md` skill/agent files to
+  `~/.claude/backups/atlas-rename-<ts>/`, and extends §4b
+  stale-pruning to match `atlas-*.mjs` and `atlas-exec.sh` hook entries
+  in `settings.json`. Users upgrading from pre-2.4 installs re-run the
+  installer and their specialist agents, effectiveness history, and
+  session summaries all survive.
+- **Conditional tier-2 nudges in `prism-hook.mjs`.** ECC and browser-use
+  intent-detection patterns remain, but the nudge copy now says
+  "if X is installed" and suggests a Sonnet subagent fallback for users
+  without the optional tools. No more "ECC is installed" assertions
+  that were wrong for users who skipped the install.
+
+### Removed
+
+- **`prism-init` auto-offer of ECC and browser-use.** Only `superpowers`
+  and `ui-ux-pro-max` remain in the Tier 1 install menu. ECC and
+  browser-use are mentioned as Tier 2 options available via
+  `/prism-recommend` but are not part of the default setup flow.
+
+### Notes
+
+- No functional regressions. Every hook, tool, command, and skill still
+  works — references just use the new name. Cache files under
+  `~/.claude/.prism-*` were already named PRISM; no migration needed
+  for hook state.
+- Existing `atlas-plan/references/roster.json` contents are copied
+  (not moved) to the new location only if the destination doesn't
+  already have a roster — so re-running the migration is safe.
+- Users with specialist agents whose prompts explicitly reference
+  "ATLAS" in the system-prompt body: those strings are untouched (they
+  live under `~/.claude/agents/<specialist>/agent.md`, owned by the
+  user). Consider a one-time find-and-replace in your own agents if
+  branding consistency matters to you.
+
 ## [2.3.0] - 2026-04-22
 
 Cross-platform hook reliability. Fixes the long-standing `/bin/sh: node: not found`

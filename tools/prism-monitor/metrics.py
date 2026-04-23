@@ -1,4 +1,4 @@
-"""Compute session metrics from JSONL + ATLAS state."""
+"""Compute session metrics from JSONL + PRISM state."""
 from __future__ import annotations
 from pathlib import Path
 from collections import defaultdict
@@ -205,7 +205,7 @@ def parse_todo_progress(cwd: Path | None = None) -> dict:
 
 
 def roster_summary() -> dict:
-    """Summarize ATLAS roster state."""
+    """Summarize PRISM roster state."""
     roster = load_roster()
     agents = roster.get("agents", {}) or {}
     total = len(agents)

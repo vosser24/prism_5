@@ -98,6 +98,59 @@ hook firing. `prism.env` makes it a fast no-lookup path.
 
 ---
 
+## 2.6. Migrate legacy ATLAS-named assets (PRISM 2.4.0+)
+
+PRISM 2.4.0 completed the ATLAS → PRISM rename. Installs from before 2.4.0
+may have `atlas-plan/`, `atlas-discover/`, or `atlas-updater.md` still on
+disk under `~/.claude/`. These don't break the new install (the new code
+reads `prism-*` paths only), but the old files become orphans and — more
+importantly — the roster history and agent effectiveness data sits in the
+old location.
+
+Migration is idempotent and non-destructive: old files are archived, not
+deleted.
+
+```bash
+TS=$(date +%Y%m%d-%H%M%S)
+MIG=~/.claude/backups/atlas-rename-$TS
+mkdir -p "$MIG"
+
+# 2.6a — Migrate skill reference state (roster, update log) if present.
+if [ -d ~/.claude/skills/atlas-plan ]; then
+  mkdir -p ~/.claude/skills/prism-plan/references
+  for f in roster.json update-log.json skill-effectiveness.md audit-log.json; do
+    src=~/.claude/skills/atlas-plan/references/$f
+    dst=~/.claude/skills/prism-plan/references/$f
+    if [ -f "$src" ] && [ ! -f "$dst" ]; then
+      cp -p "$src" "$dst"
+    fi
+  done
+  mv ~/.claude/skills/atlas-plan "$MIG/"
+fi
+
+# 2.6b — Archive legacy atlas-* skill/agent files.
+for d in ~/.claude/skills/atlas-discover ~/.claude/skills/atlas-*; do
+  [ -d "$d" ] && mv "$d" "$MIG/"
+done
+for f in ~/.claude/agents/atlas-*.md; do
+  [ -f "$f" ] && mv "$f" "$MIG/"
+done
+
+# 2.6c — Prune any atlas-* hook entries from settings.json (see §4b for the
+# settings.json edit pattern — extend it with /atlas-.*\.mjs/ matches).
+```
+
+If the migration moved anything, tell the user:
+
+> Moved N legacy ATLAS-named file(s) to `~/.claude/backups/atlas-rename-<ts>/`.
+> Your specialist agents, session history, and settings are preserved.
+> Roster history migrated to `skills/prism-plan/references/roster.json`.
+
+If `~/.claude/skills/atlas-plan/` didn't exist, skip silently — nothing to
+migrate.
+
+---
+
 ## 3. Copy the files listed in `manifest.json`
 
 Read `manifest.json`. For each entry in `files`:
@@ -132,8 +185,11 @@ Older PRISM installs registered raw `node ~/.claude/hooks/*.mjs` entries alongsi
 
 - `node ~/.claude/hooks/prism-*.mjs`
 - `node %USERPROFILE%\.claude\hooks\prism-*.mjs`
+- `node ~/.claude/hooks/atlas-*.mjs`       ← PRISM 2.4.0 legacy rename
+- `node %USERPROFILE%\.claude\hooks\atlas-*.mjs`  ← PRISM 2.4.0 legacy rename
+- `bash ~/.claude/hooks/lib/atlas-exec.sh *`  ← PRISM 2.4.0 legacy rename
 
-(Raw `node` entries for non-PRISM hooks — user-added or plugin-added — must be left alone. Only prune `prism-*.mjs` entries.)
+(Raw `node` entries for non-PRISM hooks — user-added or plugin-added — must be left alone. Only prune `prism-*.mjs` and `atlas-*.mjs` entries.)
 
 ### 4c. Deep-merge
 

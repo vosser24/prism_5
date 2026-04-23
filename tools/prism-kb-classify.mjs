@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS KB Classify (v2.1.26 Phase 2.7)
+// PRISM KB Classify (v2.1.26 Phase 2.7)
 //
 // Read-only reporter. Prints every indexed entry's assigned domain and lets
 // you focus on one domain or review low-confidence classifications before
@@ -48,7 +48,7 @@ if (json) {
     })),
   }, null, 2));
 } else {
-  console.log(`ATLAS KB Classify`);
+  console.log(`PRISM KB Classify`);
   console.log(`  Total entries: ${entries.length}`);
   console.log(`  By domain:`);
   for (const d of DOMAINS) {

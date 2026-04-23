@@ -141,7 +141,7 @@ Where an MCP tool covers a domain: substitute tool call for reasoning-only exper
 
 **Parallel dispatch (optional):** `[pgroup=X]` labels tasks that can run concurrently. Same group = dispatch in ONE assistant message with multiple `Agent()` tool uses. Missing/different group = sequential. A group is parallel-safe only if no two tasks write the same file AND no task depends on another's output.
 
-Why required: the PostToolUse TaskCreate hook (`~/.claude/hooks/atlas-task-tier-advisor.mjs`) classifies each task and the weekly rollup checks whether the execution actually used the advised tier. Annotating upfront prevents silent Opus-tier drift on Haiku subtasks.
+Why required: the PostToolUse TaskCreate hook (`~/.claude/hooks/prism-task-tier-advisor.mjs`) classifies each task and the weekly rollup checks whether the execution actually used the advised tier. Annotating upfront prevents silent Opus-tier drift on Haiku subtasks.
 
 ONE PLAN RULE: Blueprint Execution Plan and Workflow todo.md are the same artifact.
 Blueprint writes it. Workflow tracks it. Never create two plans.

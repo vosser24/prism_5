@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS KB Rebuild (v2.1.27 Phase 3a)
+// PRISM KB Rebuild (v2.1.27 Phase 3a)
 //
 // Forces a full KB index rebuild, optionally pushes delta to cloud.
 // Use when a plugin is added/removed or agents/rules change and you want
@@ -29,7 +29,7 @@ if (!stats.rebuilt) {
   process.exit(1);
 }
 
-log('ATLAS KB index rebuilt.');
+log('PRISM KB index rebuilt.');
 log(`  Entries:     ${stats.entry_count}`);
 log(`  By type:     ${Object.entries(stats.by_type).map(([t, n]) => `${t}=${n}`).join(', ')}`);
 if (stats.by_domain) log(`  By domain:   ${Object.entries(stats.by_domain).map(([t, n]) => `${t}=${n}`).join(', ')}`);
@@ -43,7 +43,7 @@ if (!doSync) process.exit(0);
 const here = dirname(fileURLToPath(import.meta.url));
 const syncPath = join(here, 'prism-kb-sync.mjs');
 log('');
-log('ATLAS KB sync (--push) ...');
+log('PRISM KB sync (--push) ...');
 const syncArgs = ['--push'];
 if (quiet) syncArgs.push('--json');
 const r = spawnSync('node', [syncPath, ...syncArgs], {encoding: 'utf-8', timeout: 30 * 60 * 1000});
@@ -57,9 +57,9 @@ if (quiet) {
   try {
     const summary = JSON.parse(r.stdout);
     const c = summary.plan_counts || {};
-    warn(`atlas-kb-refresh ${new Date().toISOString()} rebuilt=${stats.entry_count} executed=${summary.executed ?? 0} failures=${summary.failures ?? 0} add=${c.add ?? 0} replace=${c.replace ?? 0} move=${c.move ?? 0} skip=${c.skip ?? 0}`);
+    warn(`prism-kb-refresh ${new Date().toISOString()} rebuilt=${stats.entry_count} executed=${summary.executed ?? 0} failures=${summary.failures ?? 0} add=${c.add ?? 0} replace=${c.replace ?? 0} move=${c.move ?? 0} skip=${c.skip ?? 0}`);
   } catch {
-    warn('atlas-kb-refresh completed (could not parse summary)');
+    warn('prism-kb-refresh completed (could not parse summary)');
   }
 } else {
   process.stdout.write(r.stdout);

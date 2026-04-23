@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS DB migrate (Phase 4)
+// PRISM DB migrate (Phase 4)
 //
 // One-shot backfill:
 //   - .prism-spend.jsonl          -> spend table

@@ -1,5 +1,5 @@
 # MCP Server Registry
-# Updated by @atlas-updater. Check with: claude mcp list
+# Updated by @prism-updater. Check with: claude mcp list
 
 ## Recommended by Domain
 ### E-Commerce: postgresql (essential), github, playwright (testing), brave-search

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS Context-Audit Tool (v2.1.25 Gap 1)
+// PRISM Context-Audit Tool (v2.1.25 Gap 1)
 //
 // Measures the SessionStart token tax from active plugins by scanning each
 // plugin's SKILL.md files and summing the YAML front-matter `description`
@@ -176,7 +176,7 @@ if (writeCache) {
 if (wantJson) {
   process.stdout.write(JSON.stringify(result, null, 2));
 } else {
-  console.log(`ATLAS SessionStart context audit — measured at ${result.measured_at}`);
+  console.log(`PRISM SessionStart context audit — measured at ${result.measured_at}`);
   console.log(`Total tax (enabled plugins only): ~${result.total_tokens_est.toLocaleString()} tokens (~$${result.total_cost_opus_usd} per session on Opus input)`);
   console.log('');
   console.log('Per-plugin breakdown:');

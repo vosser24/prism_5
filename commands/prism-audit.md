@@ -1,9 +1,9 @@
 ---
-name: atlas-audit
-description: Scan ATLAS's own configuration surface for hygiene issues
+name: prism-audit
+description: Scan PRISM's own configuration surface for hygiene issues
 ---
 
-Native security scanner for ATLAS-specific files. PRISM-native grep-based
+Native security scanner for PRISM-specific files. PRISM-native grep-based
 secret scan runs by default (patterns listed in Step 1 below). For deeper
 coverage (100+ rules, taint analysis), optionally install AgentShield via
 ECC and run ECC's /security-scan — but PRISM does NOT require ECC.
@@ -22,9 +22,9 @@ Flag any file > 50MB under the repo. Not a security issue, but a
 hygiene/bloat finding (model weights, compiled artifacts, accidental
 log dumps). Report as LOW severity.
 
-## SCOPE (ATLAS-owned paths only)
+## SCOPE (PRISM-owned paths only)
 
-~/.claude/CLAUDE.md, settings.json, hooks/atlas-*.mjs,
+~/.claude/CLAUDE.md, settings.json, hooks/prism-*.mjs,
 skills/prism-plan/references/roster.json, agents/*.md, agents/*/agent.md
 
 {project}/CLAUDE.md, CLAUDE.local.md, .claude/.prism-state.json,
@@ -48,7 +48,7 @@ Patterns (case-insensitive):
 
 For each match: file + line, redacted value, severity.
 
-### Step 2 — ATLAS surface integrity
+### Step 2 — PRISM surface integrity
 
 Agent YAML:
 - Required frontmatter: name, description, model, maxTurns
@@ -71,7 +71,7 @@ Hook health:
 .prism-state.json: valid JSON, turns >= 0 and < 1000
 
 ### Step 4 — Misconfiguration checks
-- Global CLAUDE.md contains "## ATLAS" section
+- Global CLAUDE.md contains "## PRISM" section
 - settings.json MCP tokens not in plaintext
 - CLAUDE.local.md gitignored (CRITICAL if not)
 - .env in .gitignore (HIGH if not)
@@ -79,7 +79,7 @@ Hook health:
 ### Step 5 — Output report
 Format:
   SECRETS    ✗ CRITICAL: N | ✗ HIGH: N | ⚠ LOW: N
-  ATLAS INTEGRITY  ✓/✗ per check
+  PRISM INTEGRITY  ✓/✗ per check
   CONFIGURATION    ✓/⚠/✗ per check
   SUMMARY: N issues (N critical, N high, N warnings)
 

@@ -1,6 +1,6 @@
-// ATLAS Router Library (v2.1.25 Phase 1.2)
+// PRISM Router Library (v2.1.25 Phase 1.2)
 //
-// Pure-function scoring over an ATLAS KB index. No I/O. Deterministic.
+// Pure-function scoring over an PRISM KB index. No I/O. Deterministic.
 //
 // export routeQuery(prompt, index, opts?) -> [{entry, score, reason}]
 //   Scoring:
@@ -108,7 +108,7 @@ export function formatRouterHint(results) {
   if (!results || !results.length) return null;
   const top = results[0];
   const e = top.entry;
-  let bits = `ATLAS match: ${e.id} (score ${top.score.toFixed(1)}, ${top.reason})`;
+  let bits = `PRISM match: ${e.id} (score ${top.score.toFixed(1)}, ${top.reason})`;
   if (e.invoke_hint) bits += ` — invoke: ${e.invoke_hint}`;
   if (e.plugin_enabled === false) bits += ' [plugin disabled — direct body load only]';
   return bits;

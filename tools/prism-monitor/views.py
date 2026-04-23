@@ -1,4 +1,4 @@
-"""Alternative views for ATLAS monitor: --daily, --agents, --mcps, --costs."""
+"""Alternative views for PRISM monitor: --daily, --agents, --mcps, --costs."""
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -43,7 +43,7 @@ def daily_view() -> Table:
         for a in m["agent_calls"]:
             bucket["agents"].add(a)
 
-    table = Table(title="ATLAS — Daily Summary", show_lines=False)
+    table = Table(title="PRISM — Daily Summary", show_lines=False)
     table.add_column("Date", style="cyan")
     table.add_column("Sessions", justify="right")
     table.add_column("Tokens", justify="right")
@@ -78,15 +78,15 @@ def agents_view() -> Table | Panel:
     agents = roster["agents"]
     if not agents:
         return Panel(
-            "[yellow]No agents in the ATLAS roster yet.[/]\n\n"
+            "[yellow]No agents in the PRISM roster yet.[/]\n\n"
             "[dim]Agents are created on-demand by @agent-factory when the "
             "master-orchestrator assembles a team. Run a FULL ORCHESTRATION task "
             "to populate the roster.[/]",
-            title="[bold blue]ATLAS — Agent Roster[/]",
+            title="[bold blue]PRISM — Agent Roster[/]",
             border_style="blue",
         )
 
-    table = Table(title="ATLAS — Agent Roster")
+    table = Table(title="PRISM — Agent Roster")
     table.add_column("Agent", style="cyan")
     table.add_column("Model")
     table.add_column("Tasks", justify="right")
@@ -118,7 +118,7 @@ def mcps_view() -> Table:
     """MCP server usage breakdown from latest session."""
     files = find_session_files()
     if not files:
-        return Table(title="ATLAS — No sessions found")
+        return Table(title="PRISM — No sessions found")
     m = compute_session_metrics(files[0])
 
     by_server: dict[str, dict] = defaultdict(lambda: {"tools": {}, "calls": 0, "tokens": 0})
@@ -134,7 +134,7 @@ def mcps_view() -> Table:
         b["calls"] += val["calls"]
         b["tokens"] += val["tokens"]
 
-    table = Table(title="ATLAS — MCP Usage (current session)")
+    table = Table(title="PRISM — MCP Usage (current session)")
     table.add_column("Server", style="cyan")
     table.add_column("Tool")
     table.add_column("Calls", justify="right")
@@ -163,10 +163,10 @@ def costs_view() -> Table:
     """Cost breakdown by model for the current session."""
     files = find_session_files()
     if not files:
-        return Table(title="ATLAS — No sessions found")
+        return Table(title="PRISM — No sessions found")
     m = compute_session_metrics(files[0])
 
-    table = Table(title="ATLAS — Cost Breakdown")
+    table = Table(title="PRISM — Cost Breakdown")
     table.add_column("Model", style="cyan")
     table.add_column("Calls", justify="right")
     table.add_column("Input", justify="right")

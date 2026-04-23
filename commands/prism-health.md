@@ -1,22 +1,22 @@
 ---
-name: atlas-health
-description: System health check across ATLAS core, agents, hooks, external tools, video pipeline
+name: prism-health
+description: System health check across PRISM core, agents, hooks, external tools, video pipeline
 ---
 
-Comprehensive status check of the ATLAS installation (v2.1.23).
+Comprehensive status check of the PRISM installation (v2.1.23).
 
 ## PROTOCOL
 
 ### Step 1 — Verify core installation
 Check existence of:
 - ~/.claude/ directory
-- ~/.claude/CLAUDE.md (with ## ATLAS section)
+- ~/.claude/CLAUDE.md (with ## PRISM section)
 - ~/.claude/settings.json (hooks registered)
-- ~/.claude/hooks/atlas-*.mjs (5 files)
+- ~/.claude/hooks/prism-*.mjs (5 files)
 - ~/.claude/skills/prism-plan/SKILL.md + references/
 - ~/.claude/skills/prism-discover/SKILL.md
 - ~/.claude/skills/video-production/SKILL.md
-- ~/.claude/agents/master-orchestrator.md, agent-factory.md, atlas-updater.md
+- ~/.claude/agents/master-orchestrator.md, agent-factory.md, prism-updater.md
 - ~/.claude/commands/ (9 commands: health, roster, update, init, retire,
   app-expert, archive, recommend, audit)
 - ~/.claude/skills/prism-plan/references/tools-registry.md (v2.1.23)
@@ -38,26 +38,26 @@ Top 5 most-used by task count.
 
 Read tools-registry.md. For each entry, check install status:
   Tier 1 check methods:
-    /plugin list
-    uv pip list | grep browser-use
+    /plugin list                              (superpowers)
+    which uipro || npm ls -g uipro-cli        (ui-ux-pro-max)
 
   Tier 2 check methods:
+    /plugin list | grep everything-claude-code
+    uv pip list | grep browser-use
     cat ~/.claude/settings.json | grep <mcp-name>
 
 Output:
   EXTERNAL TOOLS
-    Tier 1 (companion tools):
-      ✓ obra/superpowers              installed, active
+    Tier 1 (auto-installed by /prism-init):
+      ✓ obra/superpowers                     installed, active
       ✓ nextlevelbuilder/ui-ux-pro-max-skill installed, active
-      ✗ browser-use/browser-use        NOT INSTALLED (run /prism-recommend)
 
-    Optional:
+    Tier 2 (on-demand via /prism-recommend):
       · affaan-m/everything-claude-code  OPTIONAL — not checked by default
-        (high token tax; install only if you want language-specific
-        reviewers or AgentShield's /security-scan. Run
-        /prism-health --include-optional to check install status.)
-
-    Tier 2 (on-demand):
+        (~12k token index; install only for language-specific reviewers
+        or AgentShield. Run /prism-health --include-optional to check.)
+      · browser-use/browser-use          OPTIONAL — ~400 MB chromium
+        Install only for general browser automation.
       ✗ Filesystem MCP     not installed
       ✗ GitHub MCP         not installed
       ✓ Context7 MCP       installed
@@ -70,7 +70,7 @@ Cross-reference with .claude/tools-scan.json if present.
 ### Step 4 — Dependencies
 Read dependency-manifest.md, run check commands, report missing.
 
-ATLAS-specific dependency checks:
+PRISM-specific dependency checks:
   - notebooklm-py (always)
   - ffmpeg (video audio mixing)
   - kokoro-tts (primary TTS)

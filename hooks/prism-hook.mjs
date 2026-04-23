@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS v2.1.24 Hook — UserPromptSubmit
+// PRISM v2.1.24 Hook — UserPromptSubmit
 // Stdout from this hook is added as context Claude sees.
 //
 // v2.1.24 (2026-04-20): gap-closure pass
@@ -61,7 +61,7 @@ try {
   // ── First-prompt checks ──
   if (turn === 1) {
     try {
-      const lp = j(H, '.claude', 'skills', 'atlas-plan', 'references', 'update-log.json');
+      const lp = j(H, '.claude', 'skills', 'prism-plan', 'references', 'update-log.json');
       if (e(lp)) {
         const log = JSON.parse(r(lp, 'utf-8'));
         if (log.next_scheduled_update && new Date() >= new Date(log.next_scheduled_update))
@@ -119,19 +119,19 @@ try {
       recordSuggestion('superpowers_worktree'); matchedInvocation = true;
     }
 
-    // ─── TIER 1 — ECC ───
+    // ─── TIER 2 (conditional) — ECC ───
     const ecc_langs = /\breview (my )?(typescript|python|go|java|kotlin|rust|swift|php|perl|c\+\+|ruby) code\b/i;
     const ecc_lang_general = /\b(typescript|python|go|java|kotlin|rust|swift|php|perl|c\+\+|ruby) (code review|lint)\b/i;
     if ((ecc_langs.test(prompt) || ecc_lang_general.test(prompt)) && shouldSuggest('ecc_lang_reviewer')) {
       const m = prompt.match(/\b(typescript|python|go|java|kotlin|rust|swift|php|perl|c\+\+|ruby)\b/i);
       const lang = m ? m[0].toLowerCase() : 'language';
-      messages.push(`PRISM: ${lang} review — ECC is installed, invoke @${lang}-reviewer agent.`);
+      messages.push(`PRISM: ${lang} review — if ECC is installed, invoke @${lang}-reviewer. Otherwise dispatch a Sonnet subagent with explicit ${lang}-specific review criteria.`);
       recordSuggestion('ecc_lang_reviewer'); matchedInvocation = true;
     }
 
     const security = /\b(security (scan|audit)|check for vulnerabilities?|OWASP|CVE|secrets in my config|exposed credentials|vulnerabilit(y|ies))\b/i;
     if (security.test(prompt) && shouldSuggest('ecc_security')) {
-      messages.push("PRISM: Security audit — ECC is installed, invoke its security-scan skill (AgentShield). For ATLAS-specific hygiene, use /prism-audit.");
+      messages.push("PRISM: Security audit — run /prism-audit for built-in PRISM hygiene (grep-based secret scan, MCP endpoint check). For deeper OWASP/CVE coverage, ECC's AgentShield is Tier 2 — install via /prism-recommend only if needed.");
       recordSuggestion('ecc_security'); matchedInvocation = true;
     }
 
@@ -145,13 +145,13 @@ try {
       recordSuggestion('uiux_design'); matchedInvocation = true;
     }
 
-    // ─── TIER 1 — BROWSER-USE ───
+    // ─── TIER 2 (conditional) — BROWSER-USE ───
     const browser_form = /\b(fill (out|in) (this|the) (form|application)|submit (this|the) form|apply for (this|the )?(job|position|loan))\b/i;
     const browser_shop = /\b(book (a|the) (flight|hotel|appointment|reservation|table)|buy .+ online|order .+ online|shop(ping)? for .+ online)\b/i;
     const browser_scrape = /\b(scrape (the |this |a )?(site|website|page)|extract data from .+ (site|website|page)|find all .+ on .+ site)\b/i;
     const browser_auto = /\b(automate (a |the )?(browser|website)|browser automation|log into .+ and)\b/i;
     if ((browser_form.test(prompt) || browser_shop.test(prompt) || browser_scrape.test(prompt) || browser_auto.test(prompt)) && shouldSuggest('browseruse')) {
-      messages.push("PRISM: Browser automation — browser-use is installed, use Agent() + ChatBrowserUse() pattern. (ATLAS's app-expert is for video screenshots of YOUR app, not general browsing.)");
+      messages.push("PRISM: Browser automation — if browser-use is installed, use Agent() + ChatBrowserUse(). Otherwise install via /prism-recommend (Tier 2, ~400 MB chromium) or use Playwright MCP.");
       recordSuggestion('browseruse'); matchedInvocation = true;
     }
 
@@ -172,14 +172,14 @@ try {
     // ─── NEW: PERFORMANCE OPTIMIZATION ───
     const perf = /\b(optimize (this|the|performance)|make (it|this) (faster|quicker)|profile (the |this )?code|benchmark (this|the)|reduce (the )?(bundle size|memory|latency)|(this|it) (is|runs) slow|speed (this|it) up|N\+1 (problem|queries?)|slow SQL|slow query)\b/i;
     if (perf.test(prompt) && shouldSuggest('perf_opt', 10)) {
-      messages.push("PRISM: Performance work — ECC is installed, invoke @performance-optimizer agent or its performance-optimizer skill.");
+      messages.push("PRISM: Performance work — dispatch a Sonnet subagent with an explicit profiling plan (measure → identify hotspot → optimize → re-measure). If ECC is installed, its @performance-optimizer agent is also available.");
       recordSuggestion('perf_opt'); matchedInvocation = true;
     }
 
     // ─── NEW: REFACTOR / DEAD-CODE CLEANUP ───
     const refactor_cleanup = /\b(remove dead code|find (dead|unused) code|dead.?code (cleanup|removal)|unused (imports?|dependencies|vars?)|find duplicates|consolidate (duplicate|similar) (code|functions?)|refactor (duplicates?|similar))\b/i;
     if (refactor_cleanup.test(prompt) && shouldSuggest('refactor_clean', 10)) {
-      messages.push("PRISM: Dead-code cleanup — ECC is installed, invoke @refactor-cleaner agent (runs knip/depcheck/ts-prune).");
+      messages.push("PRISM: Dead-code cleanup — dispatch a Sonnet subagent to run `knip`/`depcheck`/`ts-prune` directly. If ECC is installed, its @refactor-cleaner agent wraps these.");
       recordSuggestion('refactor_clean'); matchedInvocation = true;
     }
 
@@ -224,7 +224,7 @@ try {
 
   // ── Phase 1.3 + 2.6: KB-index router fallback (two-band) ──
   // [WHY] Hardcoded regex patterns above cover ~15 canonical intents, but
-  // ATLAS has 244+ indexed skills/agents/commands. Two bands:
+  // PRISM has 244+ indexed skills/agents/commands. Two bands:
   //   High confidence (score >= 5.0): emit direct invocation hint (Phase 1.3)
   //   Low confidence  (1.0 <= score < 3.0): emit Tier-2 cloud-search hint
   //     pointing at prism-kb-query.mjs (Phase 2.6). NotebookLM has richer

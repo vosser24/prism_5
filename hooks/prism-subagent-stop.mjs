@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS SubagentStop — roster update + spend ledger append (Gap 6).
+// PRISM SubagentStop — roster update + spend ledger append (Gap 6).
 // Fires after every subagent completion.
 import{readFileSync as r,writeFileSync as w,appendFileSync as ap,existsSync as e,mkdirSync as mk}from'fs';
 import{join as j}from'path';
@@ -15,8 +15,8 @@ const usage=input.usage||{};
 const tokens=(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0);
 
 // ── Roster update (existing behavior, wrapped so its failure can't block ledger) ──
-const rp=j(H,'.claude','skills','atlas-plan','references','roster.json');
-if(e(rp)&&agentName&&!['master-orchestrator','agent-factory','atlas-updater'].includes(agentName)){
+const rp=j(H,'.claude','skills','prism-plan','references','roster.json');
+if(e(rp)&&agentName&&!['master-orchestrator','agent-factory','prism-updater'].includes(agentName)){
   try{
     const roster=JSON.parse(r(rp,'utf-8'));
     if(roster.agents&&roster.agents[agentName]){

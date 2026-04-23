@@ -1,5 +1,5 @@
 ---
-name: atlas-discover
+name: prism-discover
 description: >
   Index project resources into compact reference files for cheap future recall.
   Use when user says "read my database", "scan codebase", "map APIs",
@@ -7,11 +7,11 @@ description: >
   Never activate for other tasks.
 ---
 
-# ATLAS Discover — Resource Indexing
+# PRISM Discover — Resource Indexing
 
 ## Output Location (MANDATORY)
 ALL output files go to: .claude/references/
-NEVER use atlas/discovery/, docs/, or any other path.
+NEVER use prism/discovery/, docs/, or any other path.
 Create .claude/references/ if it doesn't exist.
 
 ## Output Format (MANDATORY)

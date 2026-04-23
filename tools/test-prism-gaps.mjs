@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Test harness for ATLAS v2.1.24 gap closures.
+// Test harness for PRISM v2.1.24 gap closures.
 // Feeds synthetic payloads to each hook and asserts expected behavior.
 //
 // Safe: snapshots & restores ~/.claude/.prism-global-state.json and
@@ -332,7 +332,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     assert('P1.7-9 router import/eval', false, `err: ${(err && err.message) || err}`);
   }
 
-  // P1.10 — hook integration: router-only prompt produces ATLAS match line
+  // P1.10 — hook integration: router-only prompt produces PRISM match line
   if (existsSync(KB_INDEX)) {
     const tmp = join(tmpdir(), 'prism-test-p1-' + Math.random().toString(36).slice(2));
     mkdirSync(tmp, {recursive: true});
@@ -342,8 +342,8 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
       prompt: 'create a podcast about x from my notes'
     }, tmp).stdout;
     // Router should kick in and surface notebooklm or similar
-    assert('P1.10 hook emits ATLAS match line on router-only prompt',
-      /ATLAS match:/.test(out),
+    assert('P1.10 hook emits PRISM match line on router-only prompt',
+      /PRISM match:/.test(out),
       `stdout=${out.slice(0,150)}`);
     rmSync(tmp, {recursive: true, force: true});
   }
@@ -363,13 +363,13 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
   const {classifyEntry, DOMAINS, DOMAIN_TITLES, summarize} = await import('file://' + join(TOOLS, 'prism-kb-domains.mjs').replace(/\\/g, '/'));
 
   // P2.1 — rule-based match
-  const c1 = classifyEntry({id:'skill:atlas:atlas-plan', type:'skill', name:'atlas-plan', description:'ATLAS plan orchestration', keywords_top10:['atlas','plan']});
-  assert('P2.1 rule match: atlas-plan -> atlas-core', c1.domain === 'atlas-core', `got ${c1.domain}`);
+  const c1 = classifyEntry({id:'skill:prism:prism-plan', type:'skill', name:'prism-plan', description:'PRISM plan orchestration', keywords_top10:['prism','plan']});
+  assert('P2.1 rule match: prism-plan -> prism-core', c1.domain === 'prism-core', `got ${c1.domain}`);
   assert('P2.1b rule confidence >= 0.9', c1.confidence >= 0.9, `got ${c1.confidence}`);
 
-  // P2.2 — agent fallback to atlas-core
+  // P2.2 — agent fallback to prism-core
   const c2 = classifyEntry({id:'agent:mystery', type:'agent', name:'mystery', description:'x', keywords_top10:[]});
-  assert('P2.2 agent fallback -> atlas-core', c2.domain === 'atlas-core', `got ${c2.domain}/${c2.reason}`);
+  assert('P2.2 agent fallback -> prism-core', c2.domain === 'prism-core', `got ${c2.domain}/${c2.reason}`);
 
   // P2.3 — rule type -> project-rules
   const c3 = classifyEntry({id:'rule:global:foo', type:'rule', name:'foo', description:'d'});
@@ -485,7 +485,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
 
   // Case 4: meta has ghost entry no longer in index -> ORPHAN
   const metaOrphan = JSON.parse(JSON.stringify(metaFull));
-  metaOrphan.entries['skill:ghost:gone'] = {cloud_source_id: 'ghost', domain: 'atlas-core', body_mtime: 1};
+  metaOrphan.entries['skill:ghost:gone'] = {cloud_source_id: 'ghost', domain: 'prism-core', body_mtime: 1};
   const plan4 = computePlan(dedupedIdx, metaOrphan, {mtimeMap: pinnedMtime});
   assert('P2.22 sync detects orphan', plan4.orphan.some(o => o.id === 'skill:ghost:gone'));
 }
@@ -505,10 +505,10 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
   // P2.24 — meta with notebooks present => routing line on a matching prompt.
   // Uses "plan my upcoming work" which substring-matches prism-plan (high-conf
   // band on a healthy index). Skips cleanly if nothing routes on current index.
-  writeFileSync(KB_META, JSON.stringify({schema_version:1, notebooks:{'atlas-core':{id:'nb-atlas-core',title:'PRISM-KB: atlas-core'}}, entries:{}}));
+  writeFileSync(KB_META, JSON.stringify({schema_version:1, notebooks:{'prism-core':{id:'nb-prism-core',title:'PRISM-KB: prism-core'}}, entries:{}}));
   const out2 = runHook('prism-hook.mjs', {session_id: testSessionId + '-p2b', prompt: 'plan my upcoming work'}, tmp).stdout;
   const hasTier2 = /PRISM TIER-2/.test(out2);
-  const hasMatch = /ATLAS match:/.test(out2);
+  const hasMatch = /PRISM match:/.test(out2);
   if (hasTier2 || hasMatch) {
     assert('P2.24 hook emits a routing line on weak-match prompt', true);
   } else {
@@ -517,7 +517,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
 
   // P2.25 — Tier-2 hint references prism-kb-query.mjs
   if (hasTier2) {
-    assert('P2.25 Tier-2 hint references prism-kb-query.mjs', /atlas-kb-query\.mjs/.test(out2));
+    assert('P2.25 Tier-2 hint references prism-kb-query.mjs', /prism-kb-query\.mjs/.test(out2));
   } else {
     results.push('  - P2.25 skipped (prompt hit high-confidence band instead)');
   }
@@ -839,7 +839,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     // P4.8 — FTS5 transcripts search round-trip.
     {
       const h = db.openDb();
-      db.appendTranscriptChunk(h, sentinel, 'atlas phase four fts smoke test uniquetokenp4x');
+      db.appendTranscriptChunk(h, sentinel, 'prism phase four fts smoke test uniquetokenp4x');
       const row = h.prepare(`SELECT session_id FROM transcripts_fts WHERE transcripts_fts MATCH ?`).get('uniquetokenp4x');
       db.close(h);
       assert('P4.8 FTS5 full-text search finds seeded token', row && row.session_id === sentinel, JSON.stringify(row));
@@ -952,7 +952,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
         const wn = Math.ceil(((d - ys) / 86400000 + 1) / 7);
         return `${d.getUTCFullYear()}-W${String(wn).padStart(2,'0')}`;
       })();
-      const outPath = join(CLAUDE_BASE, '.atlas-rollups', `${week}.md`);
+      const outPath = join(CLAUDE_BASE, '.prism-rollups', `${week}.md`);
       const md = existsSync(outPath) ? readFileSync(outPath, 'utf-8') : '';
       assert('P5a.4 rollup renders Plan-Tier Adherence with advice rows',
         /## Plan-Tier Adherence/.test(md) && /Tasks advised: [1-9]/.test(md),
@@ -1456,7 +1456,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
 
 restore();
 
-console.log('ATLAS v2.1.24 Gap-Closure Test Results');
+console.log('PRISM v2.1.24 Gap-Closure Test Results');
 console.log('======================================');
 console.log(results.join('\n'));
 console.log('\n' + (failed === 0 ? `\u2705 All ${passed} assertions passed.` : `\u274c ${failed} failed, ${passed} passed.`));

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// ATLAS KB Notebook Init (v2.1.26 Phase 2.3)
+// PRISM KB Notebook Init (v2.1.26 Phase 2.3)
 //
-// Idempotent bootstrap for per-domain ATLAS-KB notebooks on NotebookLM.
+// Idempotent bootstrap for per-domain PRISM-KB notebooks on NotebookLM.
 // - Reads ~/.claude/.prism-kb-meta.json (creates if absent)
 // - Lists existing cloud notebooks (`notebooklm list --json`)
 // - Reuses any titled "PRISM-KB: <domain>"; creates the rest
@@ -118,7 +118,7 @@ function init({dryRun = false, json = false} = {}) {
   if (json) {
     process.stdout.write(JSON.stringify(summary, null, 2));
   } else {
-    console.log(`ATLAS KB Notebook Init ${dryRun ? '(dry-run)' : ''}`);
+    console.log(`PRISM KB Notebook Init ${dryRun ? '(dry-run)' : ''}`);
     console.log(`  Total domains: ${summary.notebooks_total}`);
     console.log(`  Reused:        ${summary.reused}`);
     console.log(`  ${dryRun ? 'Would create' : 'Created'}: ${dryRun ? summary.would_create : summary.created}`);

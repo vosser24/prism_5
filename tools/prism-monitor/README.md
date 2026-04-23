@@ -1,6 +1,6 @@
-# ATLAS Monitor
+# PRISM Monitor
 
-Live dashboard for Claude Code sessions with ATLAS system awareness.
+Live dashboard for Claude Code sessions with PRISM system awareness.
 
 Reads Claude Code's JSONL session logs directly — no API calls, no cost — and
 surfaces token usage, cost, model mix, agent activity, MCP calls, context
@@ -12,7 +12,7 @@ health, and task progress.
 pip install rich
 ```
 
-No install needed beyond that — all files live under `~/.claude/tools/atlas-monitor/`.
+No install needed beyond that — all files live under `~/.claude/tools/prism-monitor/`.
 
 ## Usage
 
@@ -40,16 +40,16 @@ Optional flags:
 Add to `~/.bashrc`:
 
 ```bash
-alias atlas='python ~/.claude/tools/prism-monitor/prism-monitor.py'
+alias prism='python ~/.claude/tools/prism-monitor/prism-monitor.py'
 ```
 
-Then just: `atlas`, `atlas --agents`, `atlas --daily`, etc.
+Then just: `prism`, `prism --agents`, `prism --daily`, etc.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `atlas-monitor.py` | CLI entry point |
+| `prism-monitor.py` | CLI entry point |
 | `config.py` | Paths, pricing, plan limits, color scheme |
 | `data_reader.py` | JSONL parsing, roster/todo reading |
 | `metrics.py` | Token/cost/depth/context calculations |
@@ -59,7 +59,7 @@ Then just: `atlas`, `atlas --agents`, `atlas --daily`, etc.
 ## What it reads
 
 - `~/.claude/projects/*/*.jsonl` — session logs (auto-detects current project)
-- `~/.claude/agents/_meta/roster.json` — ATLAS agent registry
+- `~/.claude/agents/_meta/roster.json` — PRISM agent registry
 - `tasks/todo.md` — current project execution plan
 - `.claude/references/*-index.md` — project intelligence indexes
 

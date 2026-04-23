@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS analytical DB (Phase 4)
+// PRISM analytical DB (Phase 4)
 //
 // Central schema + connection helper backed by node:sqlite (experimental in
 // Node >=22.5). Single file owns every table + FTS virtual table used by the

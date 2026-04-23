@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS SessionStart (v2.1.25) — reset project turn counter + run once-per-day
+// PRISM SessionStart (v2.1.25) — reset project turn counter + run once-per-day
 // context-tax audit (Gap 1 closure).
 //
 // [WHY] Every session Claude Code dumps ~10k tokens of plugin skill

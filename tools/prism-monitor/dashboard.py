@@ -49,7 +49,7 @@ def render_dashboard(plan: str = DEFAULT_PLAN) -> Panel:
             Text("No active Claude Code session detected.\n"
                  f"Looked in: {proj_dir or 'all projects'}",
                  style="yellow"),
-            title="[bold blue]ATLAS Monitor[/]",
+            title="[bold blue]PRISM Monitor[/]",
             border_style="blue"
         )
 
@@ -128,9 +128,9 @@ def render_dashboard(plan: str = DEFAULT_PLAN) -> Panel:
     if not mix_parts:
         mix_line.append(" (no data)", style="dim")
 
-    # ── ATLAS Intelligence section ──
-    atlas_header = Text("── ATLAS Intelligence ", style="bold blue")
-    atlas_header.append("─" * 40, style="dim")
+    # ── PRISM Intelligence section ──
+    prism_header = Text("── PRISM Intelligence ", style="bold blue")
+    prism_header.append("─" * 40, style="dim")
 
     depth = m["depth_counts"]
     depth_line = Text(
@@ -216,7 +216,7 @@ def render_dashboard(plan: str = DEFAULT_PLAN) -> Panel:
         Text(""),
         turns_line, cost_line, burn_line, mix_line,
         Text(""),
-        atlas_header,
+        prism_header,
         depth_line, agent_line, mcp_line, refs_line, task_line,
         Text(""),
         ctx_header, ctx_line,
@@ -228,7 +228,7 @@ def render_dashboard(plan: str = DEFAULT_PLAN) -> Panel:
 
     return Panel(
         body,
-        title="[bold blue]⚡ ATLAS Monitor[/]",
+        title="[bold blue]⚡ PRISM Monitor[/]",
         subtitle="[dim]--daily --agents --mcps --costs[/]",
         border_style="blue",
         padding=(1, 2),

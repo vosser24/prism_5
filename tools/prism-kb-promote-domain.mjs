@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS KB Promote Domain (v2.1.26 Phase 2.7)
+// PRISM KB Promote Domain (v2.1.26 Phase 2.7)
 //
 // Creates a new cloud notebook for a new domain key and records it in meta.
 // Does NOT move sources automatically.

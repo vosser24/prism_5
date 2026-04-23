@@ -1,12 +1,12 @@
 {
-  "atlas_version": "2.1.24",
+  "prism_version": "2.1.24",
   "installed_date": "2026-04-20T10:10:21.359481",
   "last_update_check": "2026-04-20T10:10:21.359481",
   "next_scheduled_update": "2026-05-05T10:10:21.359481",
   "update_history": [
     {
       "date": "2026-04-20T10:10:21.359481",
-      "action": "Installed ATLAS v2.1.24"
+      "action": "Installed PRISM v2.1.24"
     }
   ]
 }

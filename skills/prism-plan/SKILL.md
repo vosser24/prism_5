@@ -1,5 +1,5 @@
 ---
-name: atlas-plan
+name: prism-plan
 description: >
   Multi-step project planning and execution with expert agent teams.
   Use ONLY when user explicitly says "plan", "architect", "design system",
@@ -9,7 +9,7 @@ description: >
   or conversation. If in doubt, do NOT activate.
 ---
 
-# ATLAS Plan — Multi-Step Orchestration
+# PRISM Plan — Multi-Step Orchestration
 
 When invoked, follow this protocol:
 
@@ -129,12 +129,12 @@ Where `[tier]` ∈ `haiku|sonnet|opus` and `[pgroup=X]` is an optional parallel-
 
 Tier assignment rule: apply `classifyTier` heuristics — Haiku for bounded extract/dump/list/count, Sonnet for cross-file refactor or test writing from spec, Opus for architecture/trade-off/root-cause decisions.
 
-**Worked example** — Phase 5a of the ATLAS KB plan:
+**Worked example** — Phase 5a of the PRISM KB plan:
 
 ```
 - [ ] [haiku] Extract classifyTier + detectCompound to tools/lib/prism-tier-classify.mjs — done when: 118 existing tests still pass
 - [ ] [sonnet] Add PostToolUse:TaskCreate advisor hook + DB writer — done when: synthetic payload emits nudge + advice row written
-- [ ] [haiku] Update atlas-plan + blueprint-prompt SKILL task format to [tier]-prefixed — done when: both SKILL.md files carry the new template
+- [ ] [haiku] Update prism-plan + blueprint-prompt SKILL task format to [tier]-prefixed — done when: both SKILL.md files carry the new template
 - [ ] [sonnet] Rollup adherence section — done when: weekly digest shows Plan-Tier Adherence table
 - [ ] [sonnet] Add 5 Phase-5a tests — done when: 123/123 assertions pass
 - [ ] [opus] Design Phase 5 compound-learning loop schema — done when: lesson extraction shape agreed + pre-answer recall budget decided

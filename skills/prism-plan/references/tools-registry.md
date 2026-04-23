@@ -1,4 +1,4 @@
-# ATLAS — External Tools Registry
+# PRISM — External Tools Registry
 
 This registry is consulted by:
 - prism-hook.mjs for intent detection on every user prompt
@@ -7,7 +7,7 @@ This registry is consulted by:
 - /prism-init for which companions to auto-install
 - @master-orchestrator before creating a new agent (check if external skill handles it)
 
-ATLAS's compose-first stance (permanent): we recommend and invoke, we don't replicate.
+PRISM's compose-first stance (permanent): we recommend and invoke, we don't replicate.
 
 ---
 
@@ -41,29 +41,7 @@ Intent keywords:
 
 Hook tone: INVOCATION (tool is installed)
 
-## 2. affaan-m/everything-claude-code (OPTIONAL — heavy)
-Category: Polyglot toolbox (10 language reviewers, security scan, skills catalog)
-Install: /plugin marketplace add https://github.com/affaan-m/everything-claude-code
-         /plugin install everything-claude-code@everything-claude-code
-Stars: 159k | License: MIT | Maintained: Active
-
-Status: OPTIONAL as of PRISM 2.2.1 — NOT auto-installed during /prism-init.
-Why: 100+ skills catalog imposes a large per-turn token tax. Multiple users
-reported high context costs outweighing benefits for everyday work. Install
-manually via /prism-recommend --include-optional if you explicitly want
-language-specific reviewers or AgentShield's deeper security scan.
-
-Intent keywords:
-  Language review: review my {typescript|python|go|java|kotlin|rust|swift|php|perl|c++|ruby} code
-  Security: security scan, vulnerabilities, OWASP, CVE, secrets in config
-  Polyglot: across multiple languages, frontend X backend Y
-
-Hook tone: MID (was INVOCATION in 2.2.0 and earlier — demoted because tool is
-no longer assumed installed). /prism-audit performs a PRISM-native
-grep-based secret scan instead; use ECC's AgentShield for deeper coverage
-only when installed.
-
-## 3. nextlevelbuilder/ui-ux-pro-max-skill
+## 2. nextlevelbuilder/ui-ux-pro-max-skill
 Category: UI/UX design system generation (161 industry rules)
 Install: npm install -g uipro-cli && uipro init --ai claude --global
 Stars: 67k | License: MIT | Maintained: Active
@@ -77,10 +55,42 @@ Intent keywords:
 
 Hook tone: INVOCATION
 
+---
+
+# TIER 2 — Registered, install on demand
+
+## 3. affaan-m/everything-claude-code (OPTIONAL — heavy)
+Category: Polyglot toolbox (10 language reviewers, security scan, skills catalog)
+Install: /plugin marketplace add https://github.com/affaan-m/everything-claude-code
+         /plugin install everything-claude-code@everything-claude-code
+Stars: 159k | License: MIT | Maintained: Active
+
+Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-init.
+Why: 100+ skills catalog imposes a large per-turn token tax (~12k tokens of
+skill index on every session). High context costs outweigh benefits for
+everyday work. Install manually via `/prism-recommend --include-optional`
+only when the project genuinely needs language-specific reviewers or deeper
+security scanning than /prism-audit provides.
+
+Intent keywords:
+  Language review: review my {typescript|python|go|java|kotlin|rust|swift|php|perl|c++|ruby} code
+  Security: security scan, vulnerabilities, OWASP, CVE, secrets in config
+  Polyglot: across multiple languages, frontend X backend Y
+
+Hook tone: MID-conditional ("IF ECC is installed, invoke @<lang>-reviewer").
+/prism-audit performs a PRISM-native grep-based secret scan; use ECC's
+AgentShield only when installed.
+
 ## 4. browser-use/browser-use
 Category: General browser automation library
 Install: uv init && uv add browser-use && uv sync && uvx browser-use install
 Stars: 83.5k | License: MIT | Maintained: Active
+
+Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-init.
+Why: pulls in a full browser stack (~400MB chromium) and a python runtime.
+Only install when the project genuinely needs general-purpose browser
+automation (scraping, form-filling, booking flows). For app-scoped screenshot
+work, PRISM Pro's app-expert pattern is already a better fit.
 
 Intent keywords:
   Forms: fill form, apply for {job|loan}
@@ -88,11 +98,7 @@ Intent keywords:
   Scrape: scrape site, extract data from site
   Auto: automate browser, log into X and
 
-Hook tone: INVOCATION (distinct from ATLAS's app-expert which is for video screenshots)
-
----
-
-# TIER 2 — Registered, install on demand
+Hook tone: MID-conditional ("IF browser-use is installed, use Agent() + ChatBrowserUse()").
 
 ## 5. Anthropic Filesystem MCP
 Install: add to settings.json mcpServers
@@ -113,7 +119,7 @@ Tone: MID
 Install: add @playwright/mcp to settings.json
 Keywords: screenshot this page, click through this flow, visual regression
 Tone: MID
-NOTE: Useful alongside ATLAS's app-expert pattern.
+NOTE: Useful alongside PRISM's app-expert pattern.
 
 ---
 
@@ -137,7 +143,7 @@ Agent-factory runs weekly (when invoked):
 - 3+ consecutive declines
 - User came back within 7 days with same need after installing
 - Flagged by /prism-audit tool-health check
-- Manual /atlas-registry remove
+- Manual /prism-registry remove
 
 ---
 

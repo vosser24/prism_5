@@ -1,5 +1,5 @@
 # Model Capability Matrix
-# Update via /prism-update or @atlas-updater
+# Update via /prism-update or @prism-updater
 
 ## Opus 4.6 (claude-opus-4-6)
 - Cost: $5/MTok input, $25/MTok output | Context: 1M tokens

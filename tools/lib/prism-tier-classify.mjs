@@ -1,4 +1,4 @@
-// ATLAS Tier Classifier (Phase 5a.1 shared lib)
+// PRISM Tier Classifier (Phase 5a.1 shared lib)
 //
 // Lifted verbatim from hooks/prism-agent-model-guard.mjs (Phase 3b). The
 // classifier is score-based, NOT verb-match:

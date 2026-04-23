@@ -69,7 +69,7 @@ def current_session_file(project_dir: Path | None = None) -> Path | None:
 
 
 def load_roster() -> dict:
-    """Load ATLAS agent roster. Returns {} if missing."""
+    """Load PRISM agent roster. Returns {} if missing."""
     try:
         with open(ROSTER_PATH, "r", encoding="utf-8") as f:
             return json.load(f)

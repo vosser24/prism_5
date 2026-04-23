@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Claude Code status line — pure-bash fast path (avoid subprocess fork penalty on Windows).
-# Two lines: (1) model + project + git + cost + lines + duration, (2) context bar + ATLAS + cwd.
+# Two lines: (1) model + project + git + cost + lines + duration, (2) context bar + PRISM + cwd.
 input=$(cat 2>/dev/null)
 # Argv fallback (unused on current Claude Code, but cheap)
 [ -z "$input" ] && [ -n "$1" ] && input="$1"
@@ -17,7 +17,7 @@ extract() {
   fi
 }
 
-# Context/ATLAS fields (custom, injected by ATLAS hooks)
+# Context/PRISM fields (custom, injected by PRISM hooks)
 used=$(extract used_percentage)
 win_size=$(extract context_window_size)
 cache_create=$(extract cache_creation_input_tokens)
@@ -43,7 +43,7 @@ GREEN=$'\033[38;2;166;227;161m'   # git clean / added
 YEL=$'\033[38;2;249;226;175m'     # dirty / warn
 RED=$'\033[38;2;243;139;168m'     # removed / critical
 ORANGE=$'\033[38;2;250;179;135m'  # cost
-CYAN=$'\033[38;2;137;220;235m'    # atlas / duration
+CYAN=$'\033[38;2;137;220;235m'    # prism / duration
 GRAY=$'\033[38;2;166;173;200m'    # separators
 
 SEP=" ${GRAY}|${RST} "
@@ -145,7 +145,7 @@ line1="$model_seg$SEP$dir_seg"
 [ -n "$lines_seg" ] && line1="$line1$SEP$lines_seg"
 [ -n "$dur_seg" ]   && line1="$line1$SEP$dur_seg"
 
-# ---------- line 2 (existing ATLAS + context behavior, preserved) ----------
+# ---------- line 2 (existing PRISM + context behavior, preserved) ----------
 used_int=${used%.*}
 [ -z "$used_int" ] && used_int=0
 cache_create=${cache_create:-0}
@@ -158,7 +158,7 @@ else
   tok_display="$win_tokens"
 fi
 # Context window detection priority:
-#  1) ATLAS-injected context_window_size (explicit)
+#  1) PRISM-injected context_window_size (explicit)
 #  2) exceeds_200k_tokens flag from Claude Code (1M tier)
 #  3) display_name / model_id contains "1M" / "1m" / "[1m]"
 #  4) Haiku / Sonnet / Opus default = 200k

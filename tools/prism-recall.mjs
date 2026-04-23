@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS Recall (v2.1.28 Phase 3)
+// PRISM Recall (v2.1.28 Phase 3)
 //
 // Unified entry point. Intent classifier picks one of 3 tiers:
 //   Tier 1 — Semantic: prism-kb-query.mjs (local router + NotebookLM)

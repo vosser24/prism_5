@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// ATLAS KB Sync (v2.1.26 Phase 2.4)
+// PRISM KB Sync (v2.1.26 Phase 2.4)
 //
-// Cloud <- local delta sync for per-domain ATLAS-KB notebooks.
+// Cloud <- local delta sync for per-domain PRISM-KB notebooks.
 //
 // Modes:
 //   --dry-run (DEFAULT) print plan, no cloud/meta writes
@@ -268,7 +268,7 @@ export function run({dryRun = true, limit = Infinity, json = false} = {}) {
   if (json) {
     process.stdout.write(JSON.stringify(summary, null, 2));
   } else {
-    console.log(`ATLAS KB Sync ${dryRun ? '(DRY RUN)' : '(PUSH)'}`);
+    console.log(`PRISM KB Sync ${dryRun ? '(DRY RUN)' : '(PUSH)'}`);
     console.log(`  Index entries:  ${summary.index_entries}`);
     console.log(`  Plan: add=${summary.plan_counts.add} replace=${summary.plan_counts.replace} move=${summary.plan_counts.move} skip=${summary.plan_counts.skip} orphan=${summary.plan_counts.orphan}`);
     if (!dryRun) console.log(`  Executed:       ${summary.executed} cloud operations`);

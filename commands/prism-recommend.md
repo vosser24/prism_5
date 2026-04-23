@@ -1,5 +1,5 @@
 ---
-name: atlas-recommend
+name: prism-recommend
 description: Scan project and recommend external tools with fit-scoring
 ---
 
@@ -28,38 +28,41 @@ SUPERPOWERS:
   +1 if production-facing (CI config, deployment docs)
   +1 if codable (has source files)
 
-ECC (OPTIONAL — high token tax; recommend only when fit ≥ 4):
-  +2 if polyglot (2+ language files)
-  +1 if team project (multiple contributors)
-  +1 if sensitive config (secrets, auth, payments)
-  +1 if compliance mentioned (GDPR, SOC2, HIPAA)
-  Note: NOT shown in default output unless fit ≥ 4. User must opt in.
-
-UI-UX-PRO-MAX:
+UI-UX-PRO-MAX (Tier 1):
   +3 if frontend framework (React, Vue, Next.js, Svelte, SwiftUI)
   +2 if HTML/CSS files present
   +1 if CLAUDE.md mentions design/marketing
   -2 if pure backend
 
-BROWSER-USE:
+ECC (Tier 2 — OPTIONAL, high token tax; recommend only when fit ≥ 4):
+  +2 if polyglot (2+ language files)
+  +1 if team project (multiple contributors)
+  +1 if sensitive config (secrets, auth, payments)
+  +1 if compliance mentioned (GDPR, SOC2, HIPAA)
+  Note: NOT shown in default output unless fit ≥ 4 AND user passes
+  --include-optional. Never auto-installed by /prism-init.
+
+BROWSER-USE (Tier 2 — OPTIONAL, ~400 MB chromium):
   +2 if scraping/automation/web-testing context
   +1 if playwright/puppeteer/selenium in deps
   +1 if CLAUDE.md mentions automation
   Default: 1
+  Note: NOT shown in default output unless fit ≥ 4. Consider Playwright MCP
+  first for app-scoped work.
 
 Clamp 0-5.
 
 ### Step 4 — Present recommendations
 
-Format table (Tier 1 auto-installed tools shown by default):
+Format table (Tier 1 shown by default):
   TOOL                    FIT   STATUS          ACTION
   ─────────────────────────────────────────────────────
   superpowers             5/5   installed       ready to invoke
-  ui-ux-pro-max          2/5   installed       ready to invoke
-  browser-use             4/5   installed       ready to invoke
+  ui-ux-pro-max           2/5   installed       ready to invoke
 
-ECC is OPTIONAL — shown only if fit ≥ 4 AND user passes --include-optional:
+Tier 2 — shown only if fit ≥ 4 AND user passes --include-optional:
   everything-claude-code  4/5   not installed   optional — /plugin install
+  browser-use             4/5   not installed   optional — uv add browser-use
 
 ### Step 5 — Offer to install high-fit Tier 2 tools (fit ≥ 3)
 

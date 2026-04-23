@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ATLAS Stop hook — rich resume-summary writer (Gap 5)
+// PRISM Stop hook — rich resume-summary writer (Gap 5)
 //
 // Writes: ~/.claude/.prism-sessions/<session_id>.md
 

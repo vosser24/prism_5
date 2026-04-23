@@ -1,4 +1,4 @@
-# ATLAS Knowledge-Base Architecture — 5-Phase Plan
+# PRISM Knowledge-Base Architecture — 5-Phase Plan
 
 **Last updated:** 2026-04-20
 **Purpose:** Durable reference so future Claude Code sessions (post `/clear`) can resume execution without re-deriving the plan.
@@ -11,14 +11,14 @@
 | Phase | Status | Location of artifacts |
 |---|---|---|
 | Phase 1 — Local KB Index + Router | DONE | `~/.claude/tools/prism-kb-indexer.mjs`, `~/.claude/hooks/lib/prism-router.mjs`, `~/.claude/tools/prism-kb-rebuild.mjs` |
-| Phase 2 — NotebookLM Cloud Sync + Tier-2 hint | DONE | `~/.claude/tools/atlas-kb-{domains,notebook-init,sync,query,classify,promote-domain}.mjs`, `~/.claude/hooks/prism-hook.mjs` (Tier-2 band) |
+| Phase 2 — NotebookLM Cloud Sync + Tier-2 hint | DONE | `~/.claude/tools/prism-kb-{domains,notebook-init,sync,query,classify,promote-domain}.mjs`, `~/.claude/hooks/prism-hook.mjs` (Tier-2 band) |
 | Phase 3a — Auto-sync wiring (prereq) | DONE | `~/.claude/tools/prism-kb-rebuild.mjs` with `--sync` / `--quiet` flags |
 | Phase 3b — Agent model-selection guard | DONE | `~/.claude/hooks/prism-agent-model-guard.mjs`, registered in settings.json, log at `~/.claude/.prism-routing.jsonl` |
 | Phase 3c — Auto-sync on file writes (gap closure) | DONE | `~/.claude/hooks/prism-kb-autosync.mjs` (PostToolUse), Stop-hook enhancement, dirty-flag drain |
 | Phase 3 — `/prism-recall` unified command | DONE | `~/.claude/tools/prism-recall.mjs`, `~/.claude/commands/prism-recall.md`, 9 new tests |
 | Phase 4 — Analytical SQLite FTS + cost telemetry | DONE | `~/.claude/tools/prism-db.mjs`, `prism-db-migrate.mjs`, `prism-rollup-weekly.mjs`; hook dual-write in `prism-subagent-stop.mjs`/`prism-session-end.mjs`; tier-3 SQL in `prism-recall.mjs`; telemetry in `prism-kb-query.mjs`/`prism-kb-sync.mjs`; 14 new tests in `test-prism-gaps.mjs` (118/118 passing) |
-| Phase 5a — Pre-execution tier advisor (PREREQ for 5) | DONE 2026-04-21 | `~/.claude/tools/lib/prism-tier-classify.mjs`, `prism-task-tier-advisor.mjs` hook (PostToolUse:TaskCreate), atlas-plan+blueprint-prompt SKILL `[tier]` format, rollup "Plan-Tier Adherence" section, `task_tier_advice` table, 5 new tests (123/123 green) |
-| Phase 5 — Opus-chair planner + tier-routed execution + lesson extraction | DONE 2026-04-21 | `scoreToTier`/`complexityScore`/`classifyWithScore` in tier-classify lib, `[pgroup=X]` parallel-dispatch annotation in atlas-plan + blueprint-prompt SKILLs, lesson extractor (user_correction/error_seen/claude_md_write) in Stop hook → `.prism-lessons.jsonl`, 3 new tests (126/126 green). **Scope intentionally trimmed** — dropped synchronous pre-answer recall, recall cache, budget counter, metrics dashboard, code-work detector per user direction (quality uncompromised, speed preserved, optimization only from execution delegation). |
+| Phase 5a — Pre-execution tier advisor (PREREQ for 5) | DONE 2026-04-21 | `~/.claude/tools/lib/prism-tier-classify.mjs`, `prism-task-tier-advisor.mjs` hook (PostToolUse:TaskCreate), prism-plan+blueprint-prompt SKILL `[tier]` format, rollup "Plan-Tier Adherence" section, `task_tier_advice` table, 5 new tests (123/123 green) |
+| Phase 5 — Opus-chair planner + tier-routed execution + lesson extraction | DONE 2026-04-21 | `scoreToTier`/`complexityScore`/`classifyWithScore` in tier-classify lib, `[pgroup=X]` parallel-dispatch annotation in prism-plan + blueprint-prompt SKILLs, lesson extractor (user_correction/error_seen/claude_md_write) in Stop hook → `.prism-lessons.jsonl`, 3 new tests (126/126 green). **Scope intentionally trimmed** — dropped synchronous pre-answer recall, recall cache, budget counter, metrics dashboard, code-work detector per user direction (quality uncompromised, speed preserved, optimization only from execution delegation). |
 
 ---
 
@@ -26,7 +26,7 @@
 
 - **Local index** at `~/.claude/.prism-kb-index.json` (version 2 schema, 244 entries, 12 domains tagged)
 - **Cloud sync meta** at `~/.claude/.prism-kb-meta.json` (241/244 synced — 3 claude-mem skills rejected server-side: `smart-explore`, `timeline-report`, `claude-code-plugin-release`)
-- **12 NotebookLM notebooks** titled `PRISM-KB: <domain>` covering: atlas-core, dev-languages, dev-frameworks, dev-testing-quality, dev-debug-perf, dev-infra-data, dev-security, design-ui, content-creative, ops-business-domain, ai-agents-infra, project-rules
+- **12 NotebookLM notebooks** titled `PRISM-KB: <domain>` covering: prism-core, dev-languages, dev-frameworks, dev-testing-quality, dev-debug-perf, dev-infra-data, dev-security, design-ui, content-creative, ops-business-domain, ai-agents-infra, project-rules
 - **Test suite** at `~/.claude/tools/test-prism-gaps.mjs` — 81/81 passing
 
 ---
@@ -49,7 +49,7 @@
 
 ## Phase 3b — Agent model-selection guard (~45min)
 
-**Why:** observed a real miss this session — parent Opus-4.7 spawned a subagent without `model` param, child inherited Opus when Haiku would have been ~15x cheaper for pure text extraction. ATLAS's existing hook only nudges based on user prompts, not subagent dispatches. Gap closure required.
+**Why:** observed a real miss this session — parent Opus-4.7 spawned a subagent without `model` param, child inherited Opus when Haiku would have been ~15x cheaper for pure text extraction. PRISM's existing hook only nudges based on user prompts, not subagent dispatches. Gap closure required.
 
 **Scope:**
 - New hook `~/.claude/hooks/prism-agent-model-guard.mjs` on `PreToolUse: Agent`
@@ -114,7 +114,7 @@
 
 ## Phase 5a — Pre-execution tier advisor (PREREQ for Phase 5, ~90min)
 
-**Gap this closes (observed during Phase 4 rollout):** The Phase 3b model-selection guard only fires on `Agent()` dispatches. Multi-step work executed directly in the main context (like all 7 steps of Phase 4) bypasses the guard entirely — every Edit/Write is billed at the parent tier even when individual subtasks (JSONL parsing, hook edits, test scaffolding, MD rollup) are clearly Haiku- or Sonnet-tier by the classifier's own rubric. The atlas-plan SKILL already documents that its output should include "Model assignments per step (haiku/sonnet/opus)" (SKILL.md line 108–145), but the actual task format `- [ ] Step — done when: ...` never carries that annotation. The documented contract is unkept.
+**Gap this closes (observed during Phase 4 rollout):** The Phase 3b model-selection guard only fires on `Agent()` dispatches. Multi-step work executed directly in the main context (like all 7 steps of Phase 4) bypasses the guard entirely — every Edit/Write is billed at the parent tier even when individual subtasks (JSONL parsing, hook edits, test scaffolding, MD rollup) are clearly Haiku- or Sonnet-tier by the classifier's own rubric. The prism-plan SKILL already documents that its output should include "Model assignments per step (haiku/sonnet/opus)" (SKILL.md line 108–145), but the actual task format `- [ ] Step — done when: ...` never carries that annotation. The documented contract is unkept.
 
 **Panel-synthesized plan (4 sub-parts, strictly ordered):**
 
@@ -170,11 +170,11 @@
 ## Phase 5 — Compound Learning Loop + pre-answer recall with cache/budget (~3h)
 
 **Scope:**
-- **Lesson extraction** (Stop hook enhancement): on session end, scan transcript for "first-time-seen" patterns (new errors encountered, new insights written into CLAUDE.md, correctness fixes). Extract to `~/.claude/.prism-lessons.jsonl` and optionally push to a dedicated NotebookLM source in `atlas-core` domain.
+- **Lesson extraction** (Stop hook enhancement): on session end, scan transcript for "first-time-seen" patterns (new errors encountered, new insights written into CLAUDE.md, correctness fixes). Extract to `~/.claude/.prism-lessons.jsonl` and optionally push to a dedicated NotebookLM source in `prism-core` domain.
 - **Pre-answer recall** (UserPromptSubmit hook): before Claude sees the prompt, call `/prism-recall <prompt>` with short timeout (1.2s) and inject result as context. Guarded by env `PRISM_PREANSWER_RECALL=1`.
 - **Cache layer** at `~/.claude/.prism-recall-cache.sqlite` (SHA256(prompt) → answer, 7-day TTL). First-call hits cloud, subsequent identical prompts instant.
 - **Budget cap**: per-session limit (default 10 cloud calls). After cap, recall short-circuits with "budget exhausted — raise PRISM_RECALL_BUDGET if needed".
-- **Metrics dashboard** (`~/.claude/tools/atlas-metrics.mjs`): time-series on resolution rate (did the recall help?), cost per session, router hit rate (Tier-1 local-vs-cloud), classifier confidence distribution. Outputs markdown to stdout, pushes weekly digest to NotebookLM.
+- **Metrics dashboard** (`~/.claude/tools/prism-metrics.mjs`): time-series on resolution rate (did the recall help?), cost per session, router hit rate (Tier-1 local-vs-cloud), classifier confidence distribution. Outputs markdown to stdout, pushes weekly digest to NotebookLM.
 
 **Tests:** lesson-extraction on synthetic transcript, cache hit/miss, budget cap enforcement, recall-injection shape.
 
@@ -183,7 +183,7 @@
 ## Cross-cutting cleanup (slot anywhere)
 
 - **Fix 3 claude-mem upload rejections** (Phase 2 gap): investigate `smart-explore`, `timeline-report`, `claude-code-plugin-release`. Try stdin-pipe text upload or trim frontmatter. Target 244/244 cloud coverage.
-- **CLAUDE.md docs**: add ATLAS-KB section to `~/.claude/CLAUDE.md` — covers 12-notebook layout, sync commands, when Tier-2 fires, `/prism-recall` usage (after Phase 3).
+- **CLAUDE.md docs**: add PRISM-KB section to `~/.claude/CLAUDE.md` — covers 12-notebook layout, sync commands, when Tier-2 fires, `/prism-recall` usage (after Phase 3).
 - **Multi-notebook parallel queries**: `prism-kb-query.mjs` currently queries top-N domains sequentially. Parallelize with `Promise.all`.
 - **Hook Tier-2 noise**: hook fires on `<task-notification>` system strings, not just real user prompts. Minor polish: add a guard for messages that start with `<task-notification>`.
 
@@ -200,9 +200,9 @@
 
 ---
 
-## Phase 6 — Unified ATLAS+PRISM installer (HANDOFF FOR FRESH SESSION, 2026-04-21)
+## Phase 6 — Unified PRISM+PRISM installer (HANDOFF FOR FRESH SESSION, 2026-04-21)
 
-**Context:** User currently maintains two installers: `E:\Other computers\My Computer\Python\PRISM\atlas_2125.py` (ATLAS v2.1.25, 7424 lines) and `Prism_pro_111.py` (PRISM Code Pro v1.1.1, 6917 lines). ATLAS evolved FROM PRISM (skill renames: `prism-plan → atlas-plan`, `prism-discover → atlas-discover`, `/prism-health → /prism-health`, etc.). The live `~/.claude/` is a hybrid from running both over time. User wants ONE unified installer going forward.
+**Context:** User currently maintains two installers: `E:\Other computers\My Computer\Python\PRISM\atlas_2125.py` (PRISM v2.1.25, 7424 lines) and `Prism_pro_111.py` (PRISM Code Pro v1.1.1, 6917 lines). PRISM evolved FROM PRISM (skill renames: `prism-plan → prism-plan`, `prism-discover → prism-discover`, `/prism-health → /prism-health`, etc.). The live `~/.claude/` is a hybrid from running both over time. User wants ONE unified installer going forward.
 
 **Hard constraint — do NOT destroy state:** the live `~/.claude/` contains months of compounded memory that the installer must preserve.
 
@@ -220,26 +220,26 @@
 - any NotebookLM auth/session tokens (typically in `~/.notebooklm/` or pip-config-dir; check `~/AppData/Local/notebooklm-py`)
 
 ### Fresh-session task list
-- [ ] [haiku] 6.1 Audit current `~/.claude/` for ATLAS vs PRISM artifacts — `find ~/.claude -maxdepth 3 -name "atlas-*" -o -name "prism-*"` — list which namespace owns each skill/agent/command/hook. Done when: clear inventory of duplicates + PRISM-only survivors documented.
-- [ ] [sonnet] 6.2 Decide retention — default: keep ATLAS names (Phase 5a+5 is built on them), retire `prism-*` duplicates, KEEP PRISM-only capabilities (video-production skill, agent-factory, specific commands). Done when: retention decision table committed.
-- [ ] [opus] 6.3 Design unified installer structure `atlas_unified_2126.py` — version `2.1.26`, sections: (a) preserve-memory backup, (b) config write, (c) smoke tests, (d) migration from `prism-*` names. Must be idempotent. Done when: architecture doc in this plan.
+- [ ] [haiku] 6.1 Audit current `~/.claude/` for PRISM vs PRISM artifacts — `find ~/.claude -maxdepth 3 -name "prism-*" -o -name "prism-*"` — list which namespace owns each skill/agent/command/hook. Done when: clear inventory of duplicates + PRISM-only survivors documented.
+- [ ] [sonnet] 6.2 Decide retention — default: keep PRISM names (Phase 5a+5 is built on them), retire `prism-*` duplicates, KEEP PRISM-only capabilities (video-production skill, agent-factory, specific commands). Done when: retention decision table committed.
+- [ ] [opus] 6.3 Design unified installer structure `prism_unified_2126.py` — version `2.1.26`, sections: (a) preserve-memory backup, (b) config write, (c) smoke tests, (d) migration from `prism-*` names. Must be idempotent. Done when: architecture doc in this plan.
 - [ ] [sonnet] 6.4 Read live `~/.claude/` files into variables and assemble the new installer. Key reads: all Phase 5a+5 files (see Phase 5a DONE row for list). Done when: full installer script produced and saved.
 - [ ] [sonnet] 6.5 Smoke-test on a COPY of `~/.claude/` (e.g. `~/.claude-test/`) before touching the real one. Run `node ~/.claude-test/tools/test-prism-gaps.mjs` — must return 126/126 green. Done when: isolated test directory passes full suite.
-- [ ] [sonnet] 6.6 Produce `atlas_unified_2126.py` with first-run `prism-backup-YYYY-MM-DD/` behavior. Done when: user can run it without losing memory.
+- [ ] [sonnet] 6.6 Produce `prism_unified_2126.py` with first-run `prism-backup-YYYY-MM-DD/` behavior. Done when: user can run it without losing memory.
 
 ### What to flag during the rebuild
 - If `classifyTier`/`detectCompound`/`scoreToTier` in the embedded lib differ from live file (drift bugs)
 - If the settings.json PostToolUse matcher for TaskCreate is missing from the target writer
-- If PRISM's SessionStart hook conflicts with ATLAS's (same event, different scripts)
+- If PRISM's SessionStart hook conflicts with PRISM's (same event, different scripts)
 - If any `prism-*` command still routes to a file that the unified installer no longer writes
 - If NotebookLM credentials need re-authentication after the install
 
 ### Rollback path
-Backup dir `~/.claude/prism-backup-YYYY-MM-DD/` contains the full pre-install tree. Rollback = `rm -rf ~/.claude/{atlas-*.mjs,skills/atlas-*,...} && cp -r prism-backup-YYYY-MM-DD/* ~/.claude/`.
+Backup dir `~/.claude/prism-backup-YYYY-MM-DD/` contains the full pre-install tree. Rollback = `rm -rf ~/.claude/{prism-*.mjs,skills/prism-*,...} && cp -r prism-backup-YYYY-MM-DD/* ~/.claude/`.
 
 ### Acceptance for "safe to run"
-1. `atlas_unified_2126.py --dry-run` prints planned writes without executing.
-2. `atlas_unified_2126.py` creates timestamped backup BEFORE any writes.
+1. `prism_unified_2126.py --dry-run` prints planned writes without executing.
+2. `prism_unified_2126.py` creates timestamped backup BEFORE any writes.
 3. Full 126/126 test suite green after install.
 4. Existing `.prism.db` data row counts match pre-install counts (spend, model_routing, sessions, task_tier_advice unchanged).
 5. `/prism-recall "what's my total spend this week"` returns non-zero (proves SQLite still has history).

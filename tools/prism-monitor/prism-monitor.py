@@ -1,15 +1,15 @@
 #!/usr/bin/env python
-"""ATLAS Monitor — live dashboard for Claude Code sessions.
+"""PRISM Monitor — live dashboard for Claude Code sessions.
 
 Usage:
-  python atlas-monitor.py              # live dashboard (default)
-  python atlas-monitor.py --daily      # daily summary
-  python atlas-monitor.py --agents     # agent roster
-  python atlas-monitor.py --mcps       # MCP usage
-  python atlas-monitor.py --costs      # cost breakdown
-  python atlas-monitor.py --export     # export today as JSON
-  python atlas-monitor.py --plan max5  # override plan (pro/max5/max20)
-  python atlas-monitor.py --once       # render once, don't loop
+  python prism-monitor.py              # live dashboard (default)
+  python prism-monitor.py --daily      # daily summary
+  python prism-monitor.py --agents     # agent roster
+  python prism-monitor.py --mcps       # MCP usage
+  python prism-monitor.py --costs      # cost breakdown
+  python prism-monitor.py --export     # export today as JSON
+  python prism-monitor.py --plan max5  # override plan (pro/max5/max20)
+  python prism-monitor.py --once       # render once, don't loop
 """
 from __future__ import annotations
 import sys
@@ -84,7 +84,7 @@ def _live_dashboard(plan: str) -> None:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(prog="atlas-monitor", description=__doc__)
+    p = argparse.ArgumentParser(prog="prism-monitor", description=__doc__)
     group = p.add_mutually_exclusive_group()
     group.add_argument("--daily", action="store_true", help="daily summary table")
     group.add_argument("--agents", action="store_true", help="agent roster detail")
@@ -101,7 +101,7 @@ def main() -> int:
     # Banner
     from datetime import datetime
     console.print(
-        f"[bold blue]⚡ ATLAS Monitor[/]  "
+        f"[bold blue]⚡ PRISM Monitor[/]  "
         f"[dim]v1.0  |  {datetime.now().strftime('%Y-%m-%d %H:%M')}  "
         f"|  project: {Path.cwd().name}[/]"
     )

@@ -1,4 +1,4 @@
-// ATLAS KB Domain Classifier (v2.1.26 Phase 2.1)
+// PRISM KB Domain Classifier (v2.1.26 Phase 2.1)
 //
 // Deterministic rule-based classifier + keyword-centroid fallback.
 // Maps each KB index entry to one of ~12 domains (or 'misc' catch-all).
@@ -10,7 +10,7 @@
 // export summarize(entries)      -> {byDomain: {k: n}, lowConfidence: [...]}
 
 export const DOMAINS = [
-  'atlas-core',
+  'prism-core',
   'dev-languages',
   'dev-frameworks',
   'dev-testing-quality',
@@ -26,7 +26,7 @@ export const DOMAINS = [
 ];
 
 export const DOMAIN_TITLES = {
-  'atlas-core':         'PRISM-KB: atlas-core',
+  'prism-core':         'PRISM-KB: prism-core',
   'dev-languages':      'PRISM-KB: dev-languages',
   'dev-frameworks':     'PRISM-KB: dev-frameworks',
   'dev-testing-quality':'PRISM-KB: dev-testing-quality',
@@ -44,13 +44,13 @@ export const DOMAIN_TITLES = {
 // Rule table: ordered. First strong match wins. score weights the confidence.
 // Pattern applies to `${name} ${description}` lowercased.
 const RULES = [
-  // v2.2.0: rebrand — atlas-* is the legacy prefix, prism-* is current.
+  // v2.2.0: rebrand — prism-* is the legacy prefix, prism-* is current.
   // Keep both matching so historical indexes and current installs both
   // classify correctly. Fixes P2.11 (command:prism-recall → misc).
-  {domain: 'atlas-core', score: 10, pattern: /\b(atlas|prism)[-:]?(plan|discover|init|audit|health|roster|archive|recommend|retire|app-expert|update|router|kb|recall)\b/},
-  {domain: 'atlas-core', score: 9,  pattern: /\b(master-orchestrator|agent-factory|(atlas|prism)-updater|claude-code-guide)\b/},
-  {domain: 'atlas-core', score: 9,  pattern: /\b(claude-code-expert|claude-md-improver|claude-md-management)\b/},
-  {domain: 'atlas-core', score: 7,  pattern: /\bexpert panel|expertise gap|agent roster|atlas notice\b/},
+  {domain: 'prism-core', score: 10, pattern: /\b(prism|prism)[-:]?(plan|discover|init|audit|health|roster|archive|recommend|retire|app-expert|update|router|kb|recall)\b/},
+  {domain: 'prism-core', score: 9,  pattern: /\b(master-orchestrator|agent-factory|(prism|prism)-updater|claude-code-guide)\b/},
+  {domain: 'prism-core', score: 9,  pattern: /\b(claude-code-expert|claude-md-improver|claude-md-management)\b/},
+  {domain: 'prism-core', score: 7,  pattern: /\bexpert panel|expertise gap|agent roster|prism notice\b/},
 
   {domain: 'dev-security', score: 9, pattern: /\b(security-(review|reviewer|scan|bounty|hunter)|owasp|vulnerabilit|phi-compliance|hipaa|healthcare-phi|defi-amm|secrets-scan|agent-payment|llm-trading-agent-security|laravel-security|django-security|springboot-security|perl-security)\b/},
 
@@ -78,7 +78,7 @@ const RULES = [
 ];
 
 const CENTROIDS = {
-  'atlas-core':         ['atlas','plan','orchestrator','agent-factory','panel','expertise','discover','kb','router','health'],
+  'prism-core':         ['prism','plan','orchestrator','agent-factory','panel','expertise','discover','kb','router','health'],
   'dev-languages':      ['python','typescript','javascript','go','golang','rust','kotlin','java','swift','dart','perl','cpp','ruby','ownership','coroutine','async','generics','idiomatic'],
   'dev-frameworks':     ['react','nextjs','nuxt','vite','django','rails','spring','laravel','nestjs','flutter','swiftui','compose','hono','remotion','figma','component','widget'],
   'dev-testing-quality':['test','tests','tdd','coverage','pytest','junit','jest','playwright','fixtures','mocks','fuzzing','benchmark','verification','review'],
@@ -138,7 +138,7 @@ export function classifyEntry(entry) {
   }
 
   if (entry.type === 'agent') {
-    return {domain: 'atlas-core', confidence: 0.3, reason: 'fallback:agent->atlas-core'};
+    return {domain: 'prism-core', confidence: 0.3, reason: 'fallback:agent->prism-core'};
   }
 
   return {domain: 'misc', confidence: 0, reason: 'no-match'};

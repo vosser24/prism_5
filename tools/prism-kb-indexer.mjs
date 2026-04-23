@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// ATLAS KB Indexer (v2.1.25 Phase 1.1)
+// PRISM KB Indexer (v2.1.25 Phase 1.1)
 //
-// Scans all local knowledge sources (agents, plugin skills, ATLAS skills,
+// Scans all local knowledge sources (agents, plugin skills, PRISM skills,
 // slash commands, project rules) and writes a unified router index at
 // ~/.claude/.prism-kb-index.json.
 //
@@ -161,7 +161,7 @@ function scanCommands() {
   return out;
 }
 
-function scanATLASSkills() {
+function scanPRISMSkills() {
   const root = join(CLAUDE_DIR, 'skills');
   const files = walkFiles(root, (_p, name) => name === 'SKILL.md');
   const out = [];
@@ -173,9 +173,9 @@ function scanATLASSkills() {
     const description = (fields.description || '').slice(0, 800);
     let bytes = 0; try { bytes = statSync(f).size; } catch {}
     out.push(withDomain({
-      id: `skill:atlas:${name}`,
+      id: `skill:prism:${name}`,
       type: 'skill',
-      source: 'local:atlas-skills',
+      source: 'local:prism-skills',
       name,
       description,
       triggers: extractTriggers(description),
@@ -331,7 +331,7 @@ function build({force = false} = {}) {
   const entries = [
     ...scanAgents(),
     ...scanCommands(),
-    ...scanATLASSkills(),
+    ...scanPRISMSkills(),
     ...scanPluginSkills(enabledMap),
     ...scanRules(projectRoot),
   ];
@@ -368,13 +368,13 @@ if (invokedDirectly) {
     process.stdout.write(JSON.stringify(stats, null, 2));
   } else {
     if (stats.rebuilt) {
-      console.log(`ATLAS KB index rebuilt in ${stats.elapsed_ms}ms`);
+      console.log(`PRISM KB index rebuilt in ${stats.elapsed_ms}ms`);
       console.log(`Entries: ${stats.entry_count} (${Object.entries(stats.by_type).map(([t, n]) => `${t}:${n}`).join(', ')})`);
       console.log(`Written: ${INDEX_PATH} (${stats.written_bytes.toLocaleString()} bytes)`);
     } else {
-      console.log(`ATLAS KB index up to date (sources unchanged since last build, ${stats.entry_count} entries).`);
+      console.log(`PRISM KB index up to date (sources unchanged since last build, ${stats.entry_count} entries).`);
     }
   }
 }
 
-export { build, extractTriggers, extractKeywords, parseYamlFrontMatter, scanAgents, scanCommands, scanATLASSkills, scanPluginSkills, scanRules };
+export { build, extractTriggers, extractKeywords, parseYamlFrontMatter, scanAgents, scanCommands, scanPRISMSkills, scanPluginSkills, scanRules };
