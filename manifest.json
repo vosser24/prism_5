@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.7.2",
+  "version": "2.7.3",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [

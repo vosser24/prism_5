@@ -907,12 +907,17 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     // prompt scored 3 after weighting, which maps to sonnet under the
     // compressed-score lib (keyword-floor-only path). With Opus available
     // production still sees haiku — this adjustment keeps CI deterministic.
+    //
+    // v2.7.0 note: advisor moved from PostToolUse → PreToolUse. Task ID
+    // is no longer available via tool_response (which only exists Post);
+    // it must come from tool_input.id. Test payload updated accordingly.
+    // Nudge text updated to match sentinel-first fallback source label
+    // ('fallback-keyword-floor' when sentinel absent in CI).
     {
       const payload = {
         tool_name: 'TaskCreate',
         session_id: p5aSession,
-        tool_input: {subject: 'count lines in log.txt', description: 'return the number, nothing else'},
-        tool_response: {task_id: 'tsk_p5a_haiku'},
+        tool_input: {id: 'tsk_p5a_haiku', subject: 'count lines in log.txt', description: 'return the number, nothing else'},
       };
       const r = runAdvisor(payload);
       const nudgeOk = /PRISM TIER/.test(r.stdout) && /haiku/.test(r.stdout) && /model:'haiku'/.test(r.stdout);
@@ -1262,15 +1267,23 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     }
 
     // V220.11 — cacheKey stability: same inputs → same key; different
-    // dirty flag → different key.
+    // branch → different key.
+    //
+    // v2.7.0 note: `dirty` was REMOVED from the cache key. A single file
+    // save used to flip `dirty` and invalidate the cache on every prompt
+    // iteration — prompt-iteration hit rate was ~20%. v2.7.0 dropped the
+    // dirty parameter; branch + HEAD + prompt are sufficient scoping.
+    // The test assertion below therefore expects k1 === k3 (dirty flag
+    // no longer affects the key) — this is the intended post-v2.7.0
+    // behavior, not a regression.
     {
       const k1 = mod.cacheKey('x', 'b', 'h', false);
       const k2 = mod.cacheKey('x', 'b', 'h', false);
-      const k3 = mod.cacheKey('x', 'b', 'h', true);
-      const k4 = mod.cacheKey('x', 'b2', 'h', false);
-      assert('V220.11 cacheKey is deterministic, branch-sensitive, dirty-sensitive',
-        k1 === k2 && k1 !== k3 && k1 !== k4,
-        `k1==k2? ${k1 === k2} k1!=k3? ${k1 !== k3} k1!=k4? ${k1 !== k4}`);
+      const k3 = mod.cacheKey('x', 'b', 'h', true);   // dirty flipped — should NOT affect key
+      const k4 = mod.cacheKey('x', 'b2', 'h', false); // different branch — should affect key
+      assert('V220.11 cacheKey is deterministic, branch-sensitive, dirty-insensitive (v2.7.0+)',
+        k1 === k2 && k1 === k3 && k1 !== k4,
+        `k1==k2? ${k1 === k2} k1==k3? ${k1 === k3} k1!=k4? ${k1 !== k4}`);
     }
 
     // V220.12 — toSentinel preserves the v2.1.3 sentinel shape.

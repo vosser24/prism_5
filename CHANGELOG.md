@@ -4,6 +4,77 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.3] - 2026-04-23
+
+Install-experience fixes from real-world v2.7.2 install friction. No
+runtime changes. Moving the §4 merge logic into source-controlled code
+eliminates the three Git-Bash-on-Windows escape traps that caused the
+last installer to need three attempts.
+
+### Added
+
+- **`scripts/install-merge.mjs`** — consolidates INSTALL.md §4a
+  (Windows rewrite), §4b (stale-entry prune), and §4c (deep-merge) into
+  one idempotent script. Runs from the repo root: `node
+  scripts/install-merge.mjs`. Uses `String.fromCharCode(92)` for
+  literal backslashes internally, bypassing both Git Bash template-
+  literal mangling and `JSON.stringify` double-escaping. Prints a
+  parsable summary (`PRUNED_COUNT=N`, `MERGED_NEW_HOOK_ENTRIES=N`,
+  etc.) that INSTALL.md §8 consumes.
+
+### Changed
+
+- **`INSTALL.md` §2.5** — the `printf 'PRISM_NODE=...\\n'` recipe
+  caused Git Bash on Windows to interpret `\n`, `\P`, and other
+  backslash sequences, mangling Windows paths like
+  `C:\Program Files\nodejs\node.exe`. Replaced with a single-quoted
+  heredoc (`cat > ~/.claude/prism.env <<'EOF' ... EOF`) that preserves
+  backslashes verbatim. Explicit warning added against `printf` /
+  `echo -e` for this file.
+- **`INSTALL.md` §2.6** — purge block switched from `rm -rf` to
+  `rm -r`. The safety-gate pattern `/rm\s+-rf\s/i` correctly blocks
+  `rm -rf` as a dangerous shell pattern; our own install docs
+  shouldn't trip it. `-f` is unnecessary since nothing in
+  `~/.claude/` is write-protected.
+- **`INSTALL.md` §4** — replaced inline `node -e "..."` merge
+  instructions with a single `node scripts/install-merge.mjs`
+  invocation. The inline approach had three escape traps that bit
+  v2.7.2 installers:
+    1. Template literals `\\` flattened by Git Bash before reaching node
+    2. `JSON.stringify` double-escaped backslashes
+    3. Two retries before `String.fromCharCode(92)` + plain concat landed
+  §4a/§4b/§4c sections retained as reference documentation; the
+  script is authoritative.
+
+### Fixed
+
+- **Stale test assertion `P5a.2` in `tools/test-prism-gaps.mjs`**
+  updated to match v2.7.0 advisor behavior. Advisor moved from
+  `PostToolUse` → `PreToolUse`, so `task_id` must now come from
+  `tool_input.id` (not `tool_response.task_id`). Test payload
+  updated; assertion unchanged semantically.
+- **Stale test assertion `V220.11` in `tools/test-prism-gaps.mjs`**
+  updated to match v2.7.0 `cacheKey` behavior. `dirty` parameter was
+  removed from the cache key in v2.7.0 (noted in v2.7.0 changelog
+  entry) to improve prompt-iteration hit rate. Assertion now
+  expects `k1 === k3` (dirty-insensitive) instead of `k1 !== k3`.
+  Test renamed to "cacheKey is deterministic, branch-sensitive,
+  dirty-insensitive (v2.7.0+)".
+
+### Notes
+
+- **No runtime changes.** All hooks, guards, classifier, and
+  orchestrator logic unchanged. Only INSTALL.md, tests, and a new
+  repo-only script.
+- **Backward-compatible install.** If for some reason a user runs
+  an older INSTALL.md against a v2.7.3 repo, the old inline
+  approach still works (with the Windows escape friction); the new
+  script is strictly an improvement, not a requirement.
+- **v2.7.2 install on the branch completed cleanly** despite the
+  friction — specialists preserved, 14 stale entries pruned,
+  prism.env correct, verify PASSED. v2.7.3 just prevents the
+  three-retry-on-§4 experience for the next installer.
+
 ## [2.7.2] - 2026-04-23
 
 Windows BOM trap closed. Fixes the compensation-pattern failure surfaced
