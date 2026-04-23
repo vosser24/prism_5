@@ -98,11 +98,24 @@ Synthesize before assembling the expert panel.
 
 ### Phase 4 — Expert Panel
 
-**Execution-heavy:** Alignment pass only — one primary expert + one risk voice. No extended debate.
-Workflow will govern execution autonomously. Do not debate implementation choices it should resolve.
+**Roster-first assembly (v2.7.0)**: Before assembling any panel, consult:
+- `~/.claude/skills/prism-plan/references/roster.json` — rostered specialists
+- `~/.claude/skills/prism-plan/references/tools-registry.md` — Tier 1/2 tools
+- Available NotebookLM notebooks (`notebooklm list`) — per-agent research archives
 
-**Advisory / Hybrid:** Full panel. One expert per domain. Each contributes analysis, challenges
-assumptions, flags risks, proposes recommendations. Push for genuine tension.
+Hardcoded personas (from "Dev Team Protocol" below) are FALLBACK ONLY —
+used when no rostered specialist or Tier 1/2 tool fits the domain. This
+aligns with PRISM's compose-first stance: don't invent generic personas
+when a researched specialist or installed tool already covers the need.
+
+**Execution-heavy:** Alignment pass only — one primary expert + one risk voice. No extended debate.
+Execution-heavy tasks are handed off to @master-orchestrator (see Phase 7) —
+the orchestrator owns panel assembly, adversarial review, and parallel
+dispatch. Do NOT duplicate its work here.
+
+**Advisory / Hybrid:** Full panel, with roster-first assembly. One expert
+per domain. Each contributes analysis, challenges assumptions, flags
+risks, proposes recommendations. Push for genuine tension.
 
 Where an MCP tool covers a domain: substitute tool call for reasoning-only expert.
 
@@ -110,7 +123,20 @@ Where an MCP tool covers a domain: substitute tool call for reasoning-only exper
 
 1. Brief — task, success criteria, constraints
 2. Round 1: Domain inputs
-3. Round 2: Cross-examination — surface conflicts, trade-offs, dependencies
+3. Round 2: **Adversarial review** — apply the formal protocol from
+   `~/.claude/skills/prism-plan/references/adversarial-review.md`:
+   - Each expert position gets ≥2 substantive challenges
+   - Challenges MUST include: specific flaw, condition under which it
+     bites, concrete consequence
+   - Disqualified as theater: generic objections, semantic nitpicks,
+     restating another expert's position
+   - Each expert responds with exactly one of: ACCEPT (revise position),
+     REJECT (give counter-reason), CONDITIONAL (state mitigation)
+   - Anti-theater rule: if you cannot generate 2 substantive challenges
+     against an expert, that expert doesn't belong on the panel. DROP
+     them rather than inventing weak challenges
+   - Verdict per expert: SURVIVES / SURVIVES (revised) / DROPPED
+   - Visible to user in the output — do NOT summarize the review away
 4. Round 3: Synthesis — resolve conflicts, identify consensus and open questions
 5. Decision — final integrated recommendation with rationale
 
@@ -151,8 +177,36 @@ Blueprint writes it. Workflow tracks it. Never create two plans.
 **Chat mode:** Inline checklist is live. Apply Workflow discipline behaviorally.
 Track corrections mentally. Deliver Review summary on completion.
 
-**Claude Code mode:** Write Execution Plan directly to tasks/todo.md. Check in before starting.
-Verify before marking complete, checkpoint every 5 steps, capture lessons after any correction.
+**Claude Code mode, Execution-light:** Write Execution Plan directly to
+`tasks/todo.md`. Check in before starting. Parent executes directly with
+workflow-orchestration discipline (verify before done, checkpoint every
+5 steps, capture lessons after corrections).
+
+**Claude Code mode, Execution-heavy (v2.7.0 — explicit handoff)**: After
+writing Phase 6 Direction + initial `tasks/todo.md`, state:
+
+> "This is Execution-heavy. Spawning `@master-orchestrator` for full
+>  panel assembly, adversarial review, and parallel dispatch. Blueprint
+>  direction and initial plan are in `tasks/todo.md`; orchestrator will
+>  expand from there."
+
+Then call:
+
+```
+Agent({
+  subagent_type: 'master-orchestrator',
+  model: 'opus',
+  prompt: '<original user request, verbatim> — blueprint analysis in tasks/todo.md'
+})
+```
+
+The orchestrator reads blueprint's output, expands the panel using PHASE 0a
+inventory (skills + notebooks + roster + tools-registry), runs formal
+adversarial review (PHASE 0d), dispatches specialists in parallel, and
+owns PHASE 1.5 senior review before returning the synthesized plan.
+
+**Never execute an Execution-heavy plan in parent context without the
+orchestrator handoff** — that was the v2.5.0 bug this rule closes.
 
 If Advisory: "Blueprint complete. Say activate execution to engage Workflow on next steps."
 
@@ -167,66 +221,13 @@ When execution halts due to direction failure (not execution mistake):
 
 ## Workflow Execution Mechanics
 
-### Plan Mode (Chat)
-Show plan inline before starting. User can say "stop" to adjust.
+Execution mechanics (todo.md structure, step states, verification-before-done,
+lesson-routing loop, context checkpointing, subagent coordination, elegance
+check, autonomous bug fixing, core principles) are owned by the
+`workflow-orchestration` skill. Blueprint's Execution Plan (Phase 6) is
+consumed by workflow-orchestration without re-stating its mechanics here.
 
-### todo.md Structure (Claude Code)
-```
-# Task: <name>
-# Type: <Advisory|Hybrid|Execution-light|Execution-heavy>
-# Started: <datetime> / Last checkpoint: <datetime>
-
-## Plan
-- [ ] [tier] [pgroup=X] Step — done when: [criterion]   <!-- [tier] ∈ haiku|sonnet|opus; [pgroup=X] optional, same group = parallel-safe; see Execution Plan rules above -->
-
-## Checkpoints
-- [state snapshot]
-
-## Review
-- What was done / What was tricky / Outcome
-- Strategic lessons to escalate: [any]
-```
-
-### Step States (Claude Code)
-- [ ]  Pending
-- [~]  Interrupted — started, may be partial
-- [x]  Complete and verified
-- [!]  Failed — needs diagnosis before retry
-
-### Context Checkpointing (Claude Code)
-Checkpoint every 5 completed steps, before irreversible operations, or at 60%+ context consumption.
-Write to tasks/todo.md: steps completed, current step, state summary, next action, open risks.
-
-### Verification Before Done
-Never mark [x] without proving it works. Run tests, check logs, diff behavior.
-Ask: "Would a staff engineer approve this?"
-
-### Self-Improvement Loop
-
-After any correction, classify the lesson first:
-
-**Tactical** (execution mistake — wrong tool, bad step, environment error):
-→ tasks/lessons-tactical.md (Claude Code) or mental note (Chat)
-→ Read at session start, before executing anything
-
-**Strategic** (direction mistake — wrong recommendation, bad framing, flawed expert reasoning):
-→ tasks/lessons-strategic.md (Claude Code)
-→ Blueprint reads at Phase 1 before assembling expert panel
-
-TWO POOLS. NO CROSS-CONTAMINATION.
-
-### Subagent Coordination (Claude Code)
-- Orchestrator owns tasks/todo.md — single source of truth
-- Each subagent gets scoped file: tasks/subagent-[name].md
-- Merge results before marking parent step [x]
-- Surface conflicts to user — never silently pick one
-
-### Core Execution Principles
-- Simplicity first — minimal impact on surrounding code/content
-- No laziness — find root causes, no temporary fixes, senior-level standards
-- Own your work — do not ask user to verify things you can verify yourself
-- Autonomous bug fixing — given a bug report, just fix it; report back with root cause + verification
-- Elegance check — for non-trivial changes ask: "Is there a more elegant way?"
+See: `~/.claude/skills/workflow-orchestration/SKILL.md`.
 
 ---
 

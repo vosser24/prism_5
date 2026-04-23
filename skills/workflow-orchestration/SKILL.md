@@ -27,15 +27,16 @@ This skill defines how to approach complex tasks: methodically, elegantly, and a
 - Use plan mode for verification steps, not just building
 - Write detailed specs upfront to reduce ambiguity
 
-### todo.md structure (PRISM model-aware):
+### todo.md structure (PRISM model-aware, v2.7.0 tier-annotated):
 ```markdown
 # Task: <name>
 
 ## Plan
-- [ ] Step 1: <desc> → @agent (model) — done when: <criteria>
-- [ ] Step 2: <desc> → @agent (model) — done when: <criteria>
-- [~] Step 3: <desc> → INTERRUPTED (inspect before retry)
-- [!] Step 4: <desc> → FAILED: <reason>
+- [ ] [haiku] Step 1: <desc> → @agent — done when: <criteria>
+- [ ] [sonnet] [pgroup=1] Step 2: <desc> → @agent — done when: <criteria>
+- [ ] [sonnet] [pgroup=1] Step 3: <desc> → @agent — done when: <criteria>
+- [~] [opus] Step 4: <desc> → INTERRUPTED (inspect before retry)
+- [!] [sonnet] Step 5: <desc> → FAILED: <reason>
 
 ## References Used
 - .claude/references/db-index.md (generated 2026-04-10)
@@ -46,6 +47,17 @@ This skill defines how to approach complex tasks: methodically, elegantly, and a
 - Outcome
 ```
 
+**Tier annotation (required, v2.7.0)**: every step carries `[haiku]`,
+`[sonnet]`, or `[opus]` before the description. `prism-task-tier-advisor`
+(PreToolUse on `TaskCreate`) reads this as authoritative and logs
+divergence if the annotation disagrees with the session sentinel.
+
+**Parallel group** (optional): `[pgroup=N]` marks tasks that can run
+concurrently. Same N = dispatch in ONE assistant message with multiple
+`Agent()` tool uses. Missing or different N = sequential. A group is
+parallel-safe only if no two tasks write the same file AND no task
+depends on another's output.
+
 ### Step states:
 | Marker | Meaning |
 |--------|---------|
@@ -53,6 +65,30 @@ This skill defines how to approach complex tasks: methodically, elegantly, and a
 | `[~]` | Interrupted — may be partial, inspect before retry |
 | `[x]` | Complete and verified |
 | `[!]` | Failed — diagnose before retry |
+
+---
+
+## 1.5. Execution mode — who owns this task (v2.7.0)
+
+Workflow applies at the level that is actually executing:
+
+- **Parent-direct execution** (Execution-light, or Execution-heavy
+  where orchestrator was declined): parent applies workflow principles
+  directly. Parent writes to `tasks/todo.md`, owns verification, updates
+  roster on agent correction.
+
+- **Orchestrator-driven execution** (Execution-heavy where
+  `@master-orchestrator` was handed off to by blueprint Phase 7):
+  orchestrator OWNS the workspace at `tasks/workspace/{task-id}/`,
+  dispatches specialists, updates roster in its PHASE 2b, persists
+  knowledge in 2c, runs PHASE 1.5 senior review before returning
+  results. Workflow principles still apply — but INSIDE each subagent,
+  not at parent level.
+
+**Rule: never double-update.** If orchestrator is driving, parent does
+NOT touch `roster.json` or lesson files — orchestrator does it at
+PHASE 2. Doubling causes inconsistent counts and conflicting
+escalation signals.
 
 ---
 

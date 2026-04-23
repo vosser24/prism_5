@@ -1,115 +1,37 @@
 {
-  "version": "2.1.24",
-  "last_updated": "2026-04-14",
-  "agents": {
-    "competitive-intelligence-specialist": {
-      "created": "2026-04-13",
-      "last_upgraded": "2026-04-13",
-      "version": 1,
-      "core_domains": [
-        "competitive-intel",
-        "price-monitoring",
-        "entity-resolution",
-        "greek-retail-nlp",
-        "scraping-ethics"
-      ],
-      "tools_known": [
-        "playwright",
-        "rapidfuzz",
-        "psycopg2",
-        "pandas",
-        "flask",
-        "react",
-        "recharts"
-      ],
-      "projects_worked": [
-        {
-          "name": "praktiker-category-intelligence",
-          "date": "2026-04-13",
-          "tasks_completed": 0,
-          "corrections_received": 0
-        }
-      ],
-      "total_tasks_completed": 0,
-      "total_corrections_received": 0,
-      "pending_upgrade": false,
-      "status": "available",
-      "file_path": "C:\\Users\\ServosY\\.claude\\agents\\competitive-intelligence-specialist.md"
-    },
-    "greek-ecommerce-seo-specialist": {
-      "created": "2026-04-14",
-      "last_upgraded": "2026-04-14",
-      "version": 1,
-      "core_domains": [
-        "technical-seo",
-        "core-web-vitals",
-        "structured-data",
-        "greek-language-seo",
-        "seo-reporting",
-        "lighthouse-psi"
-      ],
-      "tools_known": [
-        "pagespeed-insights-api",
-        "crux-bigquery",
-        "lighthouse-ci",
-        "extruct",
-        "playwright",
-        "scrapy",
-        "spacy-el",
-        "greek-stemmer-pos",
-        "schema-org",
-        "recharts"
-      ],
-      "projects_worked": [
-        {
-          "name": "praktiker-category-intelligence",
-          "date": "2026-04-14",
-          "tasks_completed": 0,
-          "corrections_received": 0
-        }
-      ],
-      "total_tasks_completed": 0,
-      "total_corrections_received": 0,
-      "pending_upgrade": false,
-      "status": "available",
-      "notebooklm_notebook_id": "0d068d6f-4b0a-4acd-a1ca-8320f08dfbe6",
-      "notebooklm_sources_count": 50,
-      "research_tier_used": "tier1",
-      "research_quality_score": 7,
-      "last_research_date": "2026-04-14",
-      "cost_estimate": "$0.00",
-      "file_path": "C:\\Users\\ServosY\\.claude\\agents\\greek-ecommerce-seo-specialist\\agent.md"
-    }
-  },
-  "schema": {
-    "agent_entry": {
-      "created": "ISO date",
-      "last_upgraded": "ISO date",
-      "version": "integer — increments on each upgrade",
-      "core_domains": [
-        "list of domain keywords"
-      ],
-      "tools_known": [
-        "list of tools/libraries/frameworks"
-      ],
-      "projects_worked": [
-        {
-          "name": "project name",
-          "date": "ISO date",
-          "tasks_completed": "integer",
-          "corrections_received": "integer"
-        }
-      ],
-      "total_tasks_completed": "integer",
-      "total_corrections_received": "integer",
-      "pending_upgrade": "boolean — true if 3+ corrections since last upgrade",
-      "status": "available | active | upgrade_needed",
-      "notebooklm_notebook_id": "string — if NotebookLM research was used",
-      "notebooklm_sources_count": "integer",
-      "last_research_date": "ISO date",
-      "research_tier_used": "tier1 | tier2 | tier3",
-      "research_quality_score": "integer 0-7",
-      "cost_estimate": "string — USD"
-    }
+  "version": "2.7.0",
+  "last_updated": "2026-04-23",
+  "schema_version": "2.7.0",
+  "schema_notes": [
+    "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
+    "default_model=null means 'let orchestrator dynamic selection decide'.",
+    "Escalation ratchet: 3 corrections → opus-lock. Deescalation: 5 consecutive successful sonnet tasks with zero corrections → reset to sonnet.",
+    "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade)."
+  ],
+  "agents": {},
+  "_schema_example": {
+    "__comment": "This _schema_example is documentation only — the actual agents live under .agents. Orchestrator ignores keys starting with underscore.",
+    "created": "ISO-date",
+    "last_upgraded": "ISO-date",
+    "version": 1,
+    "core_domains": ["array", "of", "domain", "tags"],
+    "tools_known": ["array", "of", "tool", "names"],
+    "projects_worked": [
+      {
+        "name": "project-name",
+        "date": "ISO-date",
+        "tasks_completed": 0,
+        "corrections_received": 0
+      }
+    ],
+    "total_tasks_completed": 0,
+    "total_corrections_received": 0,
+    "corrections_since_last_upgrade": 0,
+    "consecutive_successful_sonnet_tasks": 0,
+    "default_model": null,
+    "pending_upgrade": false,
+    "status": "available",
+    "notebooklm_notebook_id": null,
+    "file_path": "~/.claude/agents/<name>/agent.md"
   }
 }

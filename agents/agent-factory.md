@@ -275,7 +275,32 @@ After every 5th agent, run a comparative benchmark:
 Triggers: 3+ corrections, new tech stack, user request, >30 days stale.
 1. Gap analysis → 2. Targeted research (gaps only) → 3. APPEND to references
 4. CREATE new context adapter → 5. PROMOTE proven lessons (3+ projects) to
-core-expertise → 6. Update roster: version++, last_upgraded → 7. Validate continuity
+core-expertise → 6. Update roster: version++, last_upgraded → 7. **Reset model
+ratchet** (v2.7.0) → 8. Validate continuity
+
+### Step 7 — Reset model ratchet (v2.7.0)
+
+On upgrade completion, clear the escalation state so the refreshed agent
+is evaluated fresh on its next hire instead of inheriting a stale
+opus-lock:
+
+```
+agent.default_model = null              // next hire re-evaluates from scratch
+agent.pending_upgrade = false
+agent.corrections_since_last_upgrade = 0
+agent.consecutive_successful_sonnet_tasks = 0
+```
+
+Log to `~/.claude/agents/{name}/lessons/improvements.md`:
+
+> Upgrade complete (v{N} → v{N+1}). Default model reset; next hire
+> re-evaluates based on current task complexity via the master-orchestrator
+> dynamic-model-selection rules. Previous opus-lock (if any) cleared.
+
+Rationale: an agent's upgrade is the natural point to re-evaluate its
+model needs. Keeping the pre-upgrade opus-lock past the refresh is the
+same "ratchet never relaxes" bug that the deescalation rule (in
+master-orchestrator PHASE 2b) fixes on the hot path.
 
 ## SKILL RESEARCH MODE (--skill-research) — NEW in v2.1.23
 

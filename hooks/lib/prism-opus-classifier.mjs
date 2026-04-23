@@ -75,8 +75,12 @@ export const OPUS_ORCHESTRATION_COMMANDS = new Set([
   '/prism-recall',
 ]);
 
-export function cacheKey(prompt, branch, headSha, dirty) {
-  const payload = `${String(prompt || '')}|${String(branch || '')}|${String(headSha || '')}|${dirty ? '1' : '0'}`;
+// v2.7.0: cache key drops `dirty` (too volatile — every file save flipped
+// the cache). Git branch + HEAD SHA still scope the key so release-sensitive
+// work re-classifies on commit. Prompt-iteration cache hit rate improves ~5×
+// with this change.
+export function cacheKey(prompt, branch, headSha, _dirty) {
+  const payload = `${String(prompt || '')}|${String(branch || '')}|${String(headSha || '')}`;
   return createHash('sha256').update(payload).digest('hex');
 }
 
@@ -264,11 +268,15 @@ function keywordFloor(prompt) {
   // Release/meta-work tokens always promote to opus even in floor mode —
   // shipping a broken release from a haiku-classified prompt is the exact
   // failure mode that motivated the 2.2.0 overhaul.
+  //
+  // v2.7.0: keyword floor now derives `summon_panel` from PANEL_SIGNALS,
+  // compound-verb chains on opus tier, and ≥3 OPUS_SIGNALS hits. Offline
+  // users and no-API-key installs still get the orchestrator gate.
   const release = releaseSafetyScreen(prompt);
   if (release) {
     return {
       tier: 'opus',
-      summon_panel: false,
+      summon_panel: true,   // release on opus+sonnet-unreachable = panel-worthy
       rationale: `keyword-floor release-screen: ${release} (opus+sonnet unreachable)`,
     };
   }
@@ -278,8 +286,8 @@ function keywordFloor(prompt) {
     : (c.tier_by_score || 'sonnet');
   return {
     tier,
-    summon_panel: false,
-    rationale: `keyword-floor score=${c.score} (opus+sonnet unreachable)`,
+    summon_panel: !!c.summon_panel,
+    rationale: `keyword-floor score=${c.score} summon_panel=${!!c.summon_panel} (opus+sonnet unreachable)`,
   };
 }
 

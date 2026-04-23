@@ -1,8 +1,9 @@
 {
-  "prism_version": "2.6.0",
+  "prism_version": "2.7.0",
   "installed_date": "2026-04-20T10:10:21.359481",
   "last_update_check": "2026-04-23T00:00:00.000000",
   "next_scheduled_update": "2026-05-08T00:00:00.000000",
+  "calibration_history": [],
   "update_history": [
     {
       "date": "2026-04-20T10:10:21.359481",
@@ -23,6 +24,10 @@
     {
       "date": "2026-04-23T00:00:00.000000",
       "action": "Upgraded to PRISM v2.6.0 (CLAUDE.md sizing discipline, /prism-discover subdomain detection + nested CLAUDE.md scaffolding)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.0 (classifier reconciliation + orchestration quality: summon_panel in keyword floor, deescalation + upgrade-reset, sentinel-first guard/advisor, dynamic cost multipliers, T-shape orchestrator, PHASE 1.5 senior review, blueprint de-duplication, workflow orchestrator-awareness, weekly calibration feedback loop)"
     }
   ]
 }

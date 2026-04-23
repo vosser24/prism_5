@@ -1,33 +1,51 @@
 #!/usr/bin/env node
-// PRISM Agent Model Guard (v2.2.0)
+// PRISM Agent Model Guard (v2.7.0)
 //
-// v2.2.0: classifier source changed from keyword scoring to Opus-backed
-// context scoring. Otherwise behaves identically to v2.1.3: emits a
-// soft nudge when Agent() is spawned without an explicit `model` field,
-// or denies in hard mode.
+// v2.7.0 changes:
+//   - Sentinel-first: reads `~/.claude/.prism-turn-tier-<session>.json`
+//     written by prism-prompt-tier-router.mjs on UserPromptSubmit. Uses
+//     the sentinel's tier + summon_panel as authoritative. Only re-classifies
+//     via classifyPrompt() when sentinel is absent (classifier failed
+//     upstream) or when an explicit subagent description gives us a
+//     stronger signal than the turn-level prompt did.
+//   - Dynamic cost multipliers: loadCostMultipliers() reads pricing from
+//     model-matrix.md at runtime instead of the hardcoded 1/5/15 constants.
+//   - Split nudges: compound-verb triggers "SPLIT into retrieval+synthesis";
+//     summon_panel triggers "spawn @master-orchestrator". Different
+//     recommendations for semantically different signals.
+//   - Divergence logging: when our classification disagrees with the
+//     sentinel, logs a {event:'classifier_divergence'} record to
+//     .prism-routing.jsonl so the weekly rollup surfaces systematic drift.
 //
 // PreToolUse on the `Agent` tool. When the parent spawns a subagent
-// WITHOUT an explicit `model` field, classify the prompt's cognitive load
-// and emit a nudge recommending Haiku / Sonnet / Opus. In hard mode
-// (PRISM_MODEL_GUARD=hard), deny the call, forcing the parent to retry
-// with a model set.
+// WITHOUT an explicit `model` field, use the sentinel tier to recommend
+// haiku/sonnet/opus. Hard mode denies non-opus spawns without explicit model.
 //
-// Modes:
+// Modes (PRISM_MODEL_GUARD env var):
 //   soft (default): emit nudge on stdout, exit 0 (pass-through)
-//   hard (PRISM_MODEL_GUARD=hard): deny call with a reason
+//   hard:           deny non-opus calls without explicit model
 
-import {readFileSync, appendFileSync, mkdirSync} from 'fs';
+import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
 import {createHash} from 'crypto';
 import {classifyPrompt} from './lib/prism-opus-classifier.mjs';
-import {detectCompound} from '../tools/lib/prism-tier-classify.mjs';
+import {detectCompound, loadCostMultipliers} from '../tools/lib/prism-tier-classify.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = (process.env.PRISM_MODEL_GUARD || 'soft').toLowerCase();
 
-// Cost multipliers for the nudge text (e.g. "~15x cheaper").
-const COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
+function sentinelPath(sessionId) {
+  return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
+}
+
+function readSentinel(sessionId) {
+  try {
+    const p = sentinelPath(sessionId);
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, 'utf-8'));
+  } catch { return null; }
+}
 
 function sha256short(text) {
   return createHash('sha256').update(String(text || '')).digest('hex').slice(0, 16);
@@ -52,11 +70,24 @@ async function main() {
   const hasModel = typeof ti.model === 'string' && ti.model.length > 0;
   const prompt = ti.prompt || '';
   const description = ti.description || '';
+  const sessionId = input.session_id || 'anon';
+
+  // Master-orchestrator dispatch is always allowed without extra classification.
+  if (String(subagentType).toLowerCase() === 'master-orchestrator') {
+    appendLog({
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      tool: 'Agent',
+      subagent_type: subagentType,
+      action: 'passthrough-master-orchestrator',
+    });
+    process.exit(0);
+  }
 
   if (hasModel) {
     appendLog({
       ts: new Date().toISOString(),
-      session_id: input.session_id || null,
+      session_id: sessionId,
       tool: 'Agent',
       subagent_type: subagentType,
       action: 'passthrough-explicit-model',
@@ -66,46 +97,66 @@ async function main() {
     process.exit(0);
   }
 
-  const cls = await classifyPrompt({
-    prompt: `${description}\n${prompt}`.trim(),
-    cwd: input.cwd || '',
-    branch: '',
-    headSha: '',
-    dirty: false,
-  });
-  const tier = cls.tier;
-  const rationale = cls.rationale || '(no rationale)';
-  const msg = [];
-  const parentCost = COST_MULTIPLIER.opus;
-  const subCost = COST_MULTIPLIER[tier];
-  const mult = Math.round(parentCost / subCost);
+  // v2.7.0: sentinel-first. Prefer the turn-level classification over
+  // re-running the Opus classifier on the subagent description+prompt.
+  const sentinel = readSentinel(sessionId);
 
+  let tier, rationale, classifierSource, summonPanel;
+  if (sentinel && sentinel.tier) {
+    tier = sentinel.tier;
+    rationale = sentinel.rationale || '(from sentinel)';
+    classifierSource = `sentinel-${sentinel.source || 'unknown'}`;
+    summonPanel = !!sentinel.summon_panel;
+  } else {
+    // Fallback: sentinel missing (classifier failed upstream or session has no
+    // prompt-tier-router output). Re-classify locally.
+    const cls = await classifyPrompt({
+      prompt: `${description}\n${prompt}`.trim(),
+      cwd: input.cwd || '',
+      branch: '',
+      headSha: '',
+      dirty: false,
+    });
+    tier = cls.tier;
+    rationale = cls.rationale || '(no rationale)';
+    classifierSource = `fallback-${cls.source || 'unknown'}`;
+    summonPanel = !!cls.summon_panel;
+  }
+
+  // Dynamic cost multipliers from model-matrix.md (fallback: hardcoded).
+  const COST = loadCostMultipliers();
+  const parentCost = COST.opus;
+  const subCost = COST[tier] || 1;
+  const mult = Math.max(1, Math.round(parentCost / subCost));
+
+  const msg = [];
   if (tier === 'haiku' && mult > 1) {
     msg.push(`PRISM MODEL GUARD: spawning ${subagentType} without model override. HAIKU task detected (${rationale}) — add model:'haiku' to save ~${mult}x vs. Opus.`);
   } else if (tier === 'sonnet' && mult > 1) {
     msg.push(`PRISM MODEL GUARD: spawning ${subagentType} without model override. SONNET task detected (${rationale}) — consider model:'sonnet' to save ~${mult}x vs. Opus.`);
   }
 
-  // Compound-verb detection via legacy regex — a tight, cheap check for
-  // prompts that mix retrieval + synthesis in one call. The classifier's
-  // `summon_panel` is a related but broader signal (novel architecture).
-  // Emit the split suggestion when either fires; the text retains the
-  // "compound task detected" + "SPLITTING" markers that tooling greps for.
+  // v2.7.0: compound-verb and summon_panel are SEMANTICALLY DIFFERENT.
+  // Compound = retrieval+synthesis → SPLIT into cheap retrieval + focused reasoning.
+  // summon_panel = novel architecture → spawn @master-orchestrator for full panel.
   const compound = detectCompound(prompt, description);
-  if (compound || cls.summon_panel) {
-    const why = compound ? 'compound task detected' : 'novel architecture signal';
-    msg.push(`PRISM MODEL GUARD: ${why}. Consider SPLITTING into two Agent() calls — (a) cheap retrieval (haiku), (b) reasoning/synthesis (opus) — cheaper and often higher-quality than one large call.`);
+  if (summonPanel) {
+    msg.push(`PRISM MODEL GUARD: novel-architecture signal detected. Spawn @master-orchestrator (Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<user request>'})) for expert-panel assembly + adversarial review — not a single general-purpose call.`);
+  } else if (compound) {
+    msg.push(`PRISM MODEL GUARD: compound task detected (retrieval+synthesis in one call). Consider SPLITTING into two Agent() calls — (a) cheap retrieval (haiku), (b) reasoning/synthesis (opus) — cheaper and often higher-quality than one large call.`);
   }
 
   const action = MODE === 'hard' && tier !== 'opus' ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
 
   appendLog({
     ts: new Date().toISOString(),
-    session_id: input.session_id || null,
+    session_id: sessionId,
     tool: 'Agent',
     subagent_type: subagentType,
     tier_detected: tier,
-    classifier_source: cls.source,
+    summon_panel: summonPanel,
+    compound_detected: compound,
+    classifier_source: classifierSource,
     action,
     mode: MODE,
     prompt_hash: sha256short(prompt),

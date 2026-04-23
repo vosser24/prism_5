@@ -1,15 +1,28 @@
-// PRISM Tier Classifier (Phase 5a.1 shared lib)
+// PRISM Tier Classifier (v2.7.0)
 //
-// Lifted verbatim from hooks/prism-agent-model-guard.mjs (Phase 3b). The
-// classifier is score-based, NOT verb-match:
+// Score-based, NOT verb-match:
 //   Haiku signals: bounded output, verbatim tasks, schema outputs.
 //   Sonnet signals: cross-file pattern recognition, refactor, tests.
 //   Opus signals: architecture, trade-offs, root cause, decisions.
 // Max-tier wins. Ties round UP.
 //
+// v2.7.0 additions:
+//   - classifyWithScore() now returns summon_panel when floor signals are
+//     strong enough (≥3 OPUS_SIGNALS, or compound-verb on opus tier).
+//     This lets the keyword-floor path trigger the orchestrator gate when
+//     the Opus API is unreachable (offline or no API key).
+//   - loadCostMultipliers() reads pricing from model-matrix.md at runtime.
+//     Drop-in replacement for the hardcoded COST_MULTIPLIER constant;
+//     pricing stays in one place (model-matrix.md) that /prism-update owns.
+//
 // Consumers:
 //   - hooks/prism-agent-model-guard.mjs (PreToolUse: Agent)
-//   - hooks/prism-task-tier-advisor.mjs (PostToolUse: TaskCreate)
+//   - hooks/prism-task-tier-advisor.mjs (PreToolUse: TaskCreate, v2.7.0+)
+//   - hooks/lib/prism-opus-classifier.mjs (keyword-floor fallback)
+
+import {readFileSync, existsSync} from 'node:fs';
+import {homedir} from 'node:os';
+import {join} from 'node:path';
 
 export const HAIKU_SIGNALS = [
   /\b(return|output)\s+(a\s+)?(list|array|json|csv|tsv|yaml)\b/,
@@ -48,13 +61,79 @@ export const OPUS_SIGNALS = [
   /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
 ];
 
+// v2.7.0 additions — novel-architecture signals that bump summon_panel on
+// the keyword-floor path. Offline users and no-API-key installs still get
+// the orchestrator gate when these fire.
+export const PANEL_SIGNALS = [
+  /\b(novel|unprecedented|greenfield|from scratch)\s+(architect|design|system|migration|pipeline)/,
+  /\b(architect|design|plan)\s+(a |an |the )?(new|entire|whole|complete)\s+(system|app|platform|pipeline|workflow)/,
+  /\b(multi-?phase|multi-?quarter)\s+(plan|migration|rollout|redesign)/,
+  /\b(expert panel|architect panel|panel of)/,
+  /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
+];
+
 // v2.2.0 fix (P3b.5): allow an object phrase + comma between the two verbs,
 // e.g. "read and analyze this module, then design a refactor".
 // Up to ~60 characters of intervening text; non-greedy. Leading anchor still
 // requires a compound-intent verb and a connector.
 export const COMPOUND_VERB_RE = /\b(read|find|search|analyze|extract|research|review|audit)(?:\s+(?:and|then)\s+(?:create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate)|[^.?!]{0,60}?,\s*(?:and|then)\s+(?:create|build|write|implement|design|plan|refactor|fix|redesign|orchestrate))\b|\b(plan\s+and\s+(implement|build|execute)|design\s+and\s+build|analyze\s+and\s+recommend|summarize\s+and\s+(recommend|decide))\b/i;
 
-export const COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
+// --- v2.7.0: dynamic cost multiplier from model-matrix.md ---
+//
+// Reads "$X/MTok input" from each model's section in model-matrix.md,
+// normalizes to haiku-input = 1. Cached in-memory per process. Falls
+// back to hardcoded constants if the file is absent or unparseable.
+
+const FALLBACK_COST_MULTIPLIER = {haiku: 1, sonnet: 5, opus: 15};
+let _costMultiplierCache = null;
+
+function parseCostFromMatrix(text) {
+  if (!text) return null;
+  // Match lines like: "- Cost: $15/MTok input, $75/MTok output (cache: ...)"
+  // under section headers like "## Opus 4.7", "## Sonnet 4.6", "## Haiku 4.5".
+  const result = {};
+  const sectionRe = /^##\s+(Opus|Sonnet|Haiku)\s+\d/gmi;
+  const parts = text.split(sectionRe);
+  // parts: [preamble, "Opus", opusBlock, "Sonnet", sonnetBlock, ...]
+  for (let i = 1; i < parts.length; i += 2) {
+    const name = String(parts[i]).toLowerCase();
+    const block = parts[i + 1] || '';
+    const m = block.match(/\$(\d+(?:\.\d+)?)\s*\/MTok\s+input/i);
+    if (m) result[name] = parseFloat(m[1]);
+  }
+  if (!result.haiku || !result.sonnet || !result.opus) return null;
+  const base = result.haiku;
+  return {
+    haiku: 1,
+    sonnet: Math.round((result.sonnet / base) * 10) / 10,
+    opus: Math.round((result.opus / base) * 10) / 10,
+  };
+}
+
+export function loadCostMultipliers(matrixPath) {
+  if (_costMultiplierCache) return _costMultiplierCache;
+  const path = matrixPath || join(
+    process.env.HOME || process.env.USERPROFILE || homedir(),
+    '.claude', 'skills', 'prism-plan', 'references', 'model-matrix.md'
+  );
+  try {
+    if (existsSync(path)) {
+      const text = readFileSync(path, 'utf-8');
+      const parsed = parseCostFromMatrix(text);
+      if (parsed) {
+        _costMultiplierCache = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  _costMultiplierCache = FALLBACK_COST_MULTIPLIER;
+  return FALLBACK_COST_MULTIPLIER;
+}
+
+// Backward compat export — consumers can still import COST_MULTIPLIER as a
+// frozen snapshot. New code should call loadCostMultipliers() at hook
+// startup to get live values from model-matrix.md.
+export const COST_MULTIPLIER = FALLBACK_COST_MULTIPLIER;
 
 export function score(text, patterns) {
   if (!text) return 0;
@@ -79,6 +158,20 @@ export function classifyTier(prompt, description) {
 export function detectCompound(prompt, description) {
   const hay = `${prompt || ''} ${description || ''}`;
   return COMPOUND_VERB_RE.test(hay);
+}
+
+// v2.7.0: detect panel-summoning signals from the keyword floor.
+// Triggers when the floor is strong enough to warrant orchestrator
+// involvement without needing the Opus API.
+export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
+  const hay = `${prompt || ''} ${description || ''}`;
+  const panelHit = PANEL_SIGNALS.some(r => r.test(hay));
+  if (panelHit) return true;
+  // ≥3 opus signals on a single prompt — strong novel-architecture indicator.
+  if (Number(o) >= 3) return true;
+  // compound verb chain on opus-tier prompt — likely multi-stage novel work.
+  if (compound && Number(o) >= 1) return true;
+  return false;
 }
 
 // --- Phase 5.1 score compression ---
@@ -117,5 +210,6 @@ export function classifyWithScore(prompt, description) {
   const compound = detectCompound(prompt, description);
   if (compound) score += 2;
   const tier = scoreToTier(score);
-  return {...c, score, compound, tier_by_score: tier};
+  const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
+  return {...c, score, compound, tier_by_score: tier, summon_panel};
 }

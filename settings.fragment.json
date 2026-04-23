@@ -78,6 +78,15 @@
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-parent-dispatch-guard.mjs"
           }
         ]
+      },
+      {
+        "matcher": "TaskCreate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-task-tier-advisor.mjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -87,15 +96,6 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-kb-autosync.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "TaskCreate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-task-tier-advisor.mjs"
           }
         ]
       }

@@ -14,7 +14,7 @@
 // Scheduling (cron):
 //   0 2 * * 0 node ~/.claude/tools/prism-rollup-weekly.mjs --quiet
 
-import {writeFileSync, mkdirSync, existsSync} from 'fs';
+import {writeFileSync, readFileSync, mkdirSync, existsSync} from 'fs';
 import {join} from 'path';
 import {openDb, close} from './prism-db.mjs';
 import {COST_MULTIPLIER} from './lib/prism-tier-classify.mjs';
@@ -236,11 +236,129 @@ function main() {
   } else {
     md.push('_(no TaskCreate advice rows in window — either no TaskCreate calls or advisor hook not firing)_');
   }
+  md.push('');
+
+  // v2.7.0: Classifier calibration section.
+  // Reads divergence events from .prism-routing.jsonl for the week and
+  // reports advised-vs-used gaps. Appends a short recommendation to
+  // update-log.json under calibration_history[] so /prism-update can
+  // surface the trend to the user.
+  md.push('## Classifier Calibration (v2.7.0)');
+  const calibration = computeCalibration();
+  if (calibration) {
+    md.push(`- Classifier decisions this week: ${fmtInt(calibration.total)}`);
+    md.push(`- Advised tier distribution: opus ${calibration.advisedPct.opus}% / sonnet ${calibration.advisedPct.sonnet}% / haiku ${calibration.advisedPct.haiku}%`);
+    if (calibration.hasActual) {
+      md.push(`- Actual model used:          opus ${calibration.actualPct.opus}% / sonnet ${calibration.actualPct.sonnet}% / haiku ${calibration.actualPct.haiku}%`);
+      md.push(`- Tier divergences logged: ${fmtInt(calibration.divergences)}`);
+      if (calibration.topMismatches.length) {
+        md.push('');
+        md.push('### Top 5 advised ≠ actual');
+        for (const m of calibration.topMismatches.slice(0, 5)) {
+          md.push(`  - ${m.direction}: ${m.count}× (${m.note})`);
+        }
+      }
+    }
+    if (calibration.recommendation) {
+      md.push('');
+      md.push(`**Recommendation:** ${calibration.recommendation}`);
+    }
+    appendToUpdateLog(calibration, week);
+  } else {
+    md.push('_(no classifier decisions logged this week — hooks may not be firing)_');
+  }
 
   const outPath = join(OUT_DIR, `${week}.md`);
   writeFileSync(outPath, md.join('\n'));
   log(`wrote ${outPath}`);
   log(`spend_rows=${totals.n} total_cost=${fmtUsd(totals.cost)} sessions=${sessionStats.n}`);
+}
+
+// v2.7.0: classifier calibration from .prism-routing.jsonl for the week.
+function computeCalibration() {
+  try {
+    const H = process.env.HOME || process.env.USERPROFILE;
+    const logPath = join(H, '.claude', '.prism-routing.jsonl');
+    if (!existsSync(logPath)) return null;
+    const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const raw = readFileSync(logPath, 'utf-8');
+    const lines = raw.split('\n').filter(Boolean);
+    const advised = {opus: 0, sonnet: 0, haiku: 0};
+    const actual = {opus: 0, sonnet: 0, haiku: 0};
+    let divergences = 0;
+    const mismatchKeys = new Map();
+    for (const line of lines) {
+      let ev; try { ev = JSON.parse(line); } catch { continue; }
+      const ts = Date.parse(ev.ts || '');
+      if (!ts || ts < weekAgoMs) continue;
+      if (ev.event === 'prompt_tier_router' && ev.tier && advised[ev.tier] != null) {
+        advised[ev.tier]++;
+      }
+      if (ev.event === 'dispatch_guard_panel' || ev.event === 'dispatch_guard') {
+        if (ev.tier && actual[ev.tier] != null) actual[ev.tier]++;
+      }
+      if (ev.event === 'classifier_divergence' || ev.event === 'task_tier_divergence') {
+        divergences++;
+        const key = `${ev.sentinel_tier || ev.advised || '?'} → ${ev.plan_tier || ev.actual || '?'}`;
+        mismatchKeys.set(key, (mismatchKeys.get(key) || 0) + 1);
+      }
+    }
+    const total = advised.opus + advised.sonnet + advised.haiku;
+    if (total === 0) return null;
+    const pct = (o) => ({
+      opus: ((o.opus / Math.max(1, o.opus + o.sonnet + o.haiku)) * 100).toFixed(1),
+      sonnet: ((o.sonnet / Math.max(1, o.opus + o.sonnet + o.haiku)) * 100).toFixed(1),
+      haiku: ((o.haiku / Math.max(1, o.opus + o.sonnet + o.haiku)) * 100).toFixed(1),
+    });
+    const actualTotal = actual.opus + actual.sonnet + actual.haiku;
+    const hasActual = actualTotal > 0;
+    const topMismatches = [...mismatchKeys.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => ({direction: k, count: v, note: 'see .prism-routing.jsonl for context'}));
+    let recommendation = null;
+    if (advised.opus / total > 0.5) {
+      recommendation = `Classifier biased toward opus (${((advised.opus/total)*100).toFixed(0)}% opus-advised). Review OPUS_SIGNALS regex for over-matching in tools/lib/prism-tier-classify.mjs, or raise PRISM_TIER_THRESHOLDS.`;
+    } else if (advised.haiku / total > 0.6) {
+      recommendation = `Classifier biased toward haiku (${((advised.haiku/total)*100).toFixed(0)}% haiku-advised). Verify OPUS_SIGNALS are catching architecture and security prompts.`;
+    } else if (divergences > total * 0.15) {
+      recommendation = `High divergence rate (${divergences}/${total} = ${((divergences/total)*100).toFixed(1)}%). Sentinel and plan annotations disagree often — review which source is authoritative in your workflow.`;
+    }
+    return {
+      total,
+      advised,
+      actual,
+      advisedPct: pct(advised),
+      actualPct: pct(actual),
+      hasActual,
+      divergences,
+      topMismatches,
+      recommendation,
+    };
+  } catch { return null; }
+}
+
+function appendToUpdateLog(calibration, week) {
+  try {
+    const H = process.env.HOME || process.env.USERPROFILE;
+    const logPath = join(H, '.claude', 'skills', 'prism-plan', 'references', 'update-log.json');
+    if (!existsSync(logPath)) return;
+    const data = JSON.parse(readFileSync(logPath, 'utf-8'));
+    data.calibration_history = Array.isArray(data.calibration_history) ? data.calibration_history : [];
+    data.calibration_history.push({
+      week,
+      ts: new Date().toISOString(),
+      total: calibration.total,
+      advised: calibration.advised,
+      actual: calibration.actual,
+      divergences: calibration.divergences,
+      recommendation: calibration.recommendation,
+    });
+    // Keep last 26 entries (~6 months of weekly rollups).
+    if (data.calibration_history.length > 26) {
+      data.calibration_history = data.calibration_history.slice(-26);
+    }
+    writeFileSync(logPath, JSON.stringify(data, null, 2));
+  } catch {}
 }
 
 const invokedDirectly = (process.argv[1] || '').endsWith('prism-rollup-weekly.mjs');

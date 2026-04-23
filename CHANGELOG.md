@@ -4,6 +4,154 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-04-23
+
+Classifier reconciliation + orchestration quality. Seven concrete fixes
+to scoring mechanics, plus the blueprint ↔ workflow ↔ master-orchestrator
+scope cleanup.
+
+### Fixed — scoring mechanics
+
+- **Keyword floor now derives `summon_panel`.**
+  `tools/lib/prism-tier-classify.mjs` adds PANEL_SIGNALS + ≥3
+  OPUS_SIGNALS + compound-verb-on-opus heuristics. Offline installs and
+  no-API-key users now get the orchestrator gate even when
+  `hooks/lib/prism-opus-classifier.mjs` can't reach the Anthropic API.
+  Previously `summon_panel=true` was API-only.
+- **Cache key drops `dirty` flag.** `hooks/lib/prism-opus-classifier.mjs`
+  `cacheKey(prompt, branch, headSha)` — a single file save no longer
+  invalidates the classifier cache. Prompt-iteration cache hit rate
+  improves ~5×.
+- **Sentinel-first classification** in
+  `hooks/prism-agent-model-guard.mjs` and
+  `hooks/prism-task-tier-advisor.mjs`. Both hooks now read
+  `~/.claude/.prism-turn-tier-<session>.json` as authoritative instead
+  of re-running the classifier. Re-classification happens only when
+  sentinel is absent. Disagreements with sentinel get logged as
+  `{event:'task_tier_divergence'|'classifier_divergence'}` events to
+  `.prism-routing.jsonl` for the weekly rollup.
+- **Plan-tier annotation now wins.** If a TaskCreate description
+  carries `[haiku]`, `[sonnet]`, or `[opus]` (blueprint/workflow
+  convention), the advisor treats it as authoritative over the
+  session sentinel — the planner's explicit intent is stronger than
+  turn-level classification.
+- **Task tier advisor moved from PostToolUse → PreToolUse on `TaskCreate`.**
+  Wrong-tier tasks can now be blocked before entering the plan, not
+  just nudged after.
+- **Compound vs summon_panel nudges separated** in the Agent model
+  guard. Previously both triggered "SPLIT into retrieval+synthesis."
+  Now compound → SPLIT; summon_panel → "spawn @master-orchestrator."
+  Different advice for semantically different signals.
+
+### Added — sustainability
+
+- **Deescalation rule.** Master-orchestrator PHASE 2b: opus-locked
+  agent that completes 5 consecutive sonnet-tier tasks with zero
+  corrections → default_model reverts to sonnet. Breaks the
+  "ratchet only goes up" bug.
+- **Upgrade resets ratchet state.** Agent-factory upgrade protocol
+  (Step 7, new in v2.7.0) clears `default_model`, `pending_upgrade`,
+  `corrections_since_last_upgrade`, and
+  `consecutive_successful_sonnet_tasks` on every completed upgrade.
+  Refreshed agents are evaluated fresh against current task
+  complexity, not saddled with pre-upgrade opus-locks.
+- **Dynamic cost multipliers.** `loadCostMultipliers()` in
+  `tools/lib/prism-tier-classify.mjs` reads pricing from
+  `model-matrix.md` at runtime and normalizes relative to haiku-input.
+  Falls back to hardcoded `{haiku:1, sonnet:5, opus:15}` if the
+  matrix is absent. `/prism-update` now automatically propagates
+  pricing changes to every cost-referencing nudge.
+- **Weekly calibration feedback loop.** `tools/prism-rollup-weekly.mjs`
+  now includes a **Classifier Calibration** section: advised tier
+  distribution, actual model used, divergence count, top 5 advised
+  ≠ actual, and a recommendation string. Appends a compact record
+  to `update-log.json#calibration_history[]` (capped at 26 weeks).
+  `/prism-update` surfaces the trend. No auto-tuning — human
+  reviews and decides.
+
+### Added — T-shape master-orchestrator
+
+- **Identity upgrade** (agents/master-orchestrator.md). Explicit
+  T-shape role: BROAD expertise across every PRISM domain, DEEP on
+  orchestration/adversarial-review/dispatch, BOUNDARY for
+  domain-specific work delegated to specialists. Orchestrator is a
+  peer to hired specialists with standing to disagree on merits, not
+  a client who rubber-stamps their output.
+- **PHASE 1.5: SENIOR REVIEW (mandatory on FULL-NOVEL and HIGH-STAKES).**
+  After all specialists execute, orchestrator runs a correctness +
+  optimality + hidden-risk review before synthesis. Rejects
+  untestable claims. Delegates caught gaps back (once) or owns them
+  in parent context. Factory escalation for specialists that miss
+  in their own domain (2+ misses → `pending_upgrade: true`
+  immediately, skipping the 3-correction threshold).
+- **Standard of evidence** enforced at specialist delegation prompts:
+  "You must cite, test, or benchmark every non-trivial claim. An
+  assertion without evidence is a draft, not a deliverable."
+  PHASE 1.5 actually rejects them.
+- **Visible output.** The PHASE 1.5 review is shown to the user:
+  claims that survived, claims revised, gaps caught and closed,
+  known limitations remaining.
+
+### Changed — scope cleanup (blueprint / workflow / orchestrator)
+
+- **Blueprint Section 5 "Workflow Execution Mechanics" removed.**
+  Was duplicating 60 lines of workflow-orchestration content
+  verbatim. Replaced with a one-line pointer: "See
+  `~/.claude/skills/workflow-orchestration/SKILL.md`." Single
+  source of truth for execution mechanics.
+- **Blueprint Phase 4 — roster-first panel assembly.** Consult
+  roster.json + tools-registry.md + NotebookLM notebooks before
+  assembling panel. Hardcoded "Full-Stack Architect / Python Master
+  / ..." personas are FALLBACK ONLY when no rostered specialist or
+  Tier 1/2 tool fits. Compose-first enforced.
+- **Blueprint Phase 5 Round 2 — formal adversarial review.**
+  Cross-examination upgraded from "surface conflicts" to the full
+  ≥2-substantive-challenges / ACCEPT-REJECT-CONDITIONAL /
+  anti-theater protocol from
+  `skills/prism-plan/references/adversarial-review.md`.
+- **Blueprint Phase 7 — explicit Execution-heavy handoff to
+  @master-orchestrator.** After writing initial todo.md, blueprint
+  spawns the orchestrator with the verbatim user request; orchestrator
+  expands the panel via PHASE 0a inventory, runs PHASE 0d
+  adversarial review, dispatches specialists, and owns PHASE 1.5
+  senior review. Fixes the v2.5.0 bug where parent Opus would
+  execute Execution-heavy plans without assembling a panel.
+- **Workflow section 1.5 — orchestrator-ownership rule.**
+  Parent-direct vs orchestrator-driven distinction made explicit.
+  When orchestrator is driving, parent does NOT touch roster.json
+  or lesson files — orchestrator owns PHASE 2. Never double-update.
+- **Workflow todo.md template aligned** to blueprint's tier
+  annotation: `[haiku|sonnet|opus] [pgroup=N]` on every step. Same
+  grammar so `prism-task-tier-advisor` parses both consistently.
+
+### Infrastructure
+
+- **Roster.json template scrubbed.** Ships as an empty `agents: {}`
+  with a `_schema_example` documenting the new v2.7.0 shape fields
+  (`default_model`, `corrections_since_last_upgrade`,
+  `consecutive_successful_sonnet_tasks`,
+  `notebooklm_notebook_id`). Previous template had the author's
+  actual specialist (`competitive-intelligence-specialist`) seeded —
+  fresh installs now land clean.
+- **Master-orchestrator dispatch bypass** in agent-model-guard:
+  spawning `@master-orchestrator` is always passthrough (no
+  tier/model checks). The orchestrator itself handles its model
+  selection internally.
+
+### Notes
+
+- **No breaking runtime changes** — sentinel shape preserved; guards
+  and advisors fall back to re-classification if sentinel is absent
+  (e.g., first turn after session start before tier-router has run).
+- **Cost-accuracy tradeoff preserved.** Opus classifier remains
+  default (`DEFAULT_MODEL='claude-opus-4-7'`). Cost rises ~$0.007/prompt
+  but accuracy stays high. No regression to Sonnet/Haiku classifier
+  as primary (explicitly rejected during v2.7.0 scope review).
+- **Calibration is human-in-the-loop.** No auto-tuning of classifier
+  regex or thresholds. The weekly rollup surfaces drift; user
+  decides whether to tighten signals, adjust thresholds, or leave
+  alone.
+
 ## [2.6.0] - 2026-04-23
 
 CLAUDE.md sizing discipline and nested-file scaffolding. Closes the
