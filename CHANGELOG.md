@@ -4,6 +4,58 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.1] - 2026-04-24
+
+Fresh-install hardening release. Three fixes identified during the v2.8.0
+install/upgrade walkthrough on a real user's machine where `/prism-health`
+surfaced drift that existed in the repo itself (not just local state).
+All additive, backward-compatible, no runtime behavior changes.
+
+### Added
+
+- **`skills/prism-chat/SKILL.md` now in manifest.** The definitive
+  Claude.ai chat skill landed in v2.8.0 but was not wired into
+  `manifest.json`, so `install-merge.mjs` never copied it to fresh
+  installs and `verify.mjs` never validated it. Adding the entry fixes
+  both — the skill now ships with every install and upgrade.
+- **`install-merge.mjs` stamps manifest version into `update-log.json`
+  (new §4d).** Previously the merger copied files and merged settings
+  but never touched `~/.claude/skills/prism-plan/references/update-log.json`.
+  This caused `/prism-health` to report "version lag" on every fresh
+  install — the installed files matched v2.8.0 but the log still showed
+  the skeleton's shipped version. Now, after a successful merge,
+  install-merge reads `manifest.json` → compares to the log's
+  `prism_version` → appends an `update_history` entry and bumps the
+  field if they differ. Idempotent: re-running with no version change
+  only refreshes `last_update_check`. Fresh installs (no log file yet)
+  get a freshly-created log with an "Installed PRISM v<X> via
+  install-merge" entry. Non-fatal on any error — metadata write, not
+  load-bearing.
+- **`/prism-roster --reconcile` — new flag for orphan-agent registration.**
+  Scans `~/.claude/agents/` (both flat `<name>.md` and subdir
+  `<name>/agent.md` layouts), finds agent files not present in
+  `roster.json`, and adds minimal roster entries with defaults from
+  each agent's frontmatter. Core PRISM agents (agent-factory,
+  master-orchestrator, prism-updater) skipped. Existing entries never
+  modified — reconcile is strictly additive. Closes the gap for agents
+  created outside `agent-factory` (manual creation, imports from
+  another PRISM install, legacy pre-v2.7 agents, factory mid-crash
+  states). Creation date falls back through: git first-commit date →
+  file mtime → current timestamp. Entries are marked `"source":
+  "reconcile"` to distinguish from factory-created agents that have
+  richer metadata (notebooklm_notebook_id, researched domains, etc.).
+  Backup to `roster.json.bak` before any write.
+
+### Fixed
+
+- **Default-mode `/prism-roster` now surfaces orphans.** Previously the
+  command displayed only what was in `roster.json`, so agents on disk
+  but missing from the roster were silently invisible. The display
+  table now ends with an "orphans detected" flag when `~/.claude/agents/`
+  contains files not in `roster.json`, with a suggestion to run
+  `/prism-roster --reconcile`. Closes the same detection gap that
+  required running `/prism-health` to notice roster drift.
+
 ## [2.8.0] - 2026-04-23
 
 Audit-driven hardening release. 13 fixes from the full repo audit,

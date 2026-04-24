@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM install merger (v2.7.3)
+// PRISM install merger (v2.8.1)
 //
 // Replaces the inline `node -e "..."` approach in INSTALL.md §4. The inline
 // form hit three escape-handling traps on Windows+git-bash during the v2.7.2
@@ -28,10 +28,18 @@
 //           same command string
 //         - statusLine: set only if user hasn't configured one
 //         - permissions / enabledPlugins / other top-level keys: untouched
+//   §4d — Stamp installed version into update-log.json (v2.8.1+).
+//         Reads manifest.json version and compares to
+//         ~/.claude/skills/prism-plan/references/update-log.json's
+//         `prism_version` field. If they differ, appends an entry to
+//         `update_history` and updates `prism_version` + `last_update_check`.
+//         If update-log.json doesn't exist (truly fresh install), creates
+//         it with minimal schema. Eliminates the false "version lag"
+//         warning in /prism-health after a successful install-merge run.
 //
-// Reads: settings.fragment.json from the repo root (the cwd this script
-//        runs from).
-// Writes: ~/.claude/settings.json.
+// Reads: settings.fragment.json + manifest.json from the repo root (the
+//        cwd this script runs from).
+// Writes: ~/.claude/settings.json + ~/.claude/skills/prism-plan/references/update-log.json.
 //
 // Exits 0 on success. Prints a summary (pruned count, merged count, etc.)
 // that INSTALL.md §8 consumes for the final report.
@@ -40,13 +48,14 @@
 // to the fragment is a no-op (merged entries already exist with matching
 // command strings; prune patterns won't match the new wrapper form).
 
-import {readFileSync, writeFileSync, existsSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync} from 'node:fs';
 import {homedir, platform} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 
 const HOME = homedir();
 const IS_WIN = platform() === 'win32';
 const SETTINGS_PATH = join(HOME, '.claude', 'settings.json');
+const UPDATE_LOG_PATH = join(HOME, '.claude', 'skills', 'prism-plan', 'references', 'update-log.json');
 const BACKSLASH = String.fromCharCode(92);  // bypasses shell escape mangling
 const QUOTE = String.fromCharCode(34);
 
@@ -234,8 +243,95 @@ function mergeHooks(existing, fragment) {
   return added;
 }
 
+// §4d — Stamp installed PRISM version into update-log.json. Idempotent:
+// if the log already records the current manifest version, this is a no-op
+// apart from bumping `last_update_check`. Fresh installs get a freshly
+// created log file. Failures here are non-fatal (warn, continue) — the
+// settings merge is the load-bearing operation; update-log is metadata.
+function stampUpdateLog() {
+  // Read manifest version from repo root.
+  const manifestPath = resolve(process.cwd(), 'manifest.json');
+  if (!existsSync(manifestPath)) {
+    log('§4d: manifest.json not found — skipping update-log stamp');
+    return {stamped: false, from: null, to: null};
+  }
+  let manifestVersion;
+  try {
+    const m = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    manifestVersion = m.version;
+  } catch (err) {
+    log(`§4d: manifest.json unreadable (${err.message}) — skipping update-log stamp`);
+    return {stamped: false, from: null, to: null};
+  }
+  if (!manifestVersion) {
+    log('§4d: manifest.json has no version field — skipping update-log stamp');
+    return {stamped: false, from: null, to: null};
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // Load existing update-log (or create fresh skeleton).
+  let logObj;
+  let isFresh = false;
+  if (existsSync(UPDATE_LOG_PATH)) {
+    try {
+      logObj = JSON.parse(readFileSync(UPDATE_LOG_PATH, 'utf-8'));
+    } catch (err) {
+      log(`§4d: update-log.json unreadable (${err.message}) — skipping stamp, preserving existing file`);
+      return {stamped: false, from: null, to: null};
+    }
+  } else {
+    isFresh = true;
+    logObj = {
+      prism_version: null,
+      installed_date: nowIso,
+      last_update_check: nowIso,
+      next_scheduled_update: null,
+      calibration_history: [],
+      update_history: [],
+    };
+    try {
+      mkdirSync(dirname(UPDATE_LOG_PATH), {recursive: true});
+    } catch {}
+  }
+
+  const oldVersion = logObj.prism_version || null;
+
+  // Always refresh last_update_check so /prism-health sees recent activity.
+  logObj.last_update_check = nowIso;
+
+  // Only append an update_history entry if the version actually changed
+  // (or this is a fresh install). Keeps idempotency — re-running merge
+  // without a version bump does not pollute history.
+  let stamped = false;
+  if (oldVersion !== manifestVersion) {
+    logObj.prism_version = manifestVersion;
+    if (!Array.isArray(logObj.update_history)) logObj.update_history = [];
+    const action = isFresh || !oldVersion
+      ? `Installed PRISM v${manifestVersion} via install-merge`
+      : `Upgraded to PRISM v${manifestVersion} via install-merge (from v${oldVersion})`;
+    logObj.update_history.push({date: nowIso, action});
+    stamped = true;
+  }
+
+  try {
+    writeFileSync(UPDATE_LOG_PATH, JSON.stringify(logObj, null, 2));
+  } catch (err) {
+    log(`§4d: could not write update-log.json (${err.message}) — install unaffected`);
+    return {stamped: false, from: oldVersion, to: manifestVersion};
+  }
+
+  if (stamped) {
+    const verb = isFresh || !oldVersion ? 'recorded fresh install of' : `bumped ${oldVersion} →`;
+    log(`§4d: update-log stamped (${verb} ${manifestVersion})`);
+  } else {
+    log(`§4d: update-log already at v${manifestVersion} (last_update_check refreshed)`);
+  }
+  return {stamped, from: oldVersion, to: manifestVersion};
+}
+
 function main() {
-  log(`PRISM install merger (v2.7.3) — platform=${platform()}`);
+  log(`PRISM install merger (v2.8.1) — platform=${platform()}`);
   log(`Reading fragment from: ${resolve(process.cwd(), 'settings.fragment.json')}`);
   log(`Writing settings to:   ${SETTINGS_PATH}`);
 
@@ -273,6 +369,9 @@ function main() {
   // Write back.
   writeFileSync(SETTINGS_PATH, JSON.stringify(existing, null, 2));
 
+  // §4d — Stamp manifest version into update-log.json (v2.8.1+).
+  const stamp = stampUpdateLog();
+
   // Summary (INSTALL.md §8 greps these).
   log('');
   log('=== MERGE SUMMARY ===');
@@ -281,6 +380,7 @@ function main() {
   log(`ENV_KEYS=${envKeys}`);
   log(`STATUSLINE_PRESERVED=${!!existing.statusLine}`);
   log(`TOTAL_TOP_LEVEL_KEYS=${Object.keys(existing).length}`);
+  log(`UPDATE_LOG_STAMPED=${stamp.stamped}${stamp.to ? ` (v${stamp.to})` : ''}`);
   log('Merge complete.');
 }
 

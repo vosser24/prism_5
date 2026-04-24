@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -144,6 +144,10 @@
     {
       "src": "skills/notebooklm/SKILL.md",
       "dest": "~/.claude/skills/notebooklm/SKILL.md"
+    },
+    {
+      "src": "skills/prism-chat/SKILL.md",
+      "dest": "~/.claude/skills/prism-chat/SKILL.md"
     },
     {
       "src": "skills/prism-discover/SKILL.md",
