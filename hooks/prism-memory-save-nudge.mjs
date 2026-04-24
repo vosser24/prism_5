@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-// PRISM Memory-Save Nudge (v1.0.0) — UserPromptSubmit
+// PRISM Memory-Save Nudge (v2.9.1) — UserPromptSubmit
+//
+// v2.9.1 (ATOMIC-WRITE-001): counter-file writes now use tempfile + renameSync
+// with catch-fallback to direct writeFileSync. Matches v2.8.0 sentinel-write
+// pattern in prism-parent-dispatch-guard.mjs:90-107. Prevents truncated
+// counter JSON from a mid-write crash (disk-full, antivirus interference,
+// process kill) — readers on next turn would otherwise see a parse error
+// and reset the counter to 0, suppressing a due nudge.
 //
 // Tracks per-session turn count. Starting at turn 15, and every 5 turns
 // thereafter (20, 25, 30, ...), injects a directive via additionalContext
@@ -14,7 +21,7 @@
 //   PRISM_MEMORY_NUDGE_INTERVAL — cadence after first (default 5)
 //   PRISM_MEMORY_NUDGE=off      — disable entirely
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
+import {readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 
 const H = process.env.HOME || process.env.USERPROFILE;
@@ -42,12 +49,25 @@ function readCounter(sessionId) {
   } catch { return {turn_count: 0, last_nudge_turn: 0}; }
 }
 
+// v2.9.1 ATOMIC-WRITE-001: tempfile + renameSync. Prevents truncated counter
+// JSON from crashes mid-write (disk-full, antivirus interference, process kill).
+// Matches the v2.8.0 sentinel-write pattern in prism-parent-dispatch-guard.mjs.
 function writeCounter(sessionId, data) {
   try {
     const p = counterPath(sessionId);
     mkdirSync(dirname(p), {recursive: true});
-    writeFileSync(p, JSON.stringify(data, null, 2));
-  } catch {}
+    const tmp = p + '.tmp';
+    writeFileSync(tmp, JSON.stringify(data, null, 2));
+    // renameSync is atomic on POSIX + Windows (same filesystem). Readers
+    // either see the previous valid file or the new one — never a partial.
+    renameSync(tmp, p);
+  } catch {
+    // Fallback: direct write. On catastrophic failure (e.g. Windows EBUSY
+    // from antivirus during rename), the direct write keeps the counter
+    // advancing. Readers have try/catch JSON.parse guards downstream, so
+    // worst case is a one-turn counter reset.
+    try { writeFileSync(counterPath(sessionId), JSON.stringify(data, null, 2)); } catch {}
+  }
 }
 
 try {

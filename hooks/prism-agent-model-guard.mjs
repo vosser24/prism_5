@@ -1,5 +1,17 @@
 #!/usr/bin/env node
-// PRISM Agent Model Guard (v2.9.0)
+// PRISM Agent Model Guard (v2.9.1)
+//
+// v2.9.1 (TIER-DRIFT-001): split `hard` mode semantics. Previously any non-opus
+// dispatch without an explicit model was denied under hard — that overshot the
+// task-tier-advisor (advisory) and tier-router (sentinel) semantics. Now:
+//   - soft (default): advisory nudge, exit 0 (unchanged).
+//   - hard (NEW semantics): deny ONLY when tier=='opus' AND no explicit model.
+//                           sonnet/haiku become advisory nudges (no deny).
+//   - strict (NEW enum):    preserves the OLD hard behavior — deny ANY
+//                           non-opus dispatch without explicit model.
+// BREAKING CONTRACT for users who set PRISM_MODEL_GUARD=hard expecting the
+// strict behavior: switch to `strict`. Migration notice emitted once by
+// prism-session-start.mjs when hard is detected post-upgrade.
 //
 // v2.9.0: add three-path subagent-context bypass (parity with mutation-guard,
 // parent-dispatch-guard, task-tier-advisor). Closes the parity gap that v2.8.0
@@ -29,7 +41,9 @@
 //
 // Modes (PRISM_MODEL_GUARD env var):
 //   soft (default): emit nudge on stdout, exit 0 (pass-through)
-//   hard:           deny non-opus calls without explicit model
+//   hard:           deny opus-tier calls without explicit model (v2.9.1 —
+//                   sonnet/haiku become advisory; matches tier-advisor semantics)
+//   strict:         deny ANY non-opus tier without explicit model (old-hard)
 
 import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
@@ -39,7 +53,9 @@ import {detectCompound, loadCostMultipliers} from '../tools/lib/prism-tier-class
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
-const MODE = (process.env.PRISM_MODEL_GUARD || 'soft').toLowerCase();
+const MODE_RAW = (process.env.PRISM_MODEL_GUARD || 'soft').toLowerCase();
+// v2.9.1: accept soft|hard|strict. Unknown values fall back to soft (safe default).
+const MODE = ['soft', 'hard', 'strict'].includes(MODE_RAW) ? MODE_RAW : 'soft';
 
 function sentinelPath(sessionId) {
   return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
@@ -181,7 +197,15 @@ async function main() {
     msg.push(`PRISM MODEL GUARD: compound task detected (retrieval+synthesis in one call). Consider SPLITTING into two Agent() calls — (a) cheap retrieval (haiku), (b) reasoning/synthesis (opus) — cheaper and often higher-quality than one large call.`);
   }
 
-  const action = MODE === 'hard' && tier !== 'opus' ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
+  // v2.9.1 TIER-DRIFT-001: hard mode narrows to opus-only deny; strict keeps
+  // the old broad deny. Rationale: task-tier-advisor's hard-mode semantics are
+  // "block silent Opus drift" (sonnet/haiku are cheap — nudging is enough);
+  // the old hard behavior overshot by denying every non-opus dispatch even
+  // when the tier classification wanted a cheaper model.
+  const shouldDeny =
+    (MODE === 'hard'   && tier === 'opus') ||
+    (MODE === 'strict' && tier !== 'opus');
+  const action = shouldDeny ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
 
   appendLog({
     ts: new Date().toISOString(),
@@ -197,12 +221,16 @@ async function main() {
     prompt_hash: sha256short(prompt),
   });
 
-  if (MODE === 'hard' && tier !== 'opus') {
+  if (shouldDeny) {
+    const retryTier = MODE === 'hard' ? 'opus' : tier;
+    const denyMsg = msg.length
+      ? `${msg.join(' ')} Retry with explicit model:'${retryTier}'.`
+      : `PRISM MODEL GUARD (${MODE}): spawning ${subagentType} without explicit model. Retry with model:'${retryTier}'.`;
     const deny = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: `${msg.join(' ')} Retry with explicit model:'${tier}'.`,
+        permissionDecisionReason: denyMsg,
       },
     };
     process.stdout.write(JSON.stringify(deny));

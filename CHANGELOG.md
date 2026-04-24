@@ -4,6 +4,72 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.1] - 2026-04-24
+
+Audit hardening patch. Two in-scope findings from the fresh-eyes audit
+of v2.8.2 applied, plus a strict-mode migration notice. Executed via
+proper PRISM protocol (blueprint-prompt → master-orchestrator
+dispatch → parallel Group A execution) — the protocol discipline was
+the point; the code fixes are small.
+
+### ⚠ BREAKING CONTRACT — `PRISM_MODEL_GUARD=hard` semantics changed
+
+**If you set `PRISM_MODEL_GUARD=hard` deliberately to deny any non-opus
+dispatch without explicit model, you must switch to
+`PRISM_MODEL_GUARD=strict` to preserve that behavior.**
+
+v2.9.1 narrows `hard` mode to match `task-tier-advisor` semantics: deny
+ONLY when sentinel tier is `opus` AND no explicit model. Sonnet and
+Haiku dispatches drop to advisory nudges under `hard`. The old
+deny-everything behavior is preserved under the new `strict` enum
+value.
+
+A one-time session-start notice surfaces this when
+`PRISM_MODEL_GUARD=hard` is detected post-upgrade, gated by
+`~/.claude/.prism-v2.9.1-migration-shown`.
+
+### Fixed
+
+- **TIER-DRIFT-001**: `prism-agent-model-guard.mjs` `hard` mode was
+  over-enforcing — denying every non-opus dispatch without explicit
+  model violated the "soft doctrine in skills, hard enforcement in
+  hooks" principle by gating tier-routing decisions that belong in
+  advisory territory. Split into three modes (soft / hard / strict)
+  with hard now matching task-tier-advisor semantics. Unknown env
+  values fall back to `soft` (safe default).
+
+- **ATOMIC-WRITE-001**: `prism-memory-save-nudge.mjs` and
+  `prism-session-start.mjs` were writing state files directly via
+  `writeFileSync`, missing the tempfile+renameSync pattern that
+  v2.8.0 shipped for other state writers. Now match the v2.8.0
+  reference shape in `prism-parent-dispatch-guard.mjs:90-107`
+  (tempfile + atomic rename with catch-fallback to direct write for
+  the Windows-antivirus EBUSY edge case). Counter corruption from a
+  crash mid-write no longer silently resets nudge cadence or context-
+  audit state.
+
+### Added
+
+- **v2.9.1 migration notice** in `prism-session-start.mjs` — one-time
+  emit when `PRISM_MODEL_GUARD=hard` is in env and the flag file
+  `~/.claude/.prism-v2.9.1-migration-shown` is absent. Points users
+  at the strict-mode contract change. Flag written atomically
+  (tempfile+rename) after first emit.
+
+### Known gaps (not addressed in v2.9.1 — tracked for future releases)
+
+Six findings from the v2.8.2 audit remain open. Deferred deliberately
+to keep v2.9.1 narrow and shippable; none block current workflows.
+
+| ID | Severity | Target | Summary |
+|---|---|---|---|
+| INSTALL-MERGE-001 | HIGH | v2.10 | install-merge.mjs has no checksum-based detection of user-edited hooks → upgrades silently clobber user customizations |
+| DOCTRINE-DRIFT-001 | MEDIUM | v2.10 | blueprint-prompt adversarial review (≥2 substantive challenges) is text-only doctrine — no hook enforces compliance |
+| SCHEMA-VERSIONING-001 | MEDIUM | v3.0 | roster.json `schema_version` is written but no reader validates it before parsing — silent breakage when readers lag writers |
+| CONFIG-GUARD-DRIFT-001 | LOW | v3.0 | `prism-config-guard.mjs` warns on CLAUDE.md PRISM-section removal but doesn't restore — damage already done by the time warning fires |
+| DEAD-REFERENCE-001 | LOW | v3.0 | INSTALL.md §2.6 ATLAS purge runs on every install including fresh ones that have no ATLAS state — should be gated or relocated |
+| DEPENDENCY-MANIFEST-001 | INFO | opportunistic | tools-registry.md has no `last_verified` date or schema version — no staleness detection |
+
 ## [2.9.0] - 2026-04-24
 
 Unified resource-index release. Closes the structural gap that caused
