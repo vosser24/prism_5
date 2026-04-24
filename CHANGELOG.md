@@ -4,6 +4,28 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.8.2] - 2026-04-24
+
+Security hygiene patch. `/prism-audit` run against v2.8.1 install
+surfaced a `CRITICAL` + `HIGH` finding both rooted in the same gap:
+the PRISM repo shipped with no `.gitignore`. Any fresh clone that
+dropped a `.env`, local Claude Code overlay, or secret file would
+track it immediately, risking accidental `git add .` commits.
+
+### Fixed
+
+- **Add `.gitignore` to PRISM repo root.** Covers:
+  secrets (`.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`,
+  `credentials.json`, `*.pfx`); Claude Code local overlays
+  (`CLAUDE.local.md`, `.claude/settings.local.json`,
+  `.claude/.prism-state.json`, `.claude/references/`); dev cruft
+  (`node_modules/`, `.DS_Store`, `Thumbs.db`); and stray
+  `backups/` dirs if install-merge ever lands one in repo root
+  due to a misconfigured HOME. Tracked-repo canonical files
+  (`manifest.json`, `settings.fragment.json`, `tasks/todo.md`,
+  `tasks/lessons-*.md`) intentionally NOT ignored — those are
+  the shared project-state files PRISM teams commit.
+
 ## [2.8.1] - 2026-04-24
 
 Fresh-install hardening release. Three fixes identified during the v2.8.0
