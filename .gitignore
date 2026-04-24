@@ -22,3 +22,7 @@ Thumbs.db
 # but if someone runs the installer with a messed-up HOME they could
 # land in the repo root)
 backups/
+
+# Generated test reports (tests/v3/run-all.sh output — one per run)
+tests/v3/v3-report-*.md
+tests/v3/v3-*.log

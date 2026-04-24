@@ -4,6 +4,88 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-04-24
+
+Testability release. First comprehensive user-journey test suite covering
+every claim PRISM makes about what it does. Not a breaking-change release
+despite the major-version bump — the version bump reflects the
+accumulated architectural shift from v2.8 → v3.0 (unified resource-index,
+T-shape orchestrator, three-path guard parity, fresh-install hardening,
+adversarial-review doctrine, BREAKING CONTRACT on `PRISM_MODEL_GUARD=hard`
+semantics in v2.9.1).
+
+### Added
+
+- **`tests/v3/`** — end-to-end user-journey test suite. Six artifacts:
+  - `plan.md` — 15 categories × 62 tests, organized by the verdict
+    framework (works / half-works / known-gap). Distinguishes automated
+    from manual tests up front.
+  - `run-static.sh` — automated bash runner for categories that don't
+    need a live Claude Code session (install/upgrade, verify, roster
+    schema, stale-state recovery, backup safety, hook syntax, JSON
+    validity, manifest src integrity). 37 automated assertions. Runs
+    in a throwaway HOME so the user's real `~/.claude/` is never
+    touched. Local run: 37/37 pass on v3.0.0.
+  - `run-claude.md` — Claude Code prompt pack for the 25 manual tests
+    across classifier routing, guards, roster/reconcile, resource-index,
+    blueprint-prompt, parallel dispatch, cost discipline, skills
+    invocation, and Windows-specific checks. Every prompt has exact
+    expected outcomes tied to sentinel fields or log events.
+  - `analyze-log.mjs` — parses `~/.claude/.prism-routing.jsonl` and
+    emits a structured markdown report: tier distribution, classifier
+    sources, guard denies, subagent-context bypass events, force-opus
+    usage, pgroup violations (for future v2.10 hook), classifier
+    divergence, verdict heuristic. Supports `--since <ISO>` filter.
+  - `report-template.md` — fill-in table-per-category report with
+    auto-captured static-log + analyzer-output appendix.
+  - `run-all.sh` — master orchestrator. Modes: interactive (static +
+    manual prompt + analyzer + report), `--static-only`, `--ci`.
+- **`.gitignore` coverage** for generated test artifacts
+  (`tests/v3/v3-report-*.md`, `tests/v3/v3-*.log`).
+
+### Unchanged / documented-gap carry-forward
+
+These findings from the v2.8.2 fresh-eyes audit remain known gaps
+targeting later releases. The test suite validates them as documented
+failures (T10.3, T13.4), not regressions:
+
+- **Parallel-dispatch enforcement** (target v3.1) — `prism-parallel-guard`
+  hook that blocks sequential dispatch of same-pgroup tasks.
+- **Hallucinated-persona detection** (target v3.1) — `prism-panel-guard`
+  hook that cross-references panel output against `roster.json` skills
+  + agents.
+- **Skill-invocation trigger map** (target v3.1) — keyword → required-skill
+  advisory.
+- **User hook customization preservation** (target v3.2) — checksum-based
+  detection, copy-to-`.new` on conflict.
+- **Config-guard self-heal** (target v3.2) — restore PRISM section in
+  global CLAUDE.md from backup.
+- **Schema-version runtime checking** (target v3.2) — readers validate
+  `roster.schema_version` before parsing new shapes.
+- **ATLAS purge in fresh-install path** (target v3.2 cleanup) — move
+  legacy migration out of `INSTALL.md §2.6`.
+
+### Migration notes
+
+No migration needed. Test suite is additive. Running `/prism-update` or
+`git pull && node scripts/install-merge.mjs` bumps update-log
+`2.9.1 → 3.0.0` via the §4d auto-stamp added in v2.8.1. Nothing else
+changes. Users not running tests see identical runtime behavior to v2.9.1.
+
+### Running the suite
+
+```bash
+# Automated only (~2 min)
+bash tests/v3/run-static.sh
+
+# Full (static + manual prompts + analyzer)
+bash tests/v3/run-all.sh
+```
+
+Report target: 60/62 pass. 2 documented failures in categories 10 + 13
+are EXPECTED and prove the v3.1 target gaps still exist. When those hooks
+ship, the expected results for those tests flip to pass.
+
 ## [2.9.1] - 2026-04-24
 
 Audit hardening patch. Two in-scope findings from the fresh-eyes audit
