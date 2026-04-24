@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// PRISM Agent Model Guard (v2.7.0)
+// PRISM Agent Model Guard (v2.9.0)
+//
+// v2.9.0: add three-path subagent-context bypass (parity with mutation-guard,
+// parent-dispatch-guard, task-tier-advisor). Closes the parity gap that v2.8.0
+// CHANGELOG claimed was already fixed ("all guards now treat subagent context
+// identically") but wasn't. Paths: parent_tool_use_id / CLAUDE_CODE_ENTRYPOINT
+// env / sentinel.dispatched.
 //
 // v2.7.0 changes:
 //   - Sentinel-first: reads `~/.claude/.prism-turn-tier-<session>.json`
@@ -71,6 +77,35 @@ async function main() {
   const prompt = ti.prompt || '';
   const description = ti.description || '';
   const sessionId = input.session_id || 'anon';
+
+  // v2.9.0: three-path subagent-context bypass (parity with mutation-guard v2.7.5,
+  // dispatch-guard v2.2.1, task-tier-advisor v2.8.0). A subagent spawning another
+  // subagent must not be gated by the parent-context rules — the parent has
+  // already been classified on UserPromptSubmit; subagent-chain dispatches
+  // inherit that classification. Without this, subagent-internal Agent() calls
+  // get denied as "parent underspecified" when the real parent isn't in the
+  // Agent-tool call chain at all.
+  //
+  // Three signals, any one satisfies:
+  //   1. input.parent_tool_use_id set (Claude Code propagates for subagent calls)
+  //   2. CLAUDE_CODE_ENTRYPOINT=subagent env var (some builds set this instead)
+  //   3. sentinel.dispatched === true (tier-router marks after first dispatch)
+  const isSubagentById = !!input.parent_tool_use_id;
+  const isSubagentByEnv = String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent';
+  const sentinelEarly = readSentinel(sessionId);
+  const isSubagentByDispatched = !!(sentinelEarly && sentinelEarly.dispatched === true);
+  if (isSubagentById || isSubagentByEnv || isSubagentByDispatched) {
+    appendLog({
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      tool: 'Agent',
+      subagent_type: subagentType,
+      action: 'passthrough-subagent-context',
+      reason: isSubagentById ? 'parent_tool_use_id' : isSubagentByEnv ? 'env' : 'sentinel.dispatched',
+      prompt_hash: sha256short(prompt),
+    });
+    process.exit(0);
+  }
 
   // Master-orchestrator dispatch is always allowed without extra classification.
   if (String(subagentType).toLowerCase() === 'master-orchestrator') {

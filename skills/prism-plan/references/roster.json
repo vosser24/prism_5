@@ -1,16 +1,25 @@
 {
-  "version": "2.8.0",
-  "last_updated": "2026-04-23",
-  "schema_version": "2.8.0",
+  "version": "2.9.0",
+  "last_updated": "2026-04-24",
+  "schema_version": "2.9.0",
   "schema_notes": [
     "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
     "default_model=null means 'let orchestrator dynamic selection decide'.",
     "Escalation ratchet: 3 corrections → opus-lock. Deescalation: 5 consecutive successful sonnet tasks with zero corrections → reset to sonnet.",
-    "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade)."
+    "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade).",
+    "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks."
   ],
   "agents": {},
-  "_schema_example": {
-    "__comment": "This _schema_example is documentation only — the actual agents live under .agents. Orchestrator ignores keys starting with underscore.",
+  "skills": {},
+  "tools": {},
+  "mcps": {},
+  "index_meta": {
+    "last_indexed": null,
+    "indexer_version": null,
+    "enrichment": "none"
+  },
+  "_schema_example_agent": {
+    "__comment": "Agent entries: full task-tracking + escalation state. Created only by agent-factory (heavyweight path) or /prism-roster --reconcile (orphan recovery). Orchestrator ignores keys starting with underscore.",
     "created": "ISO-date",
     "last_upgraded": "ISO-date",
     "version": 1,
@@ -33,5 +42,36 @@
     "status": "available",
     "notebooklm_notebook_id": null,
     "file_path": "~/.claude/agents/<name>/agent.md"
+  },
+  "_schema_example_skill": {
+    "__comment": "Skill entries: discovery metadata only. Populated by /prism-index from scanning ~/.claude/skills/ and ~/.claude/plugins/*/skills/. Never hand-edited — re-run /prism-index to refresh.",
+    "type": "skill",
+    "source": "user | plugin:<plugin-name> | prism",
+    "path": "~/.claude/skills/<name>/SKILL.md",
+    "description": "first 200 chars of frontmatter description",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "from", "description", "body"],
+    "trigger_phrases": ["multi-word", "activation", "phrases"],
+    "last_indexed": "ISO-date",
+    "frontmatter_mtime": "ISO-date"
+  },
+  "_schema_example_tool": {
+    "__comment": "Tool entries: resolved from tools-registry.md with install-status probe. Populated by /prism-index.",
+    "type": "tool",
+    "source": "tools-registry.md",
+    "install_status": "installed | available | missing",
+    "tier": "1 | 2 | 3",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "terms"],
+    "install_hint": "command or path"
+  },
+  "_schema_example_mcp": {
+    "__comment": "MCP entries: from .claude.json mcpServers + ~/.claude/settings.json mcpServers. Populated by /prism-index.",
+    "type": "mcp",
+    "source": "claude-settings | project-mcp-json",
+    "server_name": "name-as-registered",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "terms"],
+    "status": "connected | configured"
   }
 }

@@ -4,6 +4,66 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-04-24
+
+Unified resource-index release. Closes the structural gap that caused
+orchestrators to hallucinate generic personas ("Rachel/Priya") instead
+of dispatching to real installed skills (ui-ux-pro-max, frontend-design,
+etc.). Plus one CRITICAL guard-parity fix surfaced by the fresh-eyes
+audit run against v2.8.2.
+
+### Added
+
+- **`/prism-index` command** — scans every installed agent, skill,
+  tool, and MCP and populates a unified resource-index. Covers resources
+  that never flowed through agent-factory: user-installed skills,
+  plugin-provided skills (from `~/.claude/plugins/*/skills/`), manually
+  imported agents, configured MCP servers. Deterministic keyword
+  extraction by default; optional `--enrich` flag uses Opus for higher-
+  quality keywords/trigger-phrases (~$0.30 per full reindex).
+  Idempotent, additive to the `agents` block (never clobbers
+  agent-factory state). Backs up `roster.json` to `.bak` before write.
+  Modes: `/prism-index`, `/prism-index --enrich`, `/prism-index --dry-run`,
+  `/prism-index --skills-only`.
+
+- **Unified resource-index schema in `roster.json` (schema v2.9.0).**
+  The file that was previously an agent-only roster becomes PRISM's
+  single source of truth for all callable resources. Four authoritative
+  sibling blocks: `agents` (unchanged — task-tracking state), `skills`
+  (new — discovery metadata), `tools` (new — Tier 1/2 install status),
+  `mcps` (new — configured servers). Plus an `index_meta` block tracking
+  `last_indexed` / `indexer_version` / `enrichment` level. Each block
+  has a `_schema_example_<type>` entry documenting the fields.
+
+- **Blueprint-prompt Phase 4 — resource-index-first assembly.**
+  Hard-codes the mandatory query protocol: extract prompt keywords,
+  score across all four index blocks, pick top-scoring indexed resource
+  per domain, fall back to hardcoded personas ONLY when no resource
+  scores above threshold, and explicitly label any fallback. Also:
+  if the index is empty/missing, emit a loud "hallucination risk HIGH"
+  notice at the top of the panel output. Closes the doctrine-vs-code
+  gap where Phase 4 said "roster-first" but nothing enforced it.
+
+- **Master-orchestrator Phase 0a — unified read.** Single read of
+  `roster.json` replaces three separate reads (roster / tools-registry /
+  mcp-registry). Emits index-staleness warning when
+  `index_meta.last_indexed` is null or >14 days old.
+
+### Fixed
+
+- **CRITICAL: `prism-agent-model-guard.mjs` missing v2.7.5 three-path
+  subagent-context bypass.** The v2.8.0 CHANGELOG claimed *"All guards
+  now treat subagent context identically"* but agent-model-guard was
+  never actually wired with the bypass. Result: on Claude Code builds
+  that don't propagate `parent_tool_use_id` to subagent `Agent()`
+  calls, a subagent-spawned Agent() without explicit `model` was
+  treated as parent-context and hit the same gate as a parent Opus.
+  v2.9.0 adds the three-path bypass (parent_tool_use_id /
+  CLAUDE_CODE_ENTRYPOINT env / sentinel.dispatched) at the top of
+  `main()`, matching mutation-guard, parent-dispatch-guard, and
+  task-tier-advisor exactly. The false parity claim in v2.8.0
+  CHANGELOG is now genuine.
+
 ## [2.8.2] - 2026-04-24
 
 Security hygiene patch. `/prism-audit` run against v2.8.1 install

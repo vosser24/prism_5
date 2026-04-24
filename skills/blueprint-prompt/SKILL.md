@@ -98,26 +98,42 @@ Synthesize before assembling the expert panel.
 
 ### Phase 4 — Expert Panel
 
-**Roster-first assembly (v2.7.0)**: Before assembling any panel, consult:
-- `~/.claude/skills/prism-plan/references/roster.json` — rostered specialists
-- `~/.claude/skills/prism-plan/references/tools-registry.md` — Tier 1/2 tools
-- Available NotebookLM notebooks (`notebooklm list`) — per-agent research archives
+**Resource-index-first assembly (v2.9.0)**: Before assembling any panel, query the unified resource-index at `~/.claude/skills/prism-plan/references/roster.json`. This file has four sibling blocks — all four are authoritative:
 
-Hardcoded personas (from "Dev Team Protocol" below) are FALLBACK ONLY —
-used when no rostered specialist or Tier 1/2 tool fits the domain. This
-aligns with PRISM's compose-first stance: don't invent generic personas
-when a researched specialist or installed tool already covers the need.
+- `agents` — rostered specialists with task-tracking history (agent-factory + reconcile)
+- `skills` — user-installed + plugin-provided + PRISM-owned skills (populated by `/prism-index`)
+- `tools` — Tier 1/2 tools with install status (superpowers, uipro-cli, etc.)
+- `mcps` — configured MCP servers
+
+**Mandatory query protocol** — do this BEFORE writing a single persona name:
+
+1. Extract domain keywords from the user prompt (nouns, verbs, tool names)
+2. For each domain the panel needs, score every entry across all four blocks:
+   - +3 if keyword matches an entry's `domains` array
+   - +2 if keyword matches an entry's `keywords` array
+   - +1 if a trigger_phrase substring appears in the prompt
+3. For each domain, pick the top-scoring indexed resource if score ≥ 3
+4. Each picked skill/tool/MCP REPLACES what would otherwise be a hardcoded persona
+5. `notebooklm list` — surface any per-agent research archives for picked agents
+
+**Fallback rule**: hardcoded personas ("Architect", "Security engineer", etc.) are used ONLY when no indexed resource scores ≥ 3 for a given domain. When falling back, state it explicitly in the panel output:
+
+> *"No indexed specialist for <domain>; using generic <Architect> persona as fallback. Consider running `/prism-index` if you expected a specialist here, or `agent-factory` to create one."*
+
+**If the index is empty or missing** (`roster.skills`, `roster.tools`, `roster.mcps` all `{}`), emit a loud notice at the top of the panel output: *"Resource-index not populated — hallucination risk HIGH. Run /prism-index and re-run this panel."* Then proceed with hardcoded personas, clearly labeled as such.
+
+**Hardcoded personas are the LAST resort**, not the default. This aligns with PRISM's compose-first stance: don't invent generic voices when a researched specialist or installed tool already covers the need. Real resources over hallucinated voices — always.
 
 **Execution-heavy:** Alignment pass only — one primary expert + one risk voice. No extended debate.
 Execution-heavy tasks are handed off to @master-orchestrator (see Phase 7) —
 the orchestrator owns panel assembly, adversarial review, and parallel
 dispatch. Do NOT duplicate its work here.
 
-**Advisory / Hybrid:** Full panel, with roster-first assembly. One expert
+**Advisory / Hybrid:** Full panel, with resource-index-first assembly. One expert
 per domain. Each contributes analysis, challenges assumptions, flags
 risks, proposes recommendations. Push for genuine tension.
 
-Where an MCP tool covers a domain: substitute tool call for reasoning-only expert.
+Where an MCP tool or installed skill covers a domain: substitute tool/skill invocation for reasoning-only expert.
 
 ### Phase 5 — Workshop (Advisory / Hybrid only)
 

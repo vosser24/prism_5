@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM install merger (v2.8.2)
+// PRISM install merger (v2.9.0)
 //
 // Replaces the inline `node -e "..."` approach in INSTALL.md §4. The inline
 // form hit three escape-handling traps on Windows+git-bash during the v2.7.2

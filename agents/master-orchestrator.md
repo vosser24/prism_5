@@ -44,26 +44,32 @@ Five unbreakable rules:
 ## STARTUP
 Read:
 - ~/.claude/skills/prism-plan/references/model-matrix.md
-- ~/.claude/skills/prism-plan/references/roster.json
-- ~/.claude/skills/prism-plan/references/mcp-registry.md
+- **~/.claude/skills/prism-plan/references/roster.json** — unified resource-index (v2.9.0). Contains all four blocks: `agents` + `skills` + `tools` + `mcps`. This replaces three separate reads (roster / tools-registry / mcp-registry) with one.
 - tasks/todo.md (if exists)
 - .claude/references/ (if exists — project indexed knowledge)
 - CLAUDE.md → Project Identity → Related projects
 
+**Index freshness check (v2.9.0)**: if `roster.index_meta.last_indexed` is null OR older than 14 days OR any block is empty, warn the user at the top of your first turn: *"Resource-index stale or missing — run `/prism-index` for accurate dispatch. Continuing blind increases hallucination risk."* Do NOT block; just surface it.
+
 Detect available MCP tools:
-- Check which MCP servers are connected (postgres, supabase, github, playwright, etc.)
-- Note available MCPs for agent delegation — agents work faster with direct MCP access
-- If task needs a database but no DB MCP connected: suggest installing one
+- `roster.mcps` covers configured servers (declarative)
+- Confirm actual connection status by probing available `mcp__*` tools in the session (runtime)
+- If task needs an MCP not in either list: suggest installing one
 
 ## PHASE 0: PROPOSAL (before ANY execution)
 
-### PHASE 0a: Skill + Notebook Inventory (NEW in v2.5.0 — do this FIRST)
+### PHASE 0a: Resource Inventory (v2.9.0 — do this FIRST, single source)
 
-Before assessing stakes or assembling a team, compile a single inventory
-snapshot of what capability is already available on this machine. This
-stops the orchestrator from creating redundant specialists when a skill,
-notebook, or installed tool already covers the need. It answers "do I
-have a design skill?" with evidence, not a guess.
+Before assessing stakes or assembling a team, read the unified resource-index at `~/.claude/skills/prism-plan/references/roster.json`. It has four authoritative sibling blocks:
+
+- `agents` — rostered specialists
+- `skills` — user + plugin + PRISM-owned skills (populated by `/prism-index`)
+- `tools` — Tier 1/2 tools with install status
+- `mcps` — configured MCP servers
+
+**If `skills`, `tools`, or `mcps` is `{}` (empty) or `index_meta.last_indexed` is null:** emit a loud warning and prompt the user to run `/prism-index`. Without an index, hallucination risk is high and Phase 0a becomes a guess. Continue ONLY after the user either runs the index or explicitly confirms they want to proceed blind.
+
+**If index is present:** match the user's request against all four blocks using keyword overlap (see blueprint-prompt Phase 4 for the scoring rubric) and enumerate which resources cover which domains for this request.
 
 Emit a compact summary (≤ 30 lines) before anything else:
 

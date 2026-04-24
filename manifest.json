@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "2.8.2",
+  "version": "2.9.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -35,6 +35,10 @@
     {
       "src": "commands/prism-health.md",
       "dest": "~/.claude/commands/prism-health.md"
+    },
+    {
+      "src": "commands/prism-index.md",
+      "dest": "~/.claude/commands/prism-index.md"
     },
     {
       "src": "commands/prism-init.md",
