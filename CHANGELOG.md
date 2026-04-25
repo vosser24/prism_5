@@ -4,6 +4,52 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.6.0] - 2026-04-25
+
+Bundled release: pre-install audit fixes for v3.5.0 + comprehensive end-to-end audit suite. Closes the two CRITICAL findings from the v3.5.0 plugin-install pre-flight audit AND ships the multi-hour real-environment audit infrastructure.
+
+### Fixed (v3.5.0 pre-install audit findings)
+
+- **SessionStart bootstrap for plugin install** (`hooks/prism-session-start.mjs`). Detects `${CLAUDE_PLUGIN_ROOT}` env var. If present AND `~/.claude/skills/prism-plan/references/` is missing key reference files, copies them from the plugin payload. Files: `adversarial-review.md`, `model-matrix.md`, `prompt-templates.md`, `tools-registry.md`, `mcp-registry.md`. `roster.json` only created if absent. Idempotency flag `~/.claude/.prism-plugin-bootstrap-done-v3.6`. Manual installs skip. Closes CRITICAL #2 (10 hardcoded reference paths).
+- **`/prism-index` Step 2 plugin-root tier** — new tier 0 scans `${CLAUDE_PLUGIN_ROOT}/skills/**/SKILL.md` tagged `source: "prism"` BEFORE legacy globs. Explicit dedup. Closes CRITICAL #1.
+- **`/prism-health` and `/prism-doctor` layout detection** — both detect plugin-install vs manual-install and check correct paths. New doctor symptom #10: "PRISM bootstrap incomplete".
+- **plugin.json hook commands quoted** for spaced Windows paths. All 17 commands changed from `node ${CLAUDE_PLUGIN_ROOT}/hooks/X.mjs` to `node "${CLAUDE_PLUGIN_ROOT}/hooks/X.mjs"`.
+- **CHANGELOG v3.5.0 migration recipe corrected** — was `uninstall.sh --purge` (would WIPE `roster.json` + every `notebooklm_notebook_id`); now `uninstall.sh` (no `--purge`) with explanatory note.
+
+### Added — comprehensive audit suite
+
+- **`tools/prism-audit-runner.mjs`** (~190 LOC) — synthetic runner. Spawns each scenario's target hook as subprocess, pipes `input_payload` via stdin, captures exit + stdout + stderr + duration. Modes: `--category`, `--output`, `--scenarios`, `--help`.
+- **`tests/v3/audit-scenarios.json`** — declarative catalog of 30 scenarios across 10 categories (classifier 6, mutation-guard 3, parent-dispatch-guard 3, agent-model-guard 3, task-tier-advisor 1, safety 4, parallel-guard 1, panel-guard 1, skill-trigger-guard 2, lifecycle 5). Schema-versioned; extensible.
+- **`tests/v3/run-audit.sh`** — bash wrapper. Throwaway HOME, calls runner, calls analyzer. Modes: `--category`, `--output`, `--keep-home`, `--help`. POSIX.
+- **`tests/v3/analyze-audit.mjs`** — report generator. Reads runner JSONL + optional routing log. Produces markdown: coverage matrix, timing distribution (p50/p95/p99), trigger correlation, failures detail, anomalies, verdict.
+- **`commands/prism-audit-full.md`** — new slash command orchestrating end-to-end audit: pre-flight, synthetic, optional real-session, analyzer, final report. Differentiated from `/prism-audit` (fast hygiene scan).
+- **`tests/v3/audit-real-prompts.md`** — 40+ curated real-session prompts across 6 sections (classifier, guards, panels, parallel, skill triggers, lifecycle). Each declares expected behavior. Pasted into fresh Claude Code session for real-environment coverage.
+
+### Changed
+
+- Manifest 3.5.0 → 3.6.0. install-merge §4d auto-stamps update-log.
+- Manifest entries: 84 → 85 (+1: `commands/prism-audit-full.md`).
+
+### How to use
+
+```
+# Inside Claude Code:
+/prism-audit-full
+
+# Or shell:
+bash tests/v3/run-audit.sh                       # all categories
+bash tests/v3/run-audit.sh --category classifier # filtered
+
+# Analyze a previous run:
+node tests/v3/analyze-audit.mjs /tmp/prism-audit-run.jsonl ~/.claude/.prism-routing.jsonl > report.md
+```
+
+For real-session coverage: paste prompts from `tests/v3/audit-real-prompts.md` into a fresh Claude Code session, then run analyzer with `~/.claude/.prism-routing.jsonl` as second arg.
+
+### Process notes
+
+SA1 (audit fixes) shipped cleanly across 6 files. SA2 (audit-suite core) timed out twice on API stream-idle — parent wrote audit-scenarios.json + prism-audit-runner.mjs + run-audit.sh + audit-real-prompts.md directly under dispatched-bypass. SA3 (UX) shipped analyze-audit.mjs + prism-audit-full.md cleanly but timed out before audit-real-prompts.md (parent wrote that).
+
 ## [3.5.0] - 2026-04-25
 
 Plugin-packaging release. PRISM now ships as a first-class Claude Code
@@ -60,9 +106,19 @@ unchanged for developers.
 ### Migration
 
 Existing manual installs keep working unchanged. To migrate from
-manual to plugin-install: run `bash scripts/uninstall.sh --purge`
-first, then inside Claude Code `/plugin install prism@PRISM`. Plugin
-users no longer need `prism.env` (plugin runtime resolves node
+manual to plugin-install:
+
+1. `bash scripts/uninstall.sh`               # preserves roster.json + notebook IDs (do NOT use --purge for migration)
+2. Inside Claude Code: `/plugin install prism@PRISM`
+
+> Note on step 1: the default `uninstall.sh` removes hooks, commands,
+> agents, and skills from `~/.claude/` but PRESERVES
+> `~/.claude/skills/prism-plan/references/roster.json` and any
+> `notebooklm_notebook_id` values inside it. Passing `--purge` would
+> wipe roster.json and the notebook IDs your agents have accumulated;
+> the default uninstall path is the migration-safe option.
+
+Plugin users no longer need `prism.env` (plugin runtime resolves node
 automatically).
 
 ### Limitations (vs manual install)

@@ -15,6 +15,20 @@ If `/prism-health` answers "what's wrong?", `/prism-doctor` answers
 
 ### Step 1 — Collect signals (parallel reads, no writes)
 
+**Layout detection (NEW in v3.6.0)**: at the top of the report, print
+the active install layout — `plugin-install` if `${CLAUDE_PLUGIN_ROOT}`
+is set, otherwise `manual-install`. All hook/command/skill/agent
+existence checks below MUST target the layout-appropriate path:
+
+- Plugin-install: check `${CLAUDE_PLUGIN_ROOT}/hooks/prism-*.mjs`,
+  `${CLAUDE_PLUGIN_ROOT}/commands/prism-*.md`,
+  `${CLAUDE_PLUGIN_ROOT}/skills/*`, `${CLAUDE_PLUGIN_ROOT}/agents/*`.
+  Reference files are still checked under
+  `~/.claude/skills/prism-plan/references/` because the SessionStart
+  bootstrap copies them to that user-scoped path (see symptom #10).
+- Manual-install: existing checks against `~/.claude/hooks/`,
+  `~/.claude/commands/`, `~/.claude/skills/`, `~/.claude/agents/`.
+
 Run these in parallel where possible:
 
 1. **Routing log tail** — last 50 events from `~/.claude/.prism-routing.jsonl`
@@ -39,13 +53,16 @@ Run these in parallel where possible:
    - Hook commands routed through the `prism-exec` wrapper (not raw
      `node ~/.claude/hooks/...`)
 
-6. **Hook syntax check** — `node --check` every prism hook:
+6. **Hook syntax check** — `node --check` every prism hook in the
+   active layout:
    ```
-   for f in ~/.claude/hooks/prism-*.mjs; do
+   # Plugin-install: HOOKS_DIR=${CLAUDE_PLUGIN_ROOT}/hooks
+   # Manual-install: HOOKS_DIR=~/.claude/hooks
+   for f in "$HOOKS_DIR"/prism-*.mjs; do
      node --check "$f" 2>&1 | head -1
    done
    ```
-   All 13 PRISM hooks must pass. Report each failure.
+   All 13+ PRISM hooks must pass. Report each failure.
 
 7. **Policy file (INFO-level)** — `~/.claude/prism-policy.json` exists?
    Note as INFO only — opt-in feature, absence is normal.
@@ -85,7 +102,7 @@ return, `n`, or anything else = defer.
 If multiple symptoms share a root cause, present **one** fix that
 addresses both, listing both symptoms above the single proposal.
 
-### Step 3 — Symptoms covered (9 minimum)
+### Step 3 — Symptoms covered (10 minimum)
 
 #### 1. prism.env missing
 **Detect:** `~/.claude/prism.env` does not exist.
@@ -188,6 +205,35 @@ export PRISM_MODEL_GUARD=strict
 ```
 Then read the v2.9.1 BREAKING CONTRACT note in `CHANGELOG.md` to
 confirm `hard` vs. `strict` is what you actually want.
+
+#### 10. PRISM bootstrap incomplete (v3.6.0+)
+**Detect:** `${CLAUDE_PLUGIN_ROOT}` is set (plugin-install layout) BUT
+`~/.claude/skills/prism-plan/references/tools-registry.md` is missing.
+Equivalent symptom: any of the other bootstrapped reference files
+(`adversarial-review.md`, `model-matrix.md`, `prompt-templates.md`,
+`mcp-registry.md`) absent from that directory.
+**Cause:** The SessionStart hook seeds these files on first plugin
+session. If the seeding never ran (first install never started a
+session, the hook crashed before reaching this step, or the bootstrap
+flag-file was created without the copy completing), downstream skills
+can't read their references.
+**Fix:** Either restart Claude Code (the SessionStart hook will
+re-bootstrap on the next launch — but only if the flag-file is
+absent; if a previous run wrote the flag without copying, delete it
+first):
+```
+rm -f ~/.claude/.prism-plugin-bootstrap-done-v3.6
+```
+Then restart Claude Code. Or copy manually from the plugin payload:
+```
+mkdir -p ~/.claude/skills/prism-plan/references
+cp "${CLAUDE_PLUGIN_ROOT}"/skills/prism-plan/references/{adversarial-review.md,model-matrix.md,prompt-templates.md,tools-registry.md,mcp-registry.md} \
+   ~/.claude/skills/prism-plan/references/
+# roster.json: copy ONLY if not already present (preserves user data).
+[ -f ~/.claude/skills/prism-plan/references/roster.json ] || \
+   cp "${CLAUDE_PLUGIN_ROOT}/skills/prism-plan/references/roster.json" \
+      ~/.claude/skills/prism-plan/references/roster.json
+```
 
 ### Step 4 — Report format
 

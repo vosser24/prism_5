@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "Framework for optimizing Claude Code - modular install (manual path; see .claude-plugin/plugin.json for plugin install)",
   "claude_home": "~/.claude",
   "files": [
@@ -27,6 +27,10 @@
     {
       "src": "commands/prism-audit.md",
       "dest": "~/.claude/commands/prism-audit.md"
+    },
+    {
+      "src": "commands/prism-audit-full.md",
+      "dest": "~/.claude/commands/prism-audit-full.md"
     },
     {
       "src": "commands/prism-deps.md",

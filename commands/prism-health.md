@@ -8,7 +8,32 @@ Comprehensive status check of the PRISM installation (v2.1.23).
 ## PROTOCOL
 
 ### Step 1 — Verify core installation
-Check existence of:
+
+**Layout detection (NEW in v3.6.0)**: at the very top of the report,
+print which install layout is in effect:
+
+- If `${CLAUDE_PLUGIN_ROOT}` env var is set → `Layout: plugin-install`
+- Otherwise → `Layout: manual-install`
+
+Then run the layout-appropriate file checks below.
+
+**Plugin-install layout** (`${CLAUDE_PLUGIN_ROOT}` set):
+- `${CLAUDE_PLUGIN_ROOT}/hooks/prism-*.mjs` (16 expected)
+- `${CLAUDE_PLUGIN_ROOT}/commands/prism-*.md` (14 expected)
+- `${CLAUDE_PLUGIN_ROOT}/skills/*` (8 PRISM-owned expected: prism-plan,
+  prism-discover, blueprint-prompt, workflow-orchestration,
+  claude-code-expert, notebooklm, video-production, prism-chat)
+- `${CLAUDE_PLUGIN_ROOT}/agents/*` (3 core expected: master-orchestrator,
+  agent-factory, prism-updater)
+- Plus, regardless of layout, the bootstrapped reference files at
+  `~/.claude/skills/prism-plan/references/`:
+  - adversarial-review.md, model-matrix.md, prompt-templates.md,
+    tools-registry.md, mcp-registry.md, roster.json
+  (These are seeded by the SessionStart hook on first plugin run; if
+  any are missing AND `${CLAUDE_PLUGIN_ROOT}` is set, suggest
+  restarting Claude Code or running `/prism-doctor`.)
+
+**Manual-install layout** (no `${CLAUDE_PLUGIN_ROOT}`):
 - ~/.claude/ directory
 - ~/.claude/CLAUDE.md (with ## PRISM section)
 - ~/.claude/settings.json (hooks registered)

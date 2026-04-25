@@ -1,6 +1,16 @@
 #!/usr/bin/env node
-// PRISM SessionStart (v3.2.0) — reset project turn counter + run once-per-day
-// context-tax audit + v2.9.1 strict-mode migration notice.
+// PRISM SessionStart (v3.6.0) — reset project turn counter + run once-per-day
+// context-tax audit + v2.9.1 strict-mode migration notice + v3.6.0 plugin
+// reference-file bootstrap.
+//
+// v3.6.0 (PLUGIN-BOOTSTRAP-001): when running under a plugin install
+// (Claude Code sets ${CLAUDE_PLUGIN_ROOT}), copy critical reference files
+// from the plugin payload into ~/.claude/skills/prism-plan/references/ so
+// downstream skills (prism-plan, master-orchestrator) can read them at the
+// expected path. Idempotent via a flag file; preserves user-owned
+// roster.json on re-runs. Manual installs (no CLAUDE_PLUGIN_ROOT) skip the
+// bootstrap entirely — install.sh already places the files. Fail-open on
+// errors: any I/O failure logs to stderr and does NOT block session start.
 //
 // v3.2.0: removed the "classifier is running in keyword-floor-only mode"
 // notice. Keyword-floor is now the standard classification mode, not a
@@ -25,7 +35,7 @@
 // ~/.claude/tools/prism-context-audit.mjs once per day and emits a compact
 // one-line notice with the top "disable X to save Yt" recommendation.
 // Output is throttled to once per 24h so it doesn't itself become noise.
-import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync} from 'fs';
+import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync} from 'fs';
 import {join} from 'path';
 import {spawnSync} from 'child_process';
 
@@ -34,8 +44,79 @@ const LAST_FILE = join(H, '.claude', '.prism-context-audit.last');
 const CACHE_FILE = join(H, '.claude', '.prism-context-audit.json');
 const AUDIT_TOOL = join(H, '.claude', 'tools', 'prism-context-audit.mjs');
 const MIGRATION_FLAG = join(H, '.claude', '.prism-v2.9.1-migration-shown');
+const PLUGIN_BOOTSTRAP_FLAG = join(H, '.claude', '.prism-plugin-bootstrap-done-v3.6');
 const THROTTLE_SECONDS = 24 * 60 * 60;  // 24h
 const NOTICE_TOKEN_FLOOR = 5000;         // only nag when tax is meaningful
+
+// v3.6.0 PLUGIN-BOOTSTRAP-001: when Claude Code runs PRISM as a plugin it
+// sets CLAUDE_PLUGIN_ROOT to the unpacked plugin directory. The plugin
+// payload ships skills/prism-plan/references/* but downstream skills look
+// at the user-scoped path ~/.claude/skills/prism-plan/references/. This
+// helper copies the critical files across on first plugin session, then
+// gates on a flag file so re-runs are no-ops. Manual installs (no env
+// var) skip entirely. Fail-open: any error writes a stderr warning and
+// returns — never blocks session start.
+function bootstrapPluginReferences() {
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  if (!pluginRoot) return;                         // manual install — skip
+  if (existsSync(PLUGIN_BOOTSTRAP_FLAG)) return;   // already bootstrapped
+
+  // Copy-without-overwrite for roster.json (preserves user data).
+  // Copy-with-overwrite for the registry/template files (they are the
+  // canonical PRISM-owned content and must track the shipped version).
+  const overwriteFiles = [
+    'adversarial-review.md',
+    'model-matrix.md',
+    'prompt-templates.md',
+    'tools-registry.md',
+    'mcp-registry.md',
+  ];
+  const preserveFiles = ['roster.json'];
+
+  const srcDir = join(pluginRoot, 'skills', 'prism-plan', 'references');
+  const dstDir = join(H, '.claude', 'skills', 'prism-plan', 'references');
+
+  if (!existsSync(srcDir)) {
+    process.stderr.write(`PRISM WARN: plugin bootstrap skipped — source dir not found: ${srcDir}\n`);
+    return;
+  }
+
+  try {
+    mkdirSync(dstDir, {recursive: true});
+  } catch (e) {
+    process.stderr.write(`PRISM WARN: plugin bootstrap could not create ${dstDir}: ${e && e.message}\n`);
+    return;
+  }
+
+  let copied = 0;
+  for (const f of overwriteFiles) {
+    const src = join(srcDir, f);
+    const dst = join(dstDir, f);
+    if (!existsSync(src)) continue;
+    // Bootstrap only if missing — preserve any user customisation that
+    // post-dates the plugin payload. Re-bootstrap of newer payloads is
+    // gated by the flag-file version (.prism-plugin-bootstrap-done-v3.6
+    // → bump on next bootstrap-changing release).
+    if (existsSync(dst)) continue;
+    try { copyFileSync(src, dst); copied++; }
+    catch (e) { process.stderr.write(`PRISM WARN: plugin bootstrap copy failed for ${f}: ${e && e.message}\n`); }
+  }
+  for (const f of preserveFiles) {
+    const src = join(srcDir, f);
+    const dst = join(dstDir, f);
+    if (!existsSync(src)) continue;
+    if (existsSync(dst)) continue;  // never overwrite user roster.json
+    try { copyFileSync(src, dst); copied++; }
+    catch (e) { process.stderr.write(`PRISM WARN: plugin bootstrap copy failed for ${f}: ${e && e.message}\n`); }
+  }
+
+  // Mark bootstrap done regardless of copied count — if the source dir
+  // existed and we got this far, the plugin is responsible for any
+  // subsequent updates. (A future plugin payload that needs to re-seed
+  // bumps the flag-file version.)
+  try { writeFileSync(PLUGIN_BOOTSTRAP_FLAG, new Date().toISOString() + ` files_copied=${copied}\n`); }
+  catch (e) { process.stderr.write(`PRISM WARN: plugin bootstrap flag write failed: ${e && e.message}\n`); }
+}
 
 // v2.9.1 ATOMIC-WRITE-001: tempfile + renameSync with catch-fallback to direct
 // writeFileSync. Matches v2.8.0 sentinel-write pattern in
@@ -55,6 +136,13 @@ function atomicWrite(path, content) {
 }
 
 try {
+  // ── v3.6.0: plugin reference-file bootstrap (idempotent, fail-open) ──
+  // Runs first so downstream PRISM skills that fire later in this session
+  // see the references at ~/.claude/skills/prism-plan/references/*. No-op
+  // for manual installs (CLAUDE_PLUGIN_ROOT unset).
+  try { bootstrapPluginReferences(); }
+  catch (e) { try { process.stderr.write(`PRISM WARN: plugin bootstrap unexpected error: ${e && e.message}\n`); } catch {} }
+
   // ── Reset project-local turn counter (existing behavior) ──
   const cwd = process.cwd();
   const dir = join(cwd, '.claude');

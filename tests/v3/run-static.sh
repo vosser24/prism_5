@@ -341,7 +341,7 @@ const j=JSON.parse(fs.readFileSync('$PLUGIN_JSON','utf-8'));
 const miss=[];
 for(const ev of Object.keys(j.hooks||{})) for(const grp of j.hooks[ev]||[]) for(const h of grp.hooks||[]) {
   if(h.type!=='command'||!h.command) continue;
-  const m=h.command.match(/\\\${CLAUDE_PLUGIN_ROOT}\/(\\S+)/);
+  const m=h.command.match(/\\\${CLAUDE_PLUGIN_ROOT}\/([^\\s\"']+)/);
   if(m) { const rel=m[1]; if(!fs.existsSync(path.join('$REPO',rel))) miss.push(rel); }
 }
 console.log(miss.join('\\n'));")
@@ -355,6 +355,51 @@ PLUGIN_NAME=$(node -e "console.log(require('$PLUGIN_JSON').name)")
 [ -d "$REPO/skills" ] && pass "T_v3.5.9 skills/ at plugin root" || fail "T_v3.5.9 skills/ missing"
 [ -d "$REPO/commands" ] && pass "T_v3.5.9 commands/ at plugin root" || fail "T_v3.5.9 commands/ missing"
 [ -d "$REPO/agents" ] && pass "T_v3.5.9 agents/ at plugin root" || fail "T_v3.5.9 agents/ missing"
+
+# ============================================================
+# Category v3.6 — Audit suite (NEW in v3.6.0)
+# ============================================================
+section "Category v3.6 — Audit suite"
+
+# audit-scenarios.json exists + valid JSON
+[ -f "$REPO/tests/v3/audit-scenarios.json" ] && pass "T_v3.6.1 audit-scenarios.json exists" || fail "T_v3.6.1 audit-scenarios.json missing"
+node -e "JSON.parse(require('fs').readFileSync('$REPO/tests/v3/audit-scenarios.json','utf-8'))" 2>/dev/null && pass "T_v3.6.2 audit-scenarios.json valid JSON" || fail "T_v3.6.2 audit-scenarios.json invalid JSON"
+
+# Scenario count >= 25
+SCEN_COUNT=$(node -e "console.log((JSON.parse(require('fs').readFileSync('$REPO/tests/v3/audit-scenarios.json','utf-8')).scenarios || []).length)" 2>/dev/null || echo 0)
+[ "$SCEN_COUNT" -ge 25 ] && pass "T_v3.6.3 audit-scenarios has $SCEN_COUNT scenarios (>=25)" || fail "T_v3.6.3 expected >=25 scenarios, got $SCEN_COUNT"
+
+# Audit runner exists + parses + executable
+[ -f "$REPO/tools/prism-audit-runner.mjs" ] && pass "T_v3.6.4 prism-audit-runner.mjs exists" || fail "T_v3.6.4 runner missing"
+node --check "$REPO/tools/prism-audit-runner.mjs" 2>/dev/null && pass "T_v3.6.5 runner parses" || fail "T_v3.6.5 runner syntax error"
+
+# run-audit.sh exists + executable + POSIX-clean
+[ -f "$REPO/tests/v3/run-audit.sh" ] && pass "T_v3.6.6 run-audit.sh exists" || fail "T_v3.6.6 run-audit.sh missing"
+[ -x "$REPO/tests/v3/run-audit.sh" ] && pass "T_v3.6.7 run-audit.sh executable" || fail "T_v3.6.7 run-audit.sh not +x"
+sh -n "$REPO/tests/v3/run-audit.sh" 2>/dev/null && pass "T_v3.6.8 run-audit.sh POSIX syntax" || fail "T_v3.6.8 run-audit.sh syntax fail"
+
+# Analyzer exists + parses
+[ -f "$REPO/tests/v3/analyze-audit.mjs" ] && pass "T_v3.6.9 analyze-audit.mjs exists" || fail "T_v3.6.9 analyze-audit missing"
+node --check "$REPO/tests/v3/analyze-audit.mjs" 2>/dev/null && pass "T_v3.6.10 analyze-audit parses" || fail "T_v3.6.10 analyze-audit syntax error"
+
+# /prism-audit-full command exists with frontmatter
+[ -f "$REPO/commands/prism-audit-full.md" ] && pass "T_v3.6.11 prism-audit-full.md exists" || fail "T_v3.6.11 prism-audit-full missing"
+grep -q "^name: prism-audit-full" "$REPO/commands/prism-audit-full.md" 2>/dev/null && pass "T_v3.6.12 prism-audit-full has name in frontmatter" || fail "T_v3.6.12 prism-audit-full missing name"
+
+# Real-session prompts catalog
+[ -f "$REPO/tests/v3/audit-real-prompts.md" ] && pass "T_v3.6.13 audit-real-prompts.md exists" || fail "T_v3.6.13 audit-real-prompts.md missing"
+
+# v3.5.0 audit-finding fixes
+grep -q "CLAUDE_PLUGIN_ROOT" "$REPO/hooks/prism-session-start.mjs" && pass "T_v3.6.14 session-start has plugin bootstrap" || fail "T_v3.6.14 session-start missing CLAUDE_PLUGIN_ROOT bootstrap"
+grep -q "CLAUDE_PLUGIN_ROOT" "$REPO/commands/prism-index.md" && pass "T_v3.6.15 prism-index has plugin-root tier" || fail "T_v3.6.15 prism-index missing plugin-root scan tier"
+grep -q "plugin-install\|PLUGIN_ROOT" "$REPO/commands/prism-doctor.md" && pass "T_v3.6.16 prism-doctor has layout detection" || fail "T_v3.6.16 prism-doctor missing layout detection"
+
+# plugin.json hook commands quoted (spaced-path safety)
+QUOTED=$(grep -c '"node \\"\${CLAUDE_PLUGIN_ROOT}' "$REPO/.claude-plugin/plugin.json" 2>/dev/null || echo 0)
+[ "$QUOTED" -ge 10 ] && pass "T_v3.6.17 plugin.json hook commands quoted ($QUOTED)" || fail "T_v3.6.17 plugin.json hook commands NOT quoted (got $QUOTED)"
+
+# CHANGELOG v3.5.0 migration recipe — should NOT have `--purge` in the migration step
+! grep -A 10 "Migration path for existing manual-install users" "$REPO/CHANGELOG.md" 2>/dev/null | grep -q "uninstall.sh --purge" && pass "T_v3.6.18 CHANGELOG migration recipe no longer uses --purge" || fail "T_v3.6.18 CHANGELOG migration recipe still has dangerous --purge"
 
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
