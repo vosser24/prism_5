@@ -1,6 +1,6 @@
 {
   "name": "PRISM",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Framework for optimizing Claude Code - modular install",
   "claude_home": "~/.claude",
   "files": [
@@ -53,8 +53,16 @@
       "dest": "~/.claude/commands/prism-recommend.md"
     },
     {
+      "src": "commands/prism-doctor.md",
+      "dest": "~/.claude/commands/prism-doctor.md"
+    },
+    {
       "src": "commands/prism-retire.md",
       "dest": "~/.claude/commands/prism-retire.md"
+    },
+    {
+      "src": "commands/prism-telemetry.md",
+      "dest": "~/.claude/commands/prism-telemetry.md"
     },
     {
       "src": "commands/prism-roster.md",
@@ -106,8 +114,20 @@
       "dest": "~/.claude/hooks/prism-mutation-guard.mjs"
     },
     {
+      "src": "hooks/prism-panel-guard.mjs",
+      "dest": "~/.claude/hooks/prism-panel-guard.mjs"
+    },
+    {
+      "src": "hooks/prism-parallel-guard.mjs",
+      "dest": "~/.claude/hooks/prism-parallel-guard.mjs"
+    },
+    {
       "src": "hooks/prism-parent-dispatch-guard.mjs",
       "dest": "~/.claude/hooks/prism-parent-dispatch-guard.mjs"
+    },
+    {
+      "src": "hooks/prism-skill-trigger-guard.mjs",
+      "dest": "~/.claude/hooks/prism-skill-trigger-guard.mjs"
     },
     {
       "src": "hooks/prism-prompt-tier-router.mjs",
@@ -178,6 +198,10 @@
       "dest": "~/.claude/skills/prism-plan/references/model-matrix.md"
     },
     {
+      "src": "skills/prism-plan/references/prism-policy.example.json",
+      "dest": "~/.claude/skills/prism-plan/references/prism-policy.example.json"
+    },
+    {
       "src": "skills/prism-plan/references/prompt-effectiveness.md",
       "dest": "~/.claude/skills/prism-plan/references/prompt-effectiveness.md"
     },
@@ -196,6 +220,10 @@
     {
       "src": "skills/prism-plan/references/skill-effectiveness.md",
       "dest": "~/.claude/skills/prism-plan/references/skill-effectiveness.md"
+    },
+    {
+      "src": "skills/prism-plan/references/skill-triggers.md",
+      "dest": "~/.claude/skills/prism-plan/references/skill-triggers.md"
     },
     {
       "src": "skills/prism-plan/references/tools-registry.md",

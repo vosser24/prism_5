@@ -57,6 +57,14 @@ const pgroupViolations = [];
 const classifierDivergence = [];
 const guardDenies = [];
 const subagentBypasses = {parent_tool_use_id: 0, env: 0, 'sentinel.dispatched': 0};
+// v3.1.0: new event types from parallel-guard, panel-guard, skill-trigger-guard
+const v31Events = {
+  panel_hallucination_detected: 0,
+  skill_trigger_advisory: 0,
+  policy_loaded: 0,
+  parallel_guard_block: 0,
+  parallel_guard_advise: 0,
+};
 
 for (const e of events) {
   // Tier counts (from router events)
@@ -78,6 +86,10 @@ for (const e of events) {
   // Subagent bypasses (agent-model-guard passthrough v2.9.0)
   if (e.action === 'passthrough-subagent-context' && e.reason) {
     subagentBypasses[e.reason] = (subagentBypasses[e.reason] || 0) + 1;
+  }
+  // v3.1.0 hook events
+  if (e.event && Object.prototype.hasOwnProperty.call(v31Events, e.event)) {
+    v31Events[e.event] = (v31Events[e.event] || 0) + 1;
   }
 }
 
@@ -185,6 +197,37 @@ if (pgroupViolations.length === 0) {
   out.push('None logged. NOTE: pgroup-violation detection is v2.10 target; absence here may mean detection isn\'t wired yet, not that zero violations occurred.');
 } else {
   out.push(`⚠ ${pgroupViolations.length} sequential dispatches of pgroup-marked tasks. Each costs a fresh prompt-cache prime. See weekly rollup.`);
+}
+out.push('');
+
+out.push('## v3.1.0 hook events (parallel-guard / panel-guard / skill-trigger-guard / policy)');
+out.push('');
+const v31Total = Object.values(v31Events).reduce((a, b) => a + b, 0);
+if (v31Total === 0) {
+  out.push('No v3.1.0 hook events logged in this window. Either v3.1 hooks not yet installed, or no triggers fired.');
+} else {
+  out.push('| Event | Count |');
+  out.push('|---|---|');
+  for (const [k, c] of Object.entries(v31Events)) {
+    if (c > 0) out.push(`| ${k} | ${c} |`);
+  }
+  out.push('');
+  if (v31Events.panel_hallucination_detected > 0) {
+    out.push(`> ⚠ ${v31Events.panel_hallucination_detected} panels with unindexed personas detected. Run /prism-index to populate the resource-index, then re-run those panels.`);
+    out.push('');
+  }
+  if (v31Events.parallel_guard_block > 0) {
+    out.push(`> ${v31Events.parallel_guard_block} parallel-guard blocks fired (sequential dispatch of pgroup-tagged tasks). T10.3 enforcement is working.`);
+    out.push('');
+  }
+  if (v31Events.skill_trigger_advisory > 0) {
+    out.push(`> ${v31Events.skill_trigger_advisory} skill-trigger advisories — prompts that matched a known skill-trigger regex but the skill wasn't auto-invoked. Review to see if you have an installed skill being underused.`);
+    out.push('');
+  }
+  if (v31Events.policy_loaded > 0) {
+    out.push(`> ${v31Events.policy_loaded} sessions loaded a centrally-managed policy from ~/.claude/prism-policy.json.`);
+    out.push('');
+  }
 }
 out.push('');
 

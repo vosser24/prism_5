@@ -1,6 +1,67 @@
-# PRISM
+# PRISM — Cognitive-tier orchestration for Claude Code
 
-Framework for optimizing Claude Code. Modular install — clone, let Claude follow `INSTALL.md`, and you're done.
+> **30-second pitch**: PRISM makes Claude Code self-aware about task complexity, automatically routing work to the cheapest viable model tier (Haiku/Sonnet/Opus) and enforcing dispatch discipline through 16 hooks. Closes the gap between "Claude Code as smart assistant" and "Claude Code as a cost-disciplined orchestration framework".
+
+## What it solves
+
+Three pain points specific to heavy Claude Code users:
+
+1. **Over-spending on simple work.** Opus on a typo fix costs ~30× what Haiku would. PRISM classifies every prompt and routes accordingly.
+2. **Sequential dispatch on parallel-safe work.** A 3-task scan that should finish in 30s takes 3 minutes if dispatched serially. PRISM's `[pgroup=N]` annotation is enforced at execution time (v3.1+).
+3. **Hallucinated specialists.** When you have `ui-ux-pro-max` installed, the orchestrator should use it — not invent "Rachel the UX designer". PRISM's resource-index makes installed tools authoritative.
+
+## Three concrete use cases
+
+**Cost discipline** — Run `PRISM_MODEL_GUARD=hard` and PRISM denies any opus dispatch lacking explicit `model` declaration. Sonnet/Haiku stay advisory. (v2.9.1+)
+
+**Parallel orchestration** — `/prism-plan` produces tasks tagged `[pgroup=1]`; v3.1's `prism-parallel-guard` blocks sequential dispatch of pgroup-tagged tasks, forcing batched parallel `Agent()` calls.
+
+**Specialist dispatch** — `/prism-index` populates a unified roster of installed agents/skills/tools/MCPs. `blueprint-prompt` queries the index BEFORE assembling a panel, so real specialists replace generic personas.
+
+## One-line install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vosser24/PRISM/main/scripts/install.sh | bash
+```
+
+(Or clone manually — see [Manual install](#manual-install) below.)
+
+## Status — works / half-works / known-gaps (v3.1.0)
+
+| Journey | State | Notes |
+|---|---|---|
+| Install / upgrade | ✅ Works | Idempotent, backup-first |
+| Tier classification (with API key) | ✅ Works | Haiku/Sonnet/Opus via classifier hook |
+| Tier classification (keyword-floor) | ⚠ Half-works | Less accurate without API key |
+| Mutation guard | ✅ Works | Hard-block on parent-context writes |
+| Parent-dispatch guard | ✅ Works | Hard-block on novel-tier turns |
+| Parallel-dispatch guard (v3.1) | ✅ Works | Closes T10.3 gap |
+| Panel-hallucination guard (v3.1) | ✅ Works | Closes DOCTRINE-DRIFT-001 |
+| Skill-trigger guard (v3.1) | ✅ Works (advisory) | Closes T13.4 gap |
+| Resource-index | ✅ Works | Run `/prism-index` to populate |
+| Centrally-managed policy (v3.1) | ✅ Works | `~/.claude/prism-policy.json` |
+| Team roster (v3.1) | ✅ Works (file-based) | `--team` filter on /prism-roster |
+| Telemetry (v3.1) | ⚠ Local-only | No SaaS yet; export-to-JSON |
+| User hook customization preservation | ❌ Not yet | v3.2 target |
+| Schema-version reader checks | ❌ Not yet | v3.2 target |
+| Tested on macOS native | ❌ Not yet | Linux + Windows tested |
+
+See `tests/v3/plan.md` for the comprehensive 62-test journey grid.
+
+## Architecture at a glance
+
+- 16 hooks in `~/.claude/hooks/`: classifier router, 7 enforcement guards, lifecycle (session-start/end, subagent-stop), 4 advisory hooks
+- 8 PRISM-owned skills in `~/.claude/skills/`: prism-plan, blueprint-prompt, workflow-orchestration, prism-discover, prism-chat, claude-code-expert, notebooklm, video-production
+- 3 core agents: `@master-orchestrator`, `@agent-factory`, `@prism-updater`
+- 13 slash commands: `/prism-plan`, `/prism-index`, `/prism-doctor`, `/prism-roster`, `/prism-update`, `/prism-health`, `/prism-audit`, `/prism-recommend`, `/prism-recall`, `/prism-app-expert`, `/prism-archive`, `/prism-retire`, `/prism-deps`, `/prism-telemetry`
+- Single source of truth: `~/.claude/skills/prism-plan/references/roster.json` (4 sibling blocks: agents/skills/tools/mcps + index_meta)
+
+## Documentation
+
+- [INSTALL.md](INSTALL.md) — authoritative install procedure
+- [CHANGELOG.md](CHANGELOG.md) — version history
+- [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
+- [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
 
 ## What you get
 
@@ -11,7 +72,9 @@ Framework for optimizing Claude Code. Modular install — clone, let Claude foll
 - **Statusline** — multi-line status bar with model, git, cost, context bar, rate limits, subagent breakdown.
 - **Commands** — `/prism-plan`, `/prism-discover`, `/prism-audit`, `/prism-health`, `/prism-roster`, `/prism-update`, `/prism-recommend`, `/prism-retire`, `/prism-app-expert`, `/prism-archive`, `/prism-recall`, `/prism-init`.
 
-## Install (fresh machine)
+## Manual install
+
+### Install (fresh machine)
 
 In Claude Code, open any project and say:
 
@@ -19,11 +82,11 @@ In Claude Code, open any project and say:
 
 Claude will clone the repo, back up your existing `~/.claude/`, copy files per `manifest.json`, merge `settings.fragment.json` into your `settings.json`, build the KB index, and verify. All steps are idempotent — safe to re-run.
 
-## Update an existing install
+### Update an existing install
 
 Same prompt. Claude will `git pull`, re-run the procedure — unchanged files are skipped.
 
-## Manual install
+### Run it yourself
 
 If you'd rather run it yourself:
 
@@ -33,7 +96,7 @@ cd PRISM
 # Read INSTALL.md and follow steps 0-8 manually.
 ```
 
-## Layout
+### Layout
 
 ```
 PRISM/
@@ -50,13 +113,21 @@ PRISM/
 └── plans/                     # reference planning docs
 ```
 
-## Uninstall
+### Uninstall
 
 Claude will restore your most recent `~/.claude/backups/pre-prism-<timestamp>/` on request.
 
-## Requirements
+### Requirements
 
 - `node` >= 18
 - `python` >= 3.10
 - `git`
 - Optional: `notebooklm` CLI (for KB cloud search), `gh` CLI
+
+## Contributing
+
+Issues and PRs welcome at https://github.com/vosser24/PRISM. Before submitting, run `tests/v3/run-static.sh` and ensure 37/37 assertions pass.
+
+## License
+
+See repository for license details.

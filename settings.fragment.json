@@ -40,6 +40,15 @@
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-memory-save-nudge.mjs"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-skill-trigger-guard.mjs"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -58,6 +67,15 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-agent-model-guard.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-parallel-guard.mjs"
           }
         ]
       },
@@ -106,6 +124,14 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-subagent-stop.mjs"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-panel-guard.mjs"
           }
         ]
       }

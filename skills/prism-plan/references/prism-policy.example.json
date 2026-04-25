@@ -1,0 +1,25 @@
+{
+  "_comment": "PRISM v3.1+ centrally-managed guard policy. Place at ~/.claude/prism-policy.json (rename, drop _ prefix from keys you want active). Hooks read this BEFORE checking env vars. User escape: set PRISM_POLICY_OVERRIDE=1 to flip precedence so env wins. Session-start emits one-time notice when policy is detected.",
+  "schema_version": "3.1.0",
+  "owner": "team-admin",
+  "last_updated": "ISO-date",
+  "guards": {
+    "_mutation": "soft | hard | off — controls prism-mutation-guard.mjs (default: hard)",
+    "_dispatch": "soft | hard | off — controls prism-parent-dispatch-guard.mjs (default: hard)",
+    "_model": "soft | hard | strict | off — controls prism-agent-model-guard.mjs (v2.9.1 semantics; default: soft)",
+    "_tier_advisor": "soft | hard | off — controls prism-task-tier-advisor.mjs (default: soft)",
+    "_safety": "soft | hard | off — controls prism-safety.mjs Bash patterns (default: hard; off NOT recommended)",
+    "_parallel": "soft | hard | off — v3.1 prism-parallel-guard.mjs (default: soft)",
+    "_panel": "soft | hard | off — v3.1 prism-panel-guard.mjs hallucination detection (default: soft)",
+    "_skill_trigger": "soft | hard | off — v3.1 prism-skill-trigger-guard.mjs (default: soft)",
+    "mutation": "hard"
+  },
+  "team_id": "_team-name (optional) — sets default team_id for new agents created via agent-factory",
+  "telemetry": {
+    "_opt_in": "false (default) | true — controls /prism-telemetry aggregation; LOCAL only as of v3.1, no network",
+    "_export_path": "_~/.claude/.prism-telemetry-rollup.json (default)",
+    "opt_in": false
+  },
+  "_precedence": "policy file > env var > hook default. Set PRISM_POLICY_OVERRIDE=1 to flip (env wins).",
+  "_active_example_team_id": "platform-team"
+}

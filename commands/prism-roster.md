@@ -4,14 +4,23 @@ description: Display and manage the PRISM agent talent pool
 ---
 
 Usage:
-  /prism-roster                → display mode (default)
+  /prism-roster                → display mode (default — all agents)
+  /prism-roster --team <id>    → display only agents with matching team_id (v3.1+)
   /prism-roster --reconcile    → scan ~/.claude/agents/ and register any orphan agent files in roster.json
 
 ## Default mode (no args)
 
 Read `~/.claude/skills/prism-plan/references/roster.json`.
 
-Display table: Agent | Version | Domains | Tasks | Corrections | Status | Last Used
+Display table: Agent | Version | Domains | Tasks | Corrections | Status | Last Used | Team
+
+(Team column added v3.1+. Shows `team_id` field if set, blank otherwise.)
+
+## --team `<id>` filter (v3.1+)
+
+When `--team <id>` is passed, filter the display table to ONLY agents whose `team_id` matches `<id>` exactly. Use `--team null` or `--team -` to show only agents with no team (`team_id: null` or absent). The Team column is then implicit and can be omitted from the display.
+
+This is a *visibility* lever, not an *access-control* lever. Any user with read access to roster.json sees every agent regardless of team_id. Tier 3 enterprise installs that need real RBAC must layer their own auth on top — outside PRISM's scope.
 
 If agents have `pending_upgrade: true`, suggest running upgrades.
 If agents not used in 180+ days: flag as "Stale — consider /prism-retire".

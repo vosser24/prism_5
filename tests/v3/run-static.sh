@@ -166,6 +166,54 @@ section "Category 14 — Backup safety"
 grep -q "roster.json.bak\|roster\\.json\\.bak" "$REPO/commands/prism-roster.md" && pass "T14.4 /prism-roster --reconcile documents .bak backup" || fail "T14.4 reconcile .bak not documented"
 grep -q "roster.json.bak\|roster\\.json\\.bak\|\\.bak" "$REPO/commands/prism-index.md" && pass "T14.4 /prism-index documents .bak backup" || fail "T14.4 /prism-index .bak not documented"
 
+# ============================================================
+# Category v3.1 — Productization + Tier 3 surgical (NEW in v3.1.0)
+# ============================================================
+section "Category v3.1 — Productization assets"
+
+# install.sh present, executable, accepts --help / --dry-run
+[ -x "$REPO/scripts/install.sh" ] && pass "install.sh exists and is +x" || fail "install.sh missing or not executable"
+"$REPO/scripts/install.sh" --help >/dev/null 2>&1 && pass "install.sh --help works" || fail "install.sh --help fails"
+"$REPO/scripts/install.sh" --dry-run >/dev/null 2>&1 && pass "install.sh --dry-run works (no mutation)" || fail "install.sh --dry-run fails"
+sh -n "$REPO/scripts/install.sh" 2>/dev/null && pass "install.sh POSIX syntax check" || fail "install.sh POSIX syntax fail"
+
+# /prism-doctor command exists with valid frontmatter
+[ -f "$REPO/commands/prism-doctor.md" ] && pass "prism-doctor.md present" || fail "prism-doctor.md missing"
+grep -q "^name: prism-doctor" "$REPO/commands/prism-doctor.md" 2>/dev/null && pass "prism-doctor frontmatter has name" || fail "prism-doctor missing name in frontmatter"
+
+# /prism-telemetry command exists with valid frontmatter + NO NETWORK callout
+[ -f "$REPO/commands/prism-telemetry.md" ] && pass "prism-telemetry.md present" || fail "prism-telemetry.md missing"
+grep -qiE "no network|no shipping|no telemetry-as-a-service|local.{0,5}only" "$REPO/commands/prism-telemetry.md" 2>/dev/null && pass "telemetry doc states LOCAL-only" || fail "telemetry missing LOCAL-only callout"
+
+# Central policy example
+[ -f "$REPO/skills/prism-plan/references/prism-policy.example.json" ] && pass "prism-policy.example.json present" || fail "prism-policy.example.json missing"
+node -e "JSON.parse(require('fs').readFileSync('$REPO/skills/prism-plan/references/prism-policy.example.json','utf-8'))" 2>/dev/null && pass "prism-policy.example.json valid JSON" || fail "prism-policy.example.json invalid JSON"
+
+# skill-triggers reference
+[ -f "$REPO/skills/prism-plan/references/skill-triggers.md" ] && pass "skill-triggers.md present" || fail "skill-triggers.md missing"
+
+# 3 new v3.1 hooks present + parse
+for h in prism-parallel-guard prism-panel-guard prism-skill-trigger-guard; do
+  f="$REPO/hooks/$h.mjs"
+  [ -f "$f" ] && node --check "$f" 2>/dev/null && pass "$h.mjs present + syntax OK" || fail "$h.mjs missing or syntax error"
+  # Each new hook must implement three-path bypass + force_opus + atomic write
+  grep -q "parent_tool_use_id" "$f" 2>/dev/null && pass "$h has parent_tool_use_id check" || fail "$h missing parent_tool_use_id check"
+  grep -qE "force_opus|opus-force" "$f" 2>/dev/null && pass "$h honors force_opus sentinel" || fail "$h missing force_opus check"
+done
+
+# settings.fragment.json registers the 3 new hooks
+grep -q "prism-parallel-guard.mjs" "$REPO/settings.fragment.json" && pass "settings.fragment registers parallel-guard" || fail "settings.fragment missing parallel-guard"
+grep -q "prism-panel-guard.mjs" "$REPO/settings.fragment.json" && pass "settings.fragment registers panel-guard" || fail "settings.fragment missing panel-guard"
+grep -q "prism-skill-trigger-guard.mjs" "$REPO/settings.fragment.json" && pass "settings.fragment registers skill-trigger-guard" || fail "settings.fragment missing skill-trigger-guard"
+
+# /prism-roster --team flag documented
+grep -q -- "--team" "$REPO/commands/prism-roster.md" && pass "/prism-roster documents --team flag" || fail "/prism-roster --team not documented"
+
+# roster.json schema bumped to 3.1.0 + team_id documented in schema example
+SCHEMA_VER=$(node -e "console.log(require('$REPO/skills/prism-plan/references/roster.json').schema_version)")
+[ "$SCHEMA_VER" = "3.1.0" ] && pass "roster.json schema_version=3.1.0" || fail "roster.json schema_version=$SCHEMA_VER (expected 3.1.0)"
+grep -q "team_id" "$REPO/skills/prism-plan/references/roster.json" && pass "roster.json schema includes team_id" || fail "roster.json missing team_id in schema example"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

@@ -1,13 +1,14 @@
 {
-  "version": "2.9.0",
-  "last_updated": "2026-04-24",
-  "schema_version": "2.9.0",
+  "version": "3.1.0",
+  "last_updated": "2026-04-25",
+  "schema_version": "3.1.0",
   "schema_notes": [
     "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
     "default_model=null means 'let orchestrator dynamic selection decide'.",
     "Escalation ratchet: 3 corrections → opus-lock. Deescalation: 5 consecutive successful sonnet tasks with zero corrections → reset to sonnet.",
     "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade).",
-    "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks."
+    "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks.",
+    "v3.1.0 adds optional team_id field per agent. null = global/no team. String = arbitrary team identifier (e.g., 'platform-team', 'eng-uk'). /prism-roster --team <id> filters display to matching agents. Tier 3 visibility lever — surgical, no auth model implied. Admin convention: keep team_ids consistent across team's installs."
   ],
   "agents": {},
   "skills": {},
@@ -41,6 +42,7 @@
     "pending_upgrade": false,
     "status": "available",
     "notebooklm_notebook_id": null,
+    "team_id": null,
     "file_path": "~/.claude/agents/<name>/agent.md"
   },
   "_schema_example_skill": {

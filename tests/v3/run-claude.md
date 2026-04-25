@@ -239,8 +239,8 @@ execute the plan
 ### T10.2 — Parallel-opportunity hint
 When a user prompt implies independent work, `prism-hook.mjs` emits hint. Check `~/.claude/.prism-routing.jsonl` for `{event:"parallel_opportunity"}` entries.
 
-### T10.3 — Sequential dispatch of pgroup=N (documented failure expected)
-Manually dispatch 3 pgroup=1 tasks in 3 separate messages. **Expected outcome as of v2.9.1**: no hook block; sequential succeeds. This proves the gap still exists. When `prism-parallel-guard` (target v2.10) ships, this test flips to "blocked".
+### T10.3 — Sequential dispatch of pgroup=N (v3.1.0 — gap CLOSED)
+Manually dispatch 3 pgroup=1 tasks in 3 separate messages. **Expected outcome as of v3.1.0**: `prism-parallel-guard.mjs` detects the second sequential pgroup-tagged Agent call within 60s and emits an advisory (soft mode, default) or denies (hard mode). **Expected pass — gap closed in v3.1.0.**
 
 ---
 
@@ -284,12 +284,12 @@ plan an upgrade to React 19 across our frontend
 ```
 **Expected**: prism-chat activates, full panel protocol.
 
-### T13.4 — Skill NOT auto-invoked when match exists (documented gap)
+### T13.4 — Skill NOT auto-invoked when match exists (v3.1.0 — gap CLOSED, advisory)
 Prompt something where a specialist is rostered but Claude chooses generic approach:
 ```
 what are best practices for Greek e-commerce SEO
 ```
-With `greek-ecommerce-seo-specialist` rostered. Check if Claude dispatches to that specialist OR generic-answers. **As of v2.9.1, likely answers generically** — no forced invocation hook. When `prism-skill-trigger-guard` (v2.10 target) ships, this flips.
+With `greek-ecommerce-seo-specialist` rostered. **Expected outcome as of v3.1.0**: `prism-skill-trigger-guard.mjs` reads `~/.claude/skills/prism-plan/references/skill-triggers.md`, matches the SEO regex, emits an advisory: "your prompt mentioned <SEO>; consider invoking <greek-ecommerce-seo-specialist>". Hook is advisory-only in v3.1; hard mode coerced to soft per spec. **Expected pass (advisory). Hard-mode enforcement deferred to v3.2.**
 
 ---
 
@@ -328,6 +328,130 @@ Inside Claude Code, on sonnet turn, prompt:
 run bash command: echo hello > test.txt
 ```
 Expected: mutation-guard denies (v2.7.2 patterns catch `> path` redirects).
+
+---
+
+---
+
+## Category 16 — Panel-hallucination guard (v3.1+)
+
+### T16.1 — Hallucinated persona triggers warning
+Prompt blueprint-prompt with the index empty (`/prism-index` never run). Run an Advisory task that produces a panel with hardcoded fallback names. Expected: `prism-panel-guard.mjs` (SubagentStop) scans the output, identifies fallback names that AREN'T in the §6 hardcoded-fallback whitelist (Architect, Security, Performance, Cost, Skeptic, etc.) — none should be flagged, all are recognized fallbacks. Pass.
+
+### T16.2 — Truly hallucinated names flagged
+Force a panel that uses invented names like "Rachel" or "Priya" (paste an example that does this). Expected: panel-guard flags them as unindexed personas; in soft mode emits a warn line listing flagged names; in hard mode denies SubagentStop with re-assemble suggestion.
+
+### T16.3 — Indexed specialist names pass cleanly
+Run `/prism-index` first to populate; prompt a panel that picks a real rostered agent (e.g., `greek-ecommerce-seo-specialist`). Expected: no flag — name matches roster.agents.
+
+---
+
+## Category 17 — /prism-doctor (v3.1+)
+
+### T17.1 — Run doctor on clean install
+```
+/prism-doctor
+```
+Expected: scans, reports 0 symptoms found OR only INFO-level findings (e.g., "prism-policy.json not present — opt-in feature, no action needed"). Exit 0.
+
+### T17.2 — Doctor catches keyword-floor mode
+With `ANTHROPIC_API_KEY` removed from `~/.claude/prism.env`, restart, run a few prompts, then `/prism-doctor`. Expected: flags "Classifier in keyword-floor only" + proposes adding API key. Confirms before applying.
+
+### T17.3 — Doctor catches stale sentinels
+Manually create stale sentinel files (`touch ~/.claude/.prism-turn-tier-fake-uuid.json` with timestamp >1h old). Run doctor. Expected: flags + proposes deletion command.
+
+---
+
+## Category 18 — /prism-telemetry (v3.1+, LOCAL-ONLY)
+
+### T18.1 — Opt-in
+```
+/prism-telemetry --opt-in
+```
+Expected: writes/updates `~/.claude/prism-policy.json` with `telemetry.opt_in: true`. Confirms before write.
+
+### T18.2 — Status
+```
+/prism-telemetry --status
+```
+Expected: shows opt-in state, last-aggregation timestamp, rollup file size. No network activity (verify with `lsof -i` — should show no PRISM-originated connections).
+
+### T18.3 — Aggregate
+```
+/prism-telemetry --aggregate
+```
+Expected: parses `~/.claude/.prism-routing.jsonl` → writes `~/.claude/.prism-telemetry-rollup.json` with the schema documented in the command. Validate the JSON parses + has expected keys.
+
+### T18.4 — Export
+```
+/prism-telemetry --export /tmp/prism-rollup.json
+```
+Expected: copies rollup to chosen path. Anonymizes session_ids. NO raw prompts in the export.
+
+### T18.5 — Opt-out
+```
+/prism-telemetry --opt-out
+```
+Expected: flips `telemetry.opt_in` to false. Existing rollup preserved. Aggregation no longer triggered at session-end.
+
+---
+
+## Category 19 — Centrally-managed policy (v3.1+)
+
+### T19.1 — Policy file detected on session start
+Place `~/.claude/prism-policy.json` with `{guards:{mutation:"hard"}}`. Restart Claude Code. Expected: session-start emits one-time notice that a policy file is active.
+
+### T19.2 — Policy beats env var (default precedence)
+Set `PRISM_MUTATION_GUARD=soft` in shell. Place policy file with `{guards:{mutation:"hard"}}`. On a sonnet turn, attempt parent-context Edit. Expected: mutation-guard denies (policy `hard` won over env `soft`).
+
+### T19.3 — User escape via PRISM_POLICY_OVERRIDE=1
+With same policy file, set `PRISM_POLICY_OVERRIDE=1` AND `PRISM_MUTATION_GUARD=soft`. Same Edit attempt. Expected: mutation-guard advisory only (env `soft` wins because override is on).
+
+---
+
+## Category 20 — /prism-roster --team filter (v3.1+)
+
+### T20.1 — Team filter scopes display
+Manually edit roster.json to add `team_id: "platform-team"` to one agent and `team_id: "eng-uk"` to another. Run:
+```
+/prism-roster --team platform-team
+```
+Expected: only the matching agent shown.
+
+### T20.2 — `--team -` shows team-less
+```
+/prism-roster --team -
+```
+Expected: only agents with `team_id: null` or absent shown.
+
+### T20.3 — No filter shows all
+```
+/prism-roster
+```
+Expected: all agents shown with Team column populated for the tagged ones.
+
+---
+
+## Category 21 — One-command installer (v3.1+, fresh machine simulation)
+
+### T21.1 — Help works
+```
+bash scripts/install.sh --help
+```
+Expected: usage block with all 5 flags listed.
+
+### T21.2 — Dry-run prints plan, no mutation
+```
+bash scripts/install.sh --dry-run
+```
+Expected: ~30-line plan output, exit 0, no changes to `~/.claude/`.
+
+### T21.3 — Real install on throwaway HOME
+```
+mkdir -p /tmp/test-prism-install
+HOME=/tmp/test-prism-install bash scripts/install.sh --no-backup
+```
+Expected: clones, installs, verifies. Exit 0. `verify.mjs` reports clean.
 
 ---
 

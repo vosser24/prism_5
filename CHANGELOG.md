@@ -4,6 +4,139 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.1.0] - 2026-04-25
+
+Productization release. Closes the v3.0 documented gaps (T10.3, T13.4),
+adds the first centralized policy mechanism, ships a one-command
+installer + guided diagnostic command + opt-in local telemetry. Plus
+two Tier 3 levers (team roster, central policy) shipped surgically.
+
+### Added — enforcement hooks
+
+- **`prism-parallel-guard.mjs`** — PreToolUse on `Agent`. Detects
+  sequential dispatch of pgroup-tagged tasks within a single turn
+  (60s window via `~/.claude/.prism-parallel-trace-<session>.json`)
+  and emits advisory (soft, default) or denies (hard) with a message
+  pointing at the parallel-dispatch contract. Closes T10.3 — the
+  parallel-dispatch enforcement gap that v2.7.1 promised but only
+  hint-emitted. Honors `!opus-force:` and three-path subagent bypass.
+- **`prism-panel-guard.mjs`** — SubagentStop. Scans subagent output
+  for persona-name patterns (`**Name**:` etc.) and cross-references
+  against `roster.agents/skills/tools` plus a hardcoded fallback
+  whitelist (Architect, Security, Performance, Cost, Skeptic, etc.).
+  Names matching neither are flagged as unindexed personas. Closes
+  DOCTRINE-DRIFT-001 (v2.8.2 audit finding) — the hallucinated-
+  persona detection gap. Soft mode warns; hard mode denies +
+  asks to re-assemble. Skips `sentinel.dispatched` bypass path
+  (would always be true at SubagentStop) — documented inline.
+- **`prism-skill-trigger-guard.mjs`** — UserPromptSubmit. Reads
+  `skills/prism-plan/references/skill-triggers.md` (12 keyword→skill
+  mappings as of v3.1.0) and emits an advisory when a user prompt
+  matches a regex but the corresponding skill wasn't auto-invoked
+  in the next 2 turns. Closes T13.4 (advisory). Hard mode coerced
+  to soft in v3.1 — reserved for v3.2 once false-positive rate
+  is measured. Honors `!opus-force:`.
+
+### Added — productization
+
+- **`scripts/install.sh`** — POSIX-compatible one-command installer.
+  Modes: `--dry-run`, `--prefix <dir>`, `--branch <name>`,
+  `--no-backup`, `--help`. Detects platform, walks 6-source node
+  resolution chain (PATH → nvm → fnm → volta → asdf → homebrew),
+  writes `~/.claude/prism.env` via single-quoted heredoc to preserve
+  Windows backslashes, runs install-merge + verify, captures verify
+  exit code for clean error reporting. ERR trap reports failing step.
+  Idempotent.
+- **`commands/prism-doctor.md`** — symptom-driven diagnostic + guided
+  fix command. Scans 50 most-recent routing events, env state, roster
+  integrity, settings.json wiring, hook syntax. 10+ symptom→fix
+  mappings (keyword-floor mode, prism.env missing, empty
+  resource-index, stale sentinels, hook syntax errors, stale roster,
+  v2.9.1 BREAKING CONTRACT misconfig, etc.). READ-ONLY by default —
+  every fix proposed gets a `[Y/n]` confirmation before any write.
+- **`commands/prism-telemetry.md`** — opt-in local-only telemetry.
+  Subcommands: `--opt-in`, `--opt-out`, `--status`, `--aggregate`,
+  `--export <path>`. Aggregates `~/.claude/.prism-routing.jsonl` into
+  `~/.claude/.prism-telemetry-rollup.json` with cost summary,
+  classifier accuracy, guard fire rate, tier distribution. **NO
+  NETWORK, NO SHIPPING, NO TELEMETRY-AS-A-SERVICE in v3.1.** Future
+  SaaS will read same rollup format. Anonymizes session_ids on
+  export; raw prompts never exported.
+- **README.md landing page** — 30-second pitch (277 chars), three
+  concrete use cases (cost discipline / parallel orchestration /
+  specialist dispatch), one-line install, status table covering 15
+  user journeys (works / half-works / known-gaps), architecture
+  overview, docs links. Existing install/contributing/license content
+  preserved under "Manual install".
+
+### Added — Tier 3 surgical levers
+
+- **Team roster (`team_id` field)** — optional per-agent field in
+  `roster.json`. `null` = global/no team. String = arbitrary team
+  identifier. `/prism-roster --team <id>` filters the display table.
+  `--team -` shows team-less agents. **Visibility lever, not
+  access-control** — any user with read access to `roster.json` sees
+  every agent. Real RBAC requires layered auth outside PRISM scope.
+- **`~/.claude/prism-policy.json` central policy file** — admin-owned
+  config that hooks read BEFORE checking env vars. Schema covers all
+  8 guard knobs (mutation, dispatch, model, tier_advisor, safety,
+  parallel, panel, skill_trigger) plus telemetry opt-in and team
+  defaults. Precedence: **policy file → env var → hook default**.
+  User escape: set `PRISM_POLICY_OVERRIDE=1` to flip precedence so
+  env wins. Ships as `prism-policy.example.json` template; users
+  rename + drop `_` prefixes from active keys.
+
+### Added — schema + telemetry
+
+- **`roster.json` schema bumped to 3.1.0**. New `team_id` field in
+  `_schema_example_agent`. New `schema_notes` entry documenting
+  team_id semantics.
+- **`skills/prism-plan/references/skill-triggers.md`** — 12 keyword
+  regex → required-skill mappings consumed by skill-trigger-guard.
+  Severity column reserved for v3.2 (currently all `nudge`).
+- **`tests/v3/run-static.sh`** extended with v3.1 assertions:
+  install.sh executable + dry-run + POSIX syntax; prism-doctor +
+  prism-telemetry frontmatter; prism-policy.example.json valid;
+  skill-triggers.md present; 3 new hooks parse + honor force_opus +
+  three-path bypass; settings.fragment.json registers all 3; roster
+  schema = 3.1.0 + team_id documented.
+- **`tests/v3/run-claude.md`** extended: T10.3 + T13.4 flipped to
+  expected-pass (gaps closed); 6 new categories (Cat 16
+  panel-hallucination, Cat 17 doctor, Cat 18 telemetry, Cat 19
+  central policy, Cat 20 team filter, Cat 21 installer dry-run +
+  real install).
+- **`tests/v3/analyze-log.mjs`** extended: 5 new event types tracked
+  (`panel_hallucination_detected`, `skill_trigger_advisory`,
+  `policy_loaded`, `parallel_guard_block`, `parallel_guard_advise`)
+  with verdict heuristics for each.
+
+### Fixed (closes audit findings + v3.0 documented gaps)
+
+- T10.3 (parallel dispatch enforcement) — closed via
+  `prism-parallel-guard.mjs`.
+- T13.4 (skill-invocation enforcement) — closed via
+  `prism-skill-trigger-guard.mjs` (advisory; hard mode v3.2).
+- DOCTRINE-DRIFT-001 (panel adversarial review enforcement) —
+  partially closed via `prism-panel-guard.mjs` (catches hallucinated
+  personas; ≥2-challenge enforcement still doctrine-only).
+
+### Migration
+
+Zero migration. All v3.1 additions are additive. Existing v3.0
+installs that `git pull && node scripts/install-merge.mjs` get the
+3 new hooks registered, 2 new commands, 4 new reference files. §4d
+auto-stamps update-log `3.0.0 → 3.1.0`. No env-var changes for
+existing users; new `PRISM_POLICY_OVERRIDE` is opt-in.
+
+### Known gaps still open (target v3.2)
+
+- INSTALL-MERGE-001 — user-customized hooks clobbered on upgrade
+  (checksum-based detection needed)
+- SCHEMA-VERSIONING-001 — readers don't validate `schema_version`
+- CONFIG-GUARD-DRIFT-001 — config-guard warns but doesn't restore
+- Skill-trigger-guard hard mode (false-positive rate measurement)
+- macOS native testing (sandbox-tested only)
+
 ## [3.0.0] - 2026-04-24
 
 Testability release. First comprehensive user-journey test suite covering
