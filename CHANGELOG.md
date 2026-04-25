@@ -4,6 +4,73 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.2.0] - 2026-04-25
+
+Classifier architecture simplification. Per direct user feedback: PRISM
+should not require a separate `ANTHROPIC_API_KEY` to function correctly.
+The vast majority of users (Claude Code Pro/Max login) cannot expose
+their auth to hook subprocesses, and the previous "API-classifier-as-
+default with keyword-floor as fallback" framing was a productization
+mistake. v3.2.0 makes keyword-floor the only classifier and adds a
+conversation-model self-override mechanism for cases where the regex
+heuristic gets it wrong.
+
+### Removed (BREAKING for the small set of users who had API key configured)
+
+- **`hooks/lib/prism-opus-classifier.mjs` API-call paths** — the Opus +
+  Sonnet API attempts are gone. Function signature preserved (callers
+  unchanged); only the source of the classification changes. `source`
+  field can no longer be `"opus"` or `"sonnet-fallback"`; it's now one
+  of `"keyword-floor"` / `"cache"` / `"allowlist"` / `"force-opus"` /
+  `"conversation-model-override"` (new, see below).
+- **`INSTALL.md §2.7` (ANTHROPIC_API_KEY setup)** — entire section
+  deleted. No replacement needed; keyword-floor works without any
+  external auth.
+- **`prism-session-start.mjs` keyword-floor warning notice** — removed.
+  Keyword-floor is the standard mode, not degraded.
+- **`/prism-doctor` keyword-floor symptom** — removed from the symptom
+  list. Doctor no longer flags users for not having an API key set.
+- **`/prism-health` API-key environment check** — removed.
+- All `ANTHROPIC_API_KEY` references throughout the docs (README, etc.).
+
+### Added
+
+- **Conversation-model self-override protocol** — `prism-prompt-tier-router.mjs`
+  now emits, alongside the keyword-floor classification, a directive
+  inviting the parent conversation model to override the classification
+  when the regex heuristic gets it wrong. The override is a Write to
+  `~/.claude/.prism-turn-tier-<session>.json` with `source:
+  "conversation-model-override"`. Optional, opportunistic — Claude only
+  overrides when it disagrees, otherwise keyword-floor stands. This
+  uses the conversation model's full intelligence for classification
+  without requiring any separate API call.
+
+### Migration
+
+Users who relied on the API classifier (set `ANTHROPIC_API_KEY` in
+`prism.env`): your environment variable becomes inert. Remove it from
+`prism.env` if you want a clean state, or leave it — nothing reads it
+anymore. Keyword-floor classification is now the single classifier
+path. Most users won't notice any change in behavior; classifications
+on ambiguous prompts may differ slightly from what the API call would
+have produced. The conversation-model self-override protocol kicks in
+automatically the first time the parent model decides to correct the
+classifier.
+
+### Mechanics
+
+Manifest 3.1.0 → 3.2.0. install-merge §4d auto-stamps update-log.
+Hook count unchanged at 16. Settings.fragment.json unchanged (the
+3 v3.1 hooks ship at the same trigger points). 84 manifest entries.
+
+### Known gaps still open (target v3.3+)
+
+- INSTALL-MERGE-001 — user-customized hooks clobbered on upgrade
+- SCHEMA-VERSIONING-001 — readers don't validate `schema_version`
+- CONFIG-GUARD-DRIFT-001 — config-guard warns but doesn't restore
+- skill-trigger-guard hard mode (false-positive measurement first)
+- macOS native testing
+
 ## [3.1.0] - 2026-04-25
 
 Productization release. Closes the v3.0 documented gaps (T10.3, T13.4),

@@ -2,7 +2,7 @@
 
 Paste each prompt into a fresh Claude Code session. Record the outcome in the Observed column of `report-template.md`.
 
-**Precondition for every test:** you've already run `tests/v3/run-static.sh` and it passed. `~/.claude/` is a real PRISM install of v3.0+. `ANTHROPIC_API_KEY` is set in `~/.claude/prism.env` for accurate classifier (optional — keyword-floor fallback is an acceptable alternative, note in report).
+**Precondition for every test:** you've already run `tests/v3/run-static.sh` and it passed. `~/.claude/` is a real PRISM install of v3.0+. As of v3.2.0, keyword-floor is the only classifier path; no API key is required or used.
 
 **Telemetry per turn:** after each prompt, the classifier writes `~/.claude/.prism-turn-tier-<session>.json` and appends to `~/.claude/.prism-routing.jsonl`. The log analyzer reads both.
 
@@ -19,13 +19,13 @@ rm -f ~/.claude/.prism-turn-tier-*.json
 
 ## Category 5 — Classifier routing
 
-For each: open fresh Claude Code, paste the prompt, record `sentinel.tier`, `summon_panel`, `source`.
+For each: open fresh Claude Code, paste the prompt, record `sentinel.tier`, `summon_panel`, `source`. As of v3.2.0, classifier `source` is one of `keyword-floor`, `cache`, `allowlist`, `force-opus`, or `conversation-model-override`.
 
 ### T5.1 — Trivial lookup (expect tier=haiku)
 ```
 what does SIGTERM mean
 ```
-**Verify**: `jq '.tier,.summon_panel,.source' ~/.claude/.prism-turn-tier-*.json` → `haiku`, `false`, any.
+**Verify**: `jq '.tier,.summon_panel,.source' ~/.claude/.prism-turn-tier-*.json` → `haiku`, `false`, source one of `keyword-floor`/`cache`/`conversation-model-override`.
 
 ### T5.2 — Routine implementation (expect tier=sonnet)
 ```
@@ -53,6 +53,13 @@ design a rate limiter for a multi-region SaaS with 10k tenants and per-tenant fa
 
 ### T5.6 — Cache hit on repeat
 Re-send the exact prompt from T5.1 within 24h. Expect `source=cache`.
+
+### T5.7 — Conversation-model self-override (v3.2.0)
+Send a prompt that keyword-floor would misclassify (e.g., a deeply technical question phrased casually):
+```
+just a quick thought — should we use distributed sagas or 2PC for cross-service consistency
+```
+**Expected**: keyword-floor likely classifies as haiku (low score, no architecture keywords match well). The conversation-model receives the override directive, recognizes this is sonnet/opus complexity, and writes a corrected sentinel as its first action. **Verify**: jq the resulting sentinel for `source: "conversation-model-override"`.
 
 ---
 
@@ -354,8 +361,8 @@ Run `/prism-index` first to populate; prompt a panel that picks a real rostered 
 ```
 Expected: scans, reports 0 symptoms found OR only INFO-level findings (e.g., "prism-policy.json not present — opt-in feature, no action needed"). Exit 0.
 
-### T17.2 — Doctor catches keyword-floor mode
-With `ANTHROPIC_API_KEY` removed from `~/.claude/prism.env`, restart, run a few prompts, then `/prism-doctor`. Expected: flags "Classifier in keyword-floor only" + proposes adding API key. Confirms before applying.
+### T17.2 — Doctor no longer flags keyword-floor (v3.2.0)
+Run `/prism-doctor` on a clean install. Expected: doctor does NOT flag "Classifier in keyword-floor only" — keyword-floor is the standard mode in v3.2.0+, not a degraded state.
 
 ### T17.3 — Doctor catches stale sentinels
 Manually create stale sentinel files (`touch ~/.claude/.prism-turn-tier-fake-uuid.json` with timestamp >1h old). Run doctor. Expected: flags + proposes deletion command.

@@ -31,8 +31,7 @@ curl -sSL https://raw.githubusercontent.com/vosser24/PRISM/main/scripts/install.
 | Journey | State | Notes |
 |---|---|---|
 | Install / upgrade | ✅ Works | Idempotent, backup-first |
-| Tier classification (with API key) | ✅ Works | Haiku/Sonnet/Opus via classifier hook |
-| Tier classification (keyword-floor) | ⚠ Half-works | Less accurate without API key |
+| Tier classification | ✅ Works | Keyword-floor regex + conversation-model self-override (v3.2.0) |
 | Mutation guard | ✅ Works | Hard-block on parent-context writes |
 | Parent-dispatch guard | ✅ Works | Hard-block on novel-tier turns |
 | Parallel-dispatch guard (v3.1) | ✅ Works | Closes T10.3 gap |

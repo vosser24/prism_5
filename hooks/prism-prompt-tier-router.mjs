@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-// PRISM Prompt Tier Router (v2.2.0) — UserPromptSubmit
+// PRISM Prompt Tier Router (v3.2.0) — UserPromptSubmit
 //
-// BREAKING (vs v2.1.3): replaces the keyword score-classifier with an
-// Opus-backed context classifier. Output format changed from
-//   "PRISM TIER ROUTER: prompt scored N (X-tier, h=N s=N o=N)..."
-// to
-//   "PRISM TIER ROUTER: {tier}. {rationale}"
+// v3.2.0: API classifier path removed (see hooks/lib/prism-opus-classifier.mjs).
+// Keyword-floor regex is the sole classification mechanism. To compensate for
+// regex's bluntness on ambiguous prompts, this hook now emits a SELF-OVERRIDE
+// PROTOCOL directive in its additionalContext: the conversation model can
+// correct keyword-floor by writing a corrected sentinel as its first action
+// of the turn, before any work tools fire.
 //
 // The sentinel on disk keeps its prior shape so prism-parent-dispatch-guard
 // continues to read it unchanged. The legacy {h, s, o, score, compound}
 // fields are retained as zeros for compatibility; downstream code that
 // routes off them should migrate to `rationale` / `source`.
 //
-// Fallback chain: force-opus prefix → slash-command allowlist → 24h cache →
-// Opus API → Sonnet API → keyword floor. See hooks/lib/prism-opus-classifier.mjs.
+// Decision chain: force-opus prefix → slash-command allowlist → 24h cache →
+// keyword floor. No network calls.
 //
 // Modes (PRISM_PROMPT_ROUTER env var, defaults to hard):
 //   hard: sentinel + advice that mentions enforcement
@@ -62,7 +63,22 @@ function gitSnapshot(cwd) {
   return out;
 }
 
-function formatAdvice(tier, rationale, mode, summonPanel) {
+function buildOverrideDirective(tier, summonPanel, sessionId) {
+  // v3.2.0 self-override protocol: emitted only when keyword-floor produced
+  // the classification (the bluntest path). The conversation model gets a
+  // chance to correct an obviously-wrong tier by writing a corrected
+  // sentinel as its FIRST action, before any work tools fire.
+  // Skipped on allowlist/force-opus where intent is explicit.
+  const sid = String(sessionId || 'anon');
+  const sentinelName = `~/.claude/.prism-turn-tier-${sid}.json`;
+  return [
+    '',
+    'PRISM TIER OVERRIDE PROTOCOL (v3.2.0):',
+    `keyword-floor classified this prompt as ${tier}. If you (the conversation model) believe this is wrong for the actual task complexity, your FIRST action of this turn should be a Write to \`${sentinelName}\` with corrected fields {"tier":"<correct>","summon_panel":<bool>,"source":"conversation-model-override","rationale":"<why>"}. Otherwise, proceed normally and the keyword-floor classification stands.`,
+  ].join('\n');
+}
+
+function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId) {
   // New format — intentionally simpler than v2.1.3 so LLMs don't need to
   // parse h=/s=/o= tokens. The old score fields are preserved in the
   // sentinel file for debugging but not echoed to the model context.
@@ -100,6 +116,13 @@ function formatAdvice(tier, rationale, mode, summonPanel) {
     advice += `\n\nWINDOWS NOTE: inside subagent prompts, instruct them to use the Edit/Write/MultiEdit tools for file changes — NOT Bash/PowerShell. PowerShell's Set-Content, Out-File, and \`>\` redirection default to UTF-8 with BOM, which mangles files and breaks downstream tools. The Edit/Write tools produce clean UTF-8 (no BOM). If Bash is genuinely needed for a write, append \`-Encoding UTF8NoBOM\` to Set-Content/Out-File.`;
   }
   // opus-tier without summon_panel: no dispatch advice needed. Direct parent work allowed.
+
+  // v3.2.0: append self-override directive when keyword-floor classified this
+  // prompt and the tier is not allowlist/force-opus (those are explicit intent
+  // and should not be overrideable by the conversation model).
+  if (source === 'keyword-floor') {
+    advice += '\n' + buildOverrideDirective(tier, summonPanel, sessionId);
+  }
   return advice;
 }
 
@@ -162,7 +185,7 @@ async function main() {
       mode: MODE,
     });
 
-    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel);
+    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel, classification.source, sessionId);
     const out = {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',

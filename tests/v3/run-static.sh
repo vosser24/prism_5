@@ -214,6 +214,21 @@ SCHEMA_VER=$(node -e "console.log(require('$REPO/skills/prism-plan/references/ro
 [ "$SCHEMA_VER" = "3.1.0" ] && pass "roster.json schema_version=3.1.0" || fail "roster.json schema_version=$SCHEMA_VER (expected 3.1.0)"
 grep -q "team_id" "$REPO/skills/prism-plan/references/roster.json" && pass "roster.json schema includes team_id" || fail "roster.json missing team_id in schema example"
 
+# ============================================================
+# Category v3.2 — Classifier simplification (NEW in v3.2.0)
+# ============================================================
+section "Category v3.2 — Classifier simplification"
+
+cd "$REPO"
+
+grep -q "conversation-model-override" hooks/prism-prompt-tier-router.mjs && pass "T_v3.2.1 router emits override directive" || fail "T_v3.2.1 router missing override directive"
+
+! grep -q "ANTHROPIC_API_KEY" hooks/lib/prism-opus-classifier.mjs && pass "T_v3.2.2 classifier no longer references ANTHROPIC_API_KEY" || fail "T_v3.2.2 classifier still references ANTHROPIC_API_KEY"
+
+! grep -q "Classifier is running in keyword-floor-only mode" hooks/prism-session-start.mjs && pass "T_v3.2.3 session-start no longer warns about keyword-floor" || fail "T_v3.2.3 session-start still warns about keyword-floor"
+
+! grep -q "ANTHROPIC_API_KEY" INSTALL.md README.md commands/*.md && pass "T_v3.2.4 docs no longer mention ANTHROPIC_API_KEY" || fail "T_v3.2.4 docs still mention ANTHROPIC_API_KEY"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

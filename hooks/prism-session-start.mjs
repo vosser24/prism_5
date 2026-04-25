@@ -1,6 +1,11 @@
 #!/usr/bin/env node
-// PRISM SessionStart (v2.9.1) — reset project turn counter + run once-per-day
-// context-tax audit + classifier-floor hint + v2.9.1 strict-mode migration notice.
+// PRISM SessionStart (v3.2.0) — reset project turn counter + run once-per-day
+// context-tax audit + v2.9.1 strict-mode migration notice.
+//
+// v3.2.0: removed the "classifier is running in keyword-floor-only mode"
+// notice. Keyword-floor is now the standard classification mode, not a
+// degraded one (the API classifier path was removed in v3.2.0). See
+// hooks/lib/prism-opus-classifier.mjs and hooks/prism-prompt-tier-router.mjs.
 //
 // v2.9.1 (ATOMIC-WRITE-001): every state write now uses tempfile + renameSync
 // with catch-fallback to direct writeFileSync. Matches v2.8.0 sentinel-write
@@ -89,44 +94,9 @@ try {
     notices.push(`PRISM NOTICE: SessionStart context tax ~${audit.total_tokens_est.toLocaleString()}t (~$${audit.total_cost_opus_usd}/session on Opus). ${audit.top_suggestion}. Full breakdown: node ~/.claude/tools/prism-context-audit.mjs`);
   }
 
-  // ── v2.8.0 Gap: classifier-floor visibility (once per session) ──
-  // When ANTHROPIC_API_KEY isn't visible to hook subprocesses, the tier-
-  // router silently falls to the keyword floor on every prompt. Users had
-  // no signal that the expensive Opus classifier was unreachable. Emit a
-  // one-time hint at session start; throttle to once per 24h (same as the
-  // audit) so it doesn't spam.
-  //
-  // Detection: the classifier writes source='keyword-floor' in its
-  // sentinel + log when it falls through. We don't read the log here
-  // (cheap); instead we probe env and filesystem:
-  //   - If process.env.ANTHROPIC_API_KEY is missing AND no ~/.claude/prism.env
-  //     ANTHROPIC_API_KEY line: floor-only guaranteed
-  //   - Otherwise: may be reaching API; skip hint
-  const floorHintFile = join(H, '.claude', '.prism-floor-hint.last');
-  let lastFloorHint = 0;
-  try {
-    if (existsSync(floorHintFile)) lastFloorHint = parseInt(readFileSync(floorHintFile, 'utf-8').trim(), 10) || 0;
-  } catch {}
-  if ((now - lastFloorHint) >= THROTTLE_SECONDS) {
-    const hasEnvKey = !!process.env.ANTHROPIC_API_KEY;
-    let hasEnvFileKey = false;
-    try {
-      const envFile = join(H, '.claude', 'prism.env');
-      if (existsSync(envFile)) {
-        const txt = readFileSync(envFile, 'utf-8');
-        if (/^\s*ANTHROPIC_API_KEY\s*=/m.test(txt)) hasEnvFileKey = true;
-      }
-    } catch {}
-    if (!hasEnvKey && !hasEnvFileKey) {
-      notices.push(
-        'PRISM NOTICE: Classifier is running in keyword-floor-only mode — ANTHROPIC_API_KEY not set for hook subprocesses. ' +
-        'Tier decisions will use regex signals only (less accurate on ambiguous prompts). ' +
-        'To enable the Opus classifier, set ANTHROPIC_API_KEY system-wide or add a line to ~/.claude/prism.env. ' +
-        'See INSTALL.md §2.7 for Windows/POSIX setup.'
-      );
-      atomicWrite(floorHintFile, String(now));
-    }
-  }
+  // ── v3.2.0: keyword-floor is now the standard classification mode (no API
+  // path). The previous "classifier-floor visibility" notice has been removed
+  // because there is no degraded mode to warn about anymore.
 
   // ── v2.9.1: strict-mode migration notice (one-shot) ──
   // When PRISM_MODEL_GUARD=hard is in env, hard-mode semantics CHANGED in
