@@ -4,6 +4,66 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.4.0] - 2026-04-25
+
+Windows-native productization release. Ships PowerShell-native ports of
+both lifecycle scripts so pure-PowerShell users no longer need Git Bash.
+Closes the last cross-shell gap in PRISM's installation lifecycle.
+
+### Added
+
+- **`scripts/install.ps1`** (391 lines) — PowerShell-native installer
+  mirroring `install.sh` step-for-step. Parameters: `-Prefix`, `-Branch`,
+  `-DryRun`, `-NoBackup`, `-Help`. Walks Windows-specific node
+  resolution chain (`Get-Command node` → nvm `$env:APPDATA\nvm\<latest>`
+  → Volta `$env:LOCALAPPDATA\Volta\bin` → `${env:ProgramFiles}\nodejs`).
+  Writes `~/.claude/prism.env` as **UTF-8 NO BOM** via
+  `[System.IO.File]::WriteAllBytes` + `UTF8Encoding($false)` —
+  preserves Windows backslashes and avoids the v2.7.2 BOM trap. Uses
+  `Join-Path` for all path building, `Set-StrictMode -Version Latest`,
+  per-step `try/catch` with `$CurrentStep` tracking. Compatible with
+  PowerShell 5.1 (Windows default) and PowerShell 7+ (cross-platform).
+
+- **`scripts/uninstall.ps1`** (537 lines) — PowerShell-native uninstaller
+  mirroring `uninstall.sh`. Parameters: `-Purge`, `-KeepMemory`,
+  `-NoBackup`, `-Reinstall <path>`, `-Help`. **DRY-RUN by default**
+  (inverted vs install.ps1 — same safety stance as the .sh). Surgically
+  removes 16 PRISM hooks + 14 commands + 8 skill directories
+  (enumerated by name, never glob) + 3 core agents (by exact filename
+  — never glob `agents/`) + tools + statusline + state files. Edits
+  `~/.claude/settings.json` via inline node heredoc using single-quoted
+  `@'...'@` to prevent PowerShell variable interpolation in the JS
+  block. Idempotent.
+
+### Documentation
+
+- README + INSTALL.md + UNINSTALL.md updated to show both invocation
+  options (PowerShell-native vs bash-via-Git-Bash). Pure-PowerShell
+  users no longer need Git Bash for either install or uninstall.
+
+### Tests
+
+- `tests/v3/run-static.sh`: new Category v3.4 with 6 assertions
+  verifying both `.ps1` files exist + balance check + parameter
+  documentation.
+- `tests/v3/run-claude.md`: new Category 23 with manual round-trip
+  prompts for testing the PowerShell-native lifecycle on Windows.
+
+### Mechanics
+
+Manifest 3.3.0 → 3.4.0. install-merge §4d auto-stamps update-log.
+Hook count unchanged at 16. Manifest entries unchanged at 84
+(both `.ps1` files are repo-level scripts like their `.sh`
+counterparts, not copied to ~/.claude/).
+
+Process note: SA1 (install.ps1 subagent) timed out twice on API
+stream-idle, then was blocked by mutation-guard from inside its
+subagent context (sentinel inherited haiku from short-prompt
+classification). Recovered via parent-as-orchestrator execution
+under user `!opus-force:` override. SA2 (uninstall.ps1) completed
+cleanly at 537 lines on first attempt. Ships clean despite the
+workflow friction.
+
 ## [3.3.0] - 2026-04-25
 
 Productization release: ships the missing automated uninstaller. Closes

@@ -125,9 +125,16 @@ Claude will restore your most recent `~/.claude/backups/pre-prism-<timestamp>/` 
 
 ## Uninstall
 
+**bash (Linux / macOS / Git Bash on Windows):**
 ```bash
 bash scripts/uninstall.sh           # DRY-RUN (default — safe preview)
 bash scripts/uninstall.sh --purge   # actually remove PRISM
+```
+
+**PowerShell-native (Windows, no Git Bash needed) — v3.4+:**
+```powershell
+.\scripts\uninstall.ps1             # DRY-RUN (default — safe preview)
+.\scripts\uninstall.ps1 -Purge      # actually remove PRISM
 ```
 
 See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient state → full uninstall → reinstall chain), recovery from accidental purge, and flag reference.

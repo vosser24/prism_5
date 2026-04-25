@@ -534,8 +534,30 @@ cp -pr "$LATEST"/* ~/.claude/
 
 See [UNINSTALL.md](UNINSTALL.md) for the full procedure. Quick reference:
 
+**bash (Linux / macOS / Git Bash on Windows):**
 ```bash
 bash scripts/uninstall.sh           # DRY-RUN preview (default — safe)
 bash scripts/uninstall.sh --purge   # actually remove PRISM
 bash scripts/uninstall.sh --help    # all flags
+```
+
+**PowerShell-native (Windows, no Git Bash needed) — v3.4+:**
+```powershell
+.\scripts\uninstall.ps1             # DRY-RUN preview (default — safe)
+.\scripts\uninstall.ps1 -Purge      # actually remove PRISM
+.\scripts\uninstall.ps1 -Help       # all parameters
+```
+
+## One-line install (alternative to manual procedure above)
+
+**bash:**
+```bash
+bash scripts/install.sh             # full install
+bash scripts/install.sh --dry-run   # preview only
+```
+
+**PowerShell-native (v3.4+):**
+```powershell
+.\scripts\install.ps1               # full install
+.\scripts\install.ps1 -DryRun       # preview only
 ```

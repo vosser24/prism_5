@@ -19,10 +19,18 @@ Restart Claude Code. Reinstallation NOT needed.
 
 ## Tier 2 — Full uninstall (preserves Claude Code + your custom agents + global CLAUDE.md)
 
+**bash (Linux / macOS / Git Bash on Windows):**
 ```bash
 cd /path/to/PRISM
 bash scripts/uninstall.sh                      # DRY-RUN (default — safe)
 bash scripts/uninstall.sh --purge              # actually delete
+```
+
+**PowerShell-native (Windows, no Git Bash needed) — v3.4+:**
+```powershell
+cd C:\path\to\PRISM
+.\scripts\uninstall.ps1                        # DRY-RUN (default — safe)
+.\scripts\uninstall.ps1 -Purge                 # actually delete
 ```
 
 The script:
@@ -39,8 +47,14 @@ The script:
 
 ## Tier 3 — Reinstall in one command
 
+**bash:**
 ```bash
 bash scripts/uninstall.sh --purge --reinstall /path/to/PRISM
+```
+
+**PowerShell:**
+```powershell
+.\scripts\uninstall.ps1 -Purge -Reinstall C:\path\to\PRISM
 ```
 
 Does the full uninstall and chains immediately into a fresh install. Useful for upgrading from a corrupted state, or testing that PRISM still installs cleanly on your machine.

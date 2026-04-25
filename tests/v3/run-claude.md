@@ -524,3 +524,56 @@ bash scripts/uninstall.sh --purge --reinstall ~/PRISM
 
 ### T22.6 — settings.json surgery preserves non-PRISM hooks
 Before uninstall, manually add a custom non-PRISM hook entry to `~/.claude/settings.json` (e.g., a personal logging hook). Run `--purge`. Verify the custom entry is still there afterward; only PRISM hook entries removed.
+
+---
+
+## Category 23 — PowerShell-native lifecycle (v3.4+, Windows)
+
+Windows users with PowerShell 5.1+ no longer need Git Bash. Both
+`install.ps1` and `uninstall.ps1` ship as native PowerShell.
+
+### T23.1 — install.ps1 -Help works
+```powershell
+.\scripts\install.ps1 -Help
+```
+**Expected**: usage block lists all 5 parameters: `-Prefix`, `-Branch`, `-DryRun`, `-NoBackup`, `-Help`. Exit 0.
+
+### T23.2 — install.ps1 -DryRun mutates nothing
+```powershell
+.\scripts\install.ps1 -DryRun
+```
+**Expected**: prints plan + would-do lines; ~/.claude/ is unchanged. Diff `Get-ChildItem -Recurse $env:USERPROFILE\.claude` before/after — should be identical.
+
+### T23.3 — uninstall.ps1 -Help works
+```powershell
+.\scripts\uninstall.ps1 -Help
+```
+**Expected**: usage block lists all 5 parameters: `-Purge`, `-KeepMemory`, `-NoBackup`, `-Reinstall <path>`, `-Help`.
+
+### T23.4 — uninstall.ps1 default mode is DRY-RUN
+```powershell
+.\scripts\uninstall.ps1
+```
+**Expected**: prints inventory + would-delete lines; ~/.claude/ is unchanged. INVERTED default vs install.ps1 — same safety stance as the .sh.
+
+### T23.5 — Full PowerShell round-trip on throwaway HOME
+```powershell
+$bk = $env:USERPROFILE
+$env:USERPROFILE = "$env:TEMP\prism-test-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
+.\scripts\install.ps1 -NoBackup
+.\scripts\uninstall.ps1 -Purge -NoBackup
+Test-Path "$env:USERPROFILE\.claude\hooks\prism-mutation-guard.mjs"
+.\scripts\install.ps1 -NoBackup
+node scripts\verify.mjs
+$env:USERPROFILE = $bk
+```
+**Expected**: install OK → uninstall removes hooks (`Test-Path` returns False) → reinstall OK → verify clean.
+
+### T23.6 — UTF-8 NO BOM check on prism.env
+After install.ps1 runs:
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("$env:USERPROFILE\.claude\prism.env")
+$bytes[0..2] -join ','
+```
+**Expected**: NOT `239,187,191` (BOM absent). Closes the v2.7.2 BOM trap.

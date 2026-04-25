@@ -255,6 +255,40 @@ rm -f "$HOME/.claude/.uninstall-test-marker"
 # POSIX syntax check
 sh -n "$REPO/scripts/uninstall.sh" 2>/dev/null && pass "T_v3.3.6 uninstall.sh POSIX syntax check" || fail "T_v3.3.6 POSIX syntax fail"
 
+# ============================================================
+# Category v3.4 — PowerShell-native lifecycle (NEW in v3.4.0)
+# ============================================================
+section "Category v3.4 — PowerShell scripts"
+
+# install.ps1 exists
+[ -f "$REPO/scripts/install.ps1" ] && pass "T_v3.4.1 install.ps1 exists" || fail "T_v3.4.1 install.ps1 missing"
+
+# uninstall.ps1 exists
+[ -f "$REPO/scripts/uninstall.ps1" ] && pass "T_v3.4.2 uninstall.ps1 exists" || fail "T_v3.4.2 uninstall.ps1 missing"
+
+# install.ps1 brace balance (count occurrences, not lines)
+INST_OPEN=$(grep -o '{' "$REPO/scripts/install.ps1" 2>/dev/null | wc -l)
+INST_CLOSE=$(grep -o '}' "$REPO/scripts/install.ps1" 2>/dev/null | wc -l)
+[ "$INST_OPEN" = "$INST_CLOSE" ] && pass "T_v3.4.3 install.ps1 braces balanced ($INST_OPEN/$INST_CLOSE)" || fail "T_v3.4.3 install.ps1 brace mismatch ($INST_OPEN open, $INST_CLOSE close)"
+
+# uninstall.ps1 brace balance
+UN_OPEN=$(grep -o '{' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
+UN_CLOSE=$(grep -o '}' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
+[ "$UN_OPEN" = "$UN_CLOSE" ] && pass "T_v3.4.4 uninstall.ps1 braces balanced ($UN_OPEN/$UN_CLOSE)" || fail "T_v3.4.4 uninstall.ps1 brace mismatch ($UN_OPEN open, $UN_CLOSE close)"
+
+# install.ps1 has all 5 documented parameters
+for p in 'Prefix' 'Branch' 'DryRun' 'NoBackup' 'Help'; do
+  grep -qF -- "-$p" "$REPO/scripts/install.ps1" && pass "T_v3.4.5 install.ps1 documents -$p" || fail "T_v3.4.5 install.ps1 missing -$p"
+done
+
+# uninstall.ps1 has all 5 documented parameters
+for p in 'Purge' 'KeepMemory' 'NoBackup' 'Reinstall' 'Help'; do
+  grep -qF -- "-$p" "$REPO/scripts/uninstall.ps1" && pass "T_v3.4.6 uninstall.ps1 documents -$p" || fail "T_v3.4.6 uninstall.ps1 missing -$p"
+done
+
+# UTF-8 no-BOM idiom present in install.ps1 (the v2.7.2 trap closer)
+grep -q "UTF8Encoding" "$REPO/scripts/install.ps1" && pass "T_v3.4.7 install.ps1 uses UTF-8-no-BOM idiom for prism.env" || fail "T_v3.4.7 install.ps1 missing UTF-8-no-BOM writer"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do
