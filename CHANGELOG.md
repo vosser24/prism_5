@@ -4,6 +4,87 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.5.0] - 2026-04-25
+
+Plugin-packaging release. PRISM now ships as a first-class Claude Code
+plugin (`/plugin install prism@PRISM`). Closes G1 from the v3.4.0
+cheat-sheet structural audit — eliminates the clone+install-merge
+ceremony for end users while preserving the manual install path
+unchanged for developers.
+
+### Added
+
+- **`.claude-plugin/plugin.json`** — Claude Code plugin manifest at
+  repo root. Declares all 16 hooks across the 8 lifecycle events
+  (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse,
+  SubagentStop, Stop, ConfigChange, PreCompact) using
+  `${CLAUDE_PLUGIN_ROOT}` for plugin-relative paths. Skills, commands,
+  and agents are auto-discovered from the standard `skills/`,
+  `commands/`, `agents/` directories per plugin convention.
+
+- **Plugin-install path** — primary install method documented in
+  README:
+  ```
+  /plugin marketplace add vosser24/PRISM
+  /plugin install prism@PRISM
+  ```
+  Hooks, skills, commands, agents register automatically. No
+  `settings.fragment.json` merge needed for plugin users. No
+  `prism-exec.sh`/`prism-exec.cmd` wrapper (plugin manifest invokes
+  `node` directly).
+
+- **Plugin uninstall path** — `/plugin uninstall prism@PRISM` is
+  symmetric; Claude Code drops hooks/skills/commands/agents. Manual
+  Tier 1 cleanup of transient state files (`.prism-turn-tier-*.json`)
+  is documented because those live outside `${CLAUDE_PLUGIN_DATA}`
+  for compatibility with the legacy install path.
+
+### Documentation
+
+- README.md — top-level Install section now leads with plugin install,
+  manual clone+install.sh as labeled alternative.
+- INSTALL.md — top callout pointing users to `/plugin install` first;
+  manual procedure preserved as the legacy/developer path.
+- UNINSTALL.md — top section showing `/plugin uninstall prism@PRISM`;
+  manual uninstall.sh path preserved below.
+
+### Tests
+
+- `tests/v3/run-static.sh`: new Category v3.5 with assertions
+  verifying `.claude-plugin/plugin.json` exists, parses cleanly, has
+  required fields (name/version/description/hooks), version matches
+  `manifest.json`, and declares all 16 hooks across 8 events.
+- `scripts/verify.mjs` extended to check plugin manifest presence
+  alongside the legacy file checks.
+
+### Migration
+
+Existing manual installs keep working unchanged. To migrate from
+manual to plugin-install: run `bash scripts/uninstall.sh --purge`
+first, then inside Claude Code `/plugin install prism@PRISM`. Plugin
+users no longer need `prism.env` (plugin runtime resolves node
+automatically).
+
+### Limitations (vs manual install)
+
+- Plugin install does NOT scaffold `~/.claude/skills/prism-plan/references/roster.json`
+  with team_id defaults. Run `/prism-roster --reconcile` after
+  install to populate.
+- Plugin install does NOT auto-write `~/.claude/prism.env` because
+  plugin manifest invokes node via `${CLAUDE_PLUGIN_ROOT}` directly
+  (no need). If you previously had `ANTHROPIC_API_KEY` in prism.env
+  from pre-v3.2.0, that file is no longer read — see CHANGELOG
+  v3.2.0 for context.
+- Some legacy state files live outside `${CLAUDE_PLUGIN_DATA}` for
+  cross-install-method compatibility. Plugin uninstall does not
+  remove them; run Tier 1 cleanup manually if desired.
+
+### Mechanics
+
+Manifest 3.4.0 → 3.5.0. install-merge §4d auto-stamps update-log for
+manual-install users. settings.fragment.json unchanged (still used
+by the manual install path).
+
 ## [3.4.0] - 2026-04-25
 
 Windows-native productization release. Ships PowerShell-native ports of

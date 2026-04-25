@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM install merger (v3.4.0)
+// PRISM install merger (v3.5.0)
 //
 // Replaces the inline `node -e "..."` approach in INSTALL.md §4. The inline
 // form hit three escape-handling traps on Windows+git-bash during the v2.7.2
@@ -331,7 +331,7 @@ function stampUpdateLog() {
 }
 
 function main() {
-  log(`PRISM install merger (v3.4.0) — platform=${platform()}`);
+  log(`PRISM install merger (v3.5.0) — platform=${platform()}`);
   log(`Reading fragment from: ${resolve(process.cwd(), 'settings.fragment.json')}`);
   log(`Writing settings to:   ${SETTINGS_PATH}`);
 

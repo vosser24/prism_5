@@ -289,6 +289,73 @@ done
 # UTF-8 no-BOM idiom present in install.ps1 (the v2.7.2 trap closer)
 grep -q "UTF8Encoding" "$REPO/scripts/install.ps1" && pass "T_v3.4.7 install.ps1 uses UTF-8-no-BOM idiom for prism.env" || fail "T_v3.4.7 install.ps1 missing UTF-8-no-BOM writer"
 
+# ============================================================
+# Category v3.5 — Plugin packaging (NEW in v3.5.0)
+# ============================================================
+section "Category v3.5 — Plugin packaging"
+
+PLUGIN_JSON="$REPO/.claude-plugin/plugin.json"
+
+# T_v3.5.1 — manifest exists at canonical path
+[ -f "$PLUGIN_JSON" ] && pass "T_v3.5.1 .claude-plugin/plugin.json exists" || fail "T_v3.5.1 .claude-plugin/plugin.json missing"
+
+# T_v3.5.2 — valid JSON
+node -e "JSON.parse(require('fs').readFileSync('$PLUGIN_JSON','utf-8'))" 2>/dev/null && pass "T_v3.5.2 plugin.json is valid JSON" || fail "T_v3.5.2 plugin.json fails JSON.parse"
+
+# T_v3.5.3 — required schema fields present (name is the only schema-required field; we also require version+description+hooks)
+node -e "
+const j=JSON.parse(require('fs').readFileSync('$PLUGIN_JSON','utf-8'));
+const missing=[];
+for(const k of ['name','version','description','hooks']) if(!j[k]) missing.push(k);
+if(missing.length) { console.error('missing:',missing.join(',')); process.exit(1); }
+if(!/^[a-z0-9]+(-[a-z0-9]+)*\$/.test(j.name)) { console.error('name not kebab-case:',j.name); process.exit(1); }
+" 2>/dev/null && pass "T_v3.5.3 plugin.json has required fields (name kebab-case, version, description, hooks)" || fail "T_v3.5.3 plugin.json missing required fields"
+
+# T_v3.5.4 — version matches manifest.json
+PLUGIN_VER=$(node -e "console.log(require('$PLUGIN_JSON').version)")
+MANIFEST_VER=$(node -e "console.log(require('$REPO/manifest.json').version)")
+[ "$PLUGIN_VER" = "$MANIFEST_VER" ] && pass "T_v3.5.4 plugin.json version ($PLUGIN_VER) matches manifest.json ($MANIFEST_VER)" || fail "T_v3.5.4 version mismatch: plugin.json=$PLUGIN_VER manifest.json=$MANIFEST_VER"
+
+# T_v3.5.5 — declares non-empty hooks across the canonical lifecycle events
+node -e "
+const j=JSON.parse(require('fs').readFileSync('$PLUGIN_JSON','utf-8'));
+const need=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','SubagentStop','Stop'];
+const missing=need.filter(e=>!Array.isArray(j.hooks[e])||j.hooks[e].length===0);
+if(missing.length){console.error('missing events:',missing.join(','));process.exit(1)}
+" 2>/dev/null && pass "T_v3.5.5 plugin.json declares all 6 core lifecycle events" || fail "T_v3.5.5 plugin.json missing core lifecycle events"
+
+# T_v3.5.6 — all hook commands reference \${CLAUDE_PLUGIN_ROOT} (plugin-relative)
+node -e "
+const j=JSON.parse(require('fs').readFileSync('$PLUGIN_JSON','utf-8'));
+let bad=0;
+for(const ev of Object.keys(j.hooks||{})) for(const grp of j.hooks[ev]||[]) for(const h of grp.hooks||[]) {
+  if(h.type==='command' && h.command && !h.command.includes('\${CLAUDE_PLUGIN_ROOT}')) bad++;
+}
+if(bad) { console.error('non-plugin-rooted commands:',bad); process.exit(1) }
+" 2>/dev/null && pass "T_v3.5.6 every hook command uses \${CLAUDE_PLUGIN_ROOT}" || fail "T_v3.5.6 some hook commands hardcode paths"
+
+# T_v3.5.7 — every plugin-rooted hook script actually exists in repo
+MISSING_HOOKS=$(node -e "
+const fs=require('fs'),path=require('path');
+const j=JSON.parse(fs.readFileSync('$PLUGIN_JSON','utf-8'));
+const miss=[];
+for(const ev of Object.keys(j.hooks||{})) for(const grp of j.hooks[ev]||[]) for(const h of grp.hooks||[]) {
+  if(h.type!=='command'||!h.command) continue;
+  const m=h.command.match(/\\\${CLAUDE_PLUGIN_ROOT}\/(\\S+)/);
+  if(m) { const rel=m[1]; if(!fs.existsSync(path.join('$REPO',rel))) miss.push(rel); }
+}
+console.log(miss.join('\\n'));")
+if [ -z "$MISSING_HOOKS" ]; then pass "T_v3.5.7 all plugin.json hook scripts exist in repo"; else fail "T_v3.5.7 missing hook scripts: $MISSING_HOOKS"; fi
+
+# T_v3.5.8 — name is lowercase kebab-case "prism"
+PLUGIN_NAME=$(node -e "console.log(require('$PLUGIN_JSON').name)")
+[ "$PLUGIN_NAME" = "prism" ] && pass "T_v3.5.8 plugin.json name = 'prism'" || fail "T_v3.5.8 plugin.json name = '$PLUGIN_NAME' (expected 'prism')"
+
+# T_v3.5.9 — repo conventional component dirs exist (auto-discovered when plugin.json omits skills/commands/agents keys)
+[ -d "$REPO/skills" ] && pass "T_v3.5.9 skills/ at plugin root" || fail "T_v3.5.9 skills/ missing"
+[ -d "$REPO/commands" ] && pass "T_v3.5.9 commands/ at plugin root" || fail "T_v3.5.9 commands/ missing"
+[ -d "$REPO/agents" ] && pass "T_v3.5.9 agents/ at plugin root" || fail "T_v3.5.9 agents/ missing"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

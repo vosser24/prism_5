@@ -1,6 +1,8 @@
 # PRISM Installation Instructions (for Claude Code)
 
-This document is the authoritative install procedure. A user on a fresh machine can open Claude Code in any project and say:
+> **Most users should use `/plugin install prism@PRISM` instead of the manual procedure below — see [README.md](README.md#install). This document is the manual install reference for users who want full control or who are developing PRISM itself.** As of v3.5.0 PRISM ships as a Claude Code plugin (`.claude-plugin/plugin.json`); plugin install eliminates the backup → file-copy → settings-merge ceremony that this document describes.
+
+This document is the authoritative *manual* install procedure. A user on a fresh machine can open Claude Code in any project and say:
 
 > **"Clone https://github.com/vosser24/PRISM, read INSTALL.md, and follow it exactly."**
 

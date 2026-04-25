@@ -18,13 +18,28 @@ Three pain points specific to heavy Claude Code users:
 
 **Specialist dispatch** — `/prism-index` populates a unified roster of installed agents/skills/tools/MCPs. `blueprint-prompt` queries the index BEFORE assembling a panel, so real specialists replace generic personas.
 
-## One-line install
+## Install
+
+PRISM ships as a first-class Claude Code plugin (v3.5.0+). Two install paths — pick one.
+
+### Recommended: plugin install (one-liner inside Claude Code)
+
+```text
+/plugin marketplace add vosser24/PRISM
+/plugin install prism@PRISM
+```
+
+Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are namespaced under the plugin (e.g. `/prism:prism-plan`) and registered automatically — no `settings.fragment.json` merge, no manual file copy. To update later: `/plugin update prism@PRISM`. To remove: `/plugin uninstall prism@PRISM`.
+
+> **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
+
+### Alternative: clone + install script
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/vosser24/PRISM/main/scripts/install.sh | bash
 ```
 
-(Or clone manually — see [Manual install](#manual-install) below.)
+(Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
 
 ## Status — works / half-works / known-gaps (v3.1.0)
 

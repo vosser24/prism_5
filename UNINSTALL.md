@@ -1,6 +1,22 @@
 # Uninstalling PRISM
 
-PRISM ships an automated uninstaller. Three usage levels depending on how deep you want to go.
+## Plugin install — one-liner (v3.5.0+)
+
+If you installed PRISM via `/plugin install prism@PRISM`, removing it is symmetric:
+
+```text
+/plugin uninstall prism@PRISM
+```
+
+Claude Code drops the plugin from your enabled list, removes the cache directory under `~/.claude/plugins/cache/`, and unregisters all hooks, skills, commands, and agents PRISM declared in `plugin.json`. Pass `--keep-data` if you want to preserve any state PRISM stored under `${CLAUDE_PLUGIN_DATA}` (e.g., for a fresh reinstall later). After uninstall, run `/reload-plugins` to drop hook registrations from the running session.
+
+> **Note**: PRISM-specific transient state files (`~/.claude/.prism-turn-tier-*.json`, `.prism-routing.jsonl`, etc.) live outside `${CLAUDE_PLUGIN_DATA}` because they predate the plugin packaging. To clean those, run the Tier 1 commands below.
+
+---
+
+## Manual install — automated uninstaller
+
+The sections below cover users who installed PRISM via the legacy clone-and-script path. PRISM ships an automated uninstaller. Three usage levels depending on how deep you want to go.
 
 ## Tier 1 — Just clean stale state (fixes 90% of "stale file" issues)
 

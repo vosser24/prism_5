@@ -1,7 +1,7 @@
 {
   "name": "PRISM",
-  "version": "3.4.0",
-  "description": "Framework for optimizing Claude Code - modular install",
+  "version": "3.5.0",
+  "description": "Framework for optimizing Claude Code - modular install (manual path; see .claude-plugin/plugin.json for plugin install)",
   "claude_home": "~/.claude",
   "files": [
     {

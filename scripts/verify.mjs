@@ -132,6 +132,44 @@ else {
   warnings++;
 }
 
+// --- Plugin manifest (v3.5.0+) ---
+// .claude-plugin/plugin.json lives in the REPO, not in ~/.claude. We check
+// repo-relative path. Skip if running outside repo (manifestPath null path).
+if (manifestPath) {
+  const repoRoot = resolve(manifestPath, '..');
+  const pluginManifest = join(repoRoot, '.claude-plugin', 'plugin.json');
+  checked++;
+  if (existsSync(pluginManifest)) {
+    try {
+      const pj = JSON.parse(readFileSync(pluginManifest, 'utf-8'));
+      const requiredFields = ['name', 'version', 'description', 'hooks'];
+      const missingField = requiredFields.find(f => pj[f] === undefined);
+      if (missingField) {
+        console.log(`  WARN  plugin.json missing required field: ${missingField}`);
+        warnings++;
+      } else {
+        // Cross-check version against manifest.json (re-read; outer `manifest`
+        // is scoped to a sibling branch).
+        let repoManifestVer = null;
+        try { repoManifestVer = JSON.parse(readFileSync(manifestPath, 'utf-8')).version; }
+        catch { /* already errored above */ }
+        if (repoManifestVer && pj.version !== repoManifestVer) {
+          console.log(`  WARN  plugin.json version (${pj.version}) does not match manifest.json (${repoManifestVer})`);
+          warnings++;
+        } else {
+          console.log(`  OK  .claude-plugin/plugin.json present + valid (v${pj.version}, ${Object.keys(pj.hooks || {}).length} hook events)`);
+        }
+      }
+    } catch (err) {
+      console.log(`  FAIL  .claude-plugin/plugin.json invalid JSON: ${err.message}`);
+      failed++;
+    }
+  } else {
+    console.log('  HINT  .claude-plugin/plugin.json absent — plugin install path unavailable. Run via manual install only.');
+    warnings++;
+  }
+}
+
 // --- Summary ---
 console.log('');
 console.log(`Checked: ${checked} files + settings.json + prism.env`);
