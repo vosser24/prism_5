@@ -4,6 +4,65 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.3.0] - 2026-04-25
+
+Productization release: ships the missing automated uninstaller. Closes
+the symmetry gap with v3.1's `scripts/install.sh` — PRISM now has both
+ends of the install lifecycle as one-command operations.
+
+### Added
+
+- **`scripts/uninstall.sh`** — POSIX one-command uninstaller mirroring
+  install.sh shape. Modes:
+  - default = **DRY-RUN** (safe; prints what would be deleted, mutates
+    nothing). Inverted default vs install.sh because uninstall is
+    destructive — `--purge` flag is REQUIRED to actually delete.
+  - `--purge` — actually performs deletion
+  - `--keep-memory` — preserve `.prism-sessions/` and `.prism-rollups/`
+    (session memory + weekly rollups)
+  - `--no-backup` — skip the pre-uninstall backup (NOT recommended)
+  - `--reinstall <repo-path>` — chains uninstall → install in one run
+  - `--help` — usage
+
+  Surgically removes: 16 PRISM hooks + 14 PRISM commands + 8
+  PRISM-owned skill directories (enumerated by name, never glob) + 3
+  PRISM core agents (by exact filename — never glob `agents/`) + tools
+  + statusline + state files. Edits `~/.claude/settings.json` to
+  remove only PRISM hook entries (preserves user/plugin entries +
+  MCP servers + permissions). Pre-uninstall backup at
+  `~/.claude/backups/pre-uninstall-<ts>/` unless `--no-backup`.
+
+- **`UNINSTALL.md`** at repo root — full documentation: tiered
+  cleanup procedure (state-only → full uninstall → reinstall chain →
+  recovery from accidental --purge). Flag reference, when-to-use-which
+  decision table.
+
+- **README + INSTALL.md updates** — both link to UNINSTALL.md and
+  show the one-command default-DRY-RUN preview.
+
+### Tests
+
+- `tests/v3/run-static.sh`: new Category v3.3 section with 6
+  assertions (uninstall.sh exists + executable, --help works,
+  default mode is DRY-RUN preserves a marker file, --purge flag
+  documented, --keep-memory flag documented, POSIX syntax check).
+- `tests/v3/run-claude.md`: new Category 22 with 6 manual prompts
+  for testing uninstall + reinstall round-trip on a throwaway HOME.
+
+### Mechanics
+
+Manifest 3.2.0 → 3.3.0. install-merge §4d auto-stamps update-log.
+Hook count unchanged at 16. settings.fragment.json unchanged.
+Manifest entries unchanged at 84 (uninstall.sh is a repo-level
+script like install.sh, not copied to ~/.claude/).
+
+### Migration
+
+Zero migration needed. Additive release. Existing v3.2.0 installs
+that pull + run install-merge get §4d auto-stamp 3.2.0 → 3.3.0.
+The new uninstall.sh is available immediately from the repo —
+no deployment to ~/.claude/ needed.
+
 ## [3.2.0] - 2026-04-25
 
 Classifier architecture simplification. Per direct user feedback: PRISM

@@ -229,6 +229,32 @@ grep -q "conversation-model-override" hooks/prism-prompt-tier-router.mjs && pass
 
 ! grep -q "ANTHROPIC_API_KEY" INSTALL.md README.md commands/*.md && pass "T_v3.2.4 docs no longer mention ANTHROPIC_API_KEY" || fail "T_v3.2.4 docs still mention ANTHROPIC_API_KEY"
 
+# ============================================================
+# Category v3.3 — Uninstaller (NEW in v3.3.0)
+# ============================================================
+section "Category v3.3 — Uninstaller"
+
+# uninstall.sh exists + executable
+[ -x "$REPO/scripts/uninstall.sh" ] && pass "T_v3.3.1 uninstall.sh exists and is +x" || fail "T_v3.3.1 uninstall.sh missing or not executable"
+
+# --help works
+"$REPO/scripts/uninstall.sh" --help >/dev/null 2>&1 && pass "T_v3.3.2 uninstall.sh --help works" || fail "T_v3.3.2 uninstall.sh --help fails"
+
+# Default mode is DRY-RUN — must NOT mutate the test HOME's ~/.claude/
+touch "$HOME/.claude/.uninstall-test-marker"
+"$REPO/scripts/uninstall.sh" >/dev/null 2>&1 || true
+[ -f "$HOME/.claude/.uninstall-test-marker" ] && pass "T_v3.3.3 uninstall.sh default mode is DRY-RUN (marker survived)" || fail "T_v3.3.3 default mode mutated state (marker deleted)"
+rm -f "$HOME/.claude/.uninstall-test-marker"
+
+# --purge flag documented
+"$REPO/scripts/uninstall.sh" --help 2>&1 | grep -q -- "--purge" && pass "T_v3.3.4 uninstall.sh --purge flag in --help" || fail "T_v3.3.4 --purge missing from --help"
+
+# --keep-memory flag documented
+"$REPO/scripts/uninstall.sh" --help 2>&1 | grep -q -- "--keep-memory" && pass "T_v3.3.5 uninstall.sh --keep-memory flag in --help" || fail "T_v3.3.5 --keep-memory missing from --help"
+
+# POSIX syntax check
+sh -n "$REPO/scripts/uninstall.sh" 2>/dev/null && pass "T_v3.3.6 uninstall.sh POSIX syntax check" || fail "T_v3.3.6 POSIX syntax fail"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

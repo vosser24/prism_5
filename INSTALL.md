@@ -527,3 +527,15 @@ cp -pr "$LATEST"/* ~/.claude/
 - **No network beyond the clone step.** Everything after `git clone` is local filesystem work.
 - **Safe to re-run.** All steps are idempotent. Running this install twice is a no-op.
 - **Node discovery is belt-and-braces.** Step 2.5 pins node in `prism.env` so hooks have a fast path; the `prism-exec.sh` / `prism-exec.cmd` wrappers also auto-discover nvm/fnm/volta/asdf/homebrew locations at runtime as a fallback. Users can override with `PRISM_NODE=/path/to/node` in their shell env.
+
+---
+
+## Uninstalling
+
+See [UNINSTALL.md](UNINSTALL.md) for the full procedure. Quick reference:
+
+```bash
+bash scripts/uninstall.sh           # DRY-RUN preview (default — safe)
+bash scripts/uninstall.sh --purge   # actually remove PRISM
+bash scripts/uninstall.sh --help    # all flags
+```

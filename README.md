@@ -123,9 +123,18 @@ Claude will restore your most recent `~/.claude/backups/pre-prism-<timestamp>/` 
 - `git`
 - Optional: `notebooklm` CLI (for KB cloud search), `gh` CLI
 
+## Uninstall
+
+```bash
+bash scripts/uninstall.sh           # DRY-RUN (default — safe preview)
+bash scripts/uninstall.sh --purge   # actually remove PRISM
+```
+
+See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient state → full uninstall → reinstall chain), recovery from accidental purge, and flag reference.
+
 ## Contributing
 
-Issues and PRs welcome at https://github.com/vosser24/PRISM. Before submitting, run `tests/v3/run-static.sh` and ensure 37/37 assertions pass.
+Issues and PRs welcome at https://github.com/vosser24/PRISM. Before submitting, run `tests/v3/run-static.sh` and ensure all assertions pass (76/76 as of v3.3.0).
 
 ## License
 

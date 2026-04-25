@@ -480,3 +480,47 @@ node tests/v3/analyze-log.mjs ~/.claude/.prism-routing.jsonl >> v3-report-<date>
 ```
 
 The analyzer extracts routing decisions, guard fires, force-overrides, and tier distribution from the JSONL log and produces a structured summary.
+
+---
+
+## Category 22 — Automated uninstaller (v3.3+)
+
+### T22.1 — Help works
+```
+bash scripts/uninstall.sh --help
+```
+**Expected**: usage block lists all 5 flags (`--purge`, `--keep-memory`, `--no-backup`, `--reinstall`, `--help`).
+
+### T22.2 — Default mode is DRY-RUN, mutates nothing
+```
+bash scripts/uninstall.sh
+```
+**Expected**: prints inventory + "would delete" lines for every PRISM artifact. `~/.claude/` is unchanged. Diff `ls -la ~/.claude/hooks/` before vs after — should be identical.
+
+### T22.3 — Real uninstall + reinstall round-trip on throwaway HOME
+```
+mkdir -p /tmp/test-uninstall
+HOME=/tmp/test-uninstall bash scripts/install.sh --no-backup
+HOME=/tmp/test-uninstall bash scripts/uninstall.sh --purge --no-backup
+ls -la /tmp/test-uninstall/.claude/hooks/   # expect: no prism-* files
+HOME=/tmp/test-uninstall bash scripts/install.sh --no-backup
+HOME=/tmp/test-uninstall node scripts/verify.mjs
+```
+**Expected**: install OK → uninstall removes PRISM hooks → reinstall OK → verify clean.
+
+### T22.4 — `--keep-memory` preserves session data
+After install + populating `.prism-sessions/` via real Claude Code use:
+```
+bash scripts/uninstall.sh --purge --keep-memory
+ls ~/.claude/.prism-sessions/
+```
+**Expected**: session files still present; everything else removed.
+
+### T22.5 — `--reinstall` chain
+```
+bash scripts/uninstall.sh --purge --reinstall ~/PRISM
+```
+**Expected**: uninstall completes, then `install.sh` runs immediately. End state: clean reinstall from scratch.
+
+### T22.6 — settings.json surgery preserves non-PRISM hooks
+Before uninstall, manually add a custom non-PRISM hook entry to `~/.claude/settings.json` (e.g., a personal logging hook). Run `--purge`. Verify the custom entry is still there afterward; only PRISM hook entries removed.
