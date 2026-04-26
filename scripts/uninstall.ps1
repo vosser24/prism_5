@@ -72,7 +72,7 @@ function Show-Usage {
     $usage = @'
 PRISM uninstaller — removes PRISM from ~/.claude/
 
-Usage: .\uninstall.ps1 [-Purge] [-KeepMemory] [-NoBackup] [-Reinstall <path>] [-Help]
+Usage: .\uninstall.ps1 [-Purge] [-KeepMemory] [-NoBackup] [-Reinstall [path]] [-Help]
 
 ! DESTRUCTIVE: -Purge is REQUIRED to actually delete.
 
@@ -82,7 +82,7 @@ Parameters:
   -Purge            Required to actually delete PRISM artifacts.
   -KeepMemory       Preserve .prism-sessions/ and .prism-rollups/ (session memory + rollups).
   -NoBackup         Skip pre-uninstall backup of ~/.claude/ (NOT recommended).
-  -Reinstall <path> Chain uninstall -> install in one run from <path>.
+  -Reinstall [path] Chain uninstall -> install in one run from [path].
   -Help             Print this usage.
 
 Examples:
@@ -93,7 +93,7 @@ Examples:
 
 Steps performed:
   1   Pre-flight: confirm ~/.claude/ exists
-  2   Backup ~/.claude/ -> ~/.claude/backups/pre-uninstall-<ts>/
+  2   Backup ~/.claude/ -> ~/.claude/backups/pre-uninstall-[ts]/
   3   Inventory: count files per category
   4   Remove PRISM hooks
   5   Remove PRISM commands
@@ -203,9 +203,9 @@ try {
         Write-UninstallLog "step 2: SKIPPED (-NoBackup) — not recommended"
         $BackupDir = '(skipped)'
     } else {
-        Write-UninstallLog "step 2: backing up ~/.claude/ -> $BackupDir"
+        Write-UninstallLog "step 2: backing up ~/.claude/ to $BackupDir"
         if ($IsDryRun) {
-            Write-UninstallLog "  DRY-RUN: would: copy [each ~/.claude/* except backups/] -> $BackupDir/"
+            Write-UninstallLog "  DRY-RUN: would: copy [each ~/.claude/* except backups/] to $BackupDir/"
         } else {
             New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
             $entries = Get-ChildItem -LiteralPath $ClaudeDir -Force -ErrorAction SilentlyContinue |

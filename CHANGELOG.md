@@ -4,6 +4,32 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.2] - 2026-04-25
+
+Hotfix: comprehensive `uninstall.ps1` parser-error scrub.
+
+### Fixed
+
+- v3.8.1 patched only line 208's `<each.../>` marker. Windows users
+  reported a follow-on `try {` / missing-`}` parser cascade. Root
+  cause: additional `<...>` markers in `Write-*` strings throughout
+  the file caused PowerShell's strict parser to derail mid-script.
+  v3.8.2 ships a comprehensive scrub: every `<` and `>` inside
+  double-quoted strings is now `[` / `]`. The angle brackets that
+  remain (single-quoted strings, comments, code operators like `>=`)
+  are confirmed safe.
+- Same scrub applied defensively to `install.ps1`.
+
+### Mechanics
+
+Manifest 3.8.1 → 3.8.2. install-merge §4d auto-stamps update-log
+on next run.
+
+### Migration
+
+`git pull && .\scripts\uninstall.ps1` should now parse cleanly.
+Zero state changes.
+
 ## [3.8.1] - 2026-04-25
 
 Hotfix: PowerShell parser error in uninstall.ps1.

@@ -33,11 +33,11 @@ function Write-InstallLog([string]$msg) {
 
 function Show-Help {
     @'
-Usage: .\install.ps1 [-Prefix <dir>] [-Branch <name>] [-DryRun] [-NoBackup] [-Help]
+Usage: .\install.ps1 [-Prefix [dir]] [-Branch [name]] [-DryRun] [-NoBackup] [-Help]
 
 Parameters:
-  -Prefix <dir>     Clone destination (default: $env:USERPROFILE\PRISM)
-  -Branch <name>    Branch to checkout (default: main)
+  -Prefix [dir]     Clone destination (default: $env:USERPROFILE\PRISM)
+  -Branch [name]    Branch to checkout (default: main)
   -DryRun           Print what would happen, mutate nothing
   -NoBackup         Skip pre-install backup of ~/.claude/ (NOT recommended)
   -Help             Print this usage
@@ -92,7 +92,7 @@ function Sync-Repo {
             & git -C $Prefix pull
         }
     } else {
-        Write-InstallLog "  cloning https://github.com/vosser24/PRISM -> $Prefix (branch=$Branch)"
+        Write-InstallLog "  cloning https://github.com/vosser24/PRISM to $Prefix (branch=$Branch)"
         if ($DryRun) {
             Write-InstallLog "  DRY-RUN: git clone --branch `"$Branch`" `"https://github.com/vosser24/PRISM`" `"$Prefix`""
         } else {
@@ -118,7 +118,7 @@ function Backup-ClaudeHome {
         Write-InstallLog "  DRY-RUN: New-Item -ItemType Directory -Force -Path `"$bkp`""
         foreach ($item in @('settings.json','hooks','tools','statusline-command.sh')) {
             $src = Join-Path $env:USERPROFILE ".claude\$item"
-            Write-InstallLog "  DRY-RUN: Copy-Item -Recurse `"$src`" -> `"$bkp`" (if exists)"
+            Write-InstallLog "  DRY-RUN: Copy-Item -Recurse `"$src`" to `"$bkp`" (if exists)"
         }
         return
     }
@@ -228,7 +228,7 @@ function Copy-ManifestFiles {
     }
 
     if ($DryRun) {
-        Write-InstallLog "  DRY-RUN: would copy $($files.Count) manifest entries from $Prefix -> ~/.claude/"
+        Write-InstallLog "  DRY-RUN: would copy $($files.Count) manifest entries from $Prefix to ~/.claude/"
         return
     }
 
