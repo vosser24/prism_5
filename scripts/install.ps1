@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
     [string]$Prefix = (Join-Path $env:USERPROFILE 'PRISM'),
-    [string]$Branch = 'main',
+    [string]$Branch = '',
     [switch]$DryRun,
     [switch]$NoBackup,
     [switch]$Help
@@ -37,7 +37,8 @@ Usage: .\install.ps1 [-Prefix [dir]] [-Branch [name]] [-DryRun] [-NoBackup] [-He
 
 Parameters:
   -Prefix [dir]     Clone destination (default: $env:USERPROFILE\PRISM)
-  -Branch [name]    Branch to checkout (default: main)
+  -Branch [name]    Git branch to clone (default: auto-detect from script's
+                    repo if running from a clone, else 'main')
   -DryRun           Print what would happen, mutate nothing
   -NoBackup         Skip pre-install backup of ~/.claude/ (NOT recommended)
   -Help             Print this usage
@@ -366,7 +367,34 @@ function Write-FinalReport {
 try {
     Write-InstallLog 'PRISM installer starting'
     Write-InstallLog "  prefix=$Prefix"
-    Write-InstallLog "  branch=$Branch"
+
+    $branchSource = 'explicit'
+    if ([string]::IsNullOrEmpty($Branch)) {
+        # Try auto-detect from script's own repo
+        $scriptDir = $PSScriptRoot
+        if (-not $scriptDir) { $scriptDir = Split-Path -Parent $PSCommandPath }
+        $repoRoot = $scriptDir
+        while ($repoRoot -and -not (Test-Path (Join-Path $repoRoot '.git'))) {
+            $parent = Split-Path -Parent $repoRoot
+            if ($parent -eq $repoRoot) { $repoRoot = $null; break }
+            $repoRoot = $parent
+        }
+        if ($repoRoot) {
+            try {
+                $detected = (& git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null).Trim()
+                if ($detected -and $detected -ne 'HEAD') {
+                    $Branch = $detected
+                    $branchSource = 'auto-detected from script repo'
+                }
+            } catch { }
+        }
+        if ([string]::IsNullOrEmpty($Branch)) {
+            $Branch = 'main'
+            $branchSource = 'default; pass -Branch to override'
+        }
+    }
+
+    Write-InstallLog ('  branch=' + $Branch + ' (' + $branchSource + ')')
     Write-InstallLog ('  dry-run=' + [int]$DryRun.IsPresent)
     Write-InstallLog ('  no-backup=' + [int]$NoBackup.IsPresent)
     $platformValue = if ($PSVersionTable.ContainsKey('Platform')) { $PSVersionTable.Platform } else { 'Win32NT' }

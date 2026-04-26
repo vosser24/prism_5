@@ -591,5 +591,22 @@ if bad:
 # T_v3.13.4 install.ps1 has no raw PSVersionTable.OS access
 ! grep -q '\$PSVersionTable\.OS' "$REPO/scripts/install.ps1" && pass "T_v3.13.4 install.ps1 has no raw PSVersionTable.OS access" || fail "T_v3.13.4 install.ps1 has raw PSVersionTable.OS access"
 
+# ============================================================
+# Category v3.14 — Branch auto-detect (NEW in v3.8.9)
+# ============================================================
+section "Category v3.14 — Branch auto-detect"
+
+# T_v3.14.1: install.ps1 contains the string 'auto-detected from script repo'
+grep -q "auto-detected from script repo" "$REPO/scripts/install.ps1" && pass "T_v3.14.1 install.ps1 contains 'auto-detected from script repo'" || fail "T_v3.14.1 install.ps1 missing 'auto-detected from script repo'"
+
+# T_v3.14.2: install.ps1 contains 'rev-parse --abbrev-ref HEAD'
+grep -q "rev-parse --abbrev-ref HEAD" "$REPO/scripts/install.ps1" && pass "T_v3.14.2 install.ps1 contains 'rev-parse --abbrev-ref HEAD'" || fail "T_v3.14.2 install.ps1 missing 'rev-parse --abbrev-ref HEAD'"
+
+# T_v3.14.3: install.sh contains 'auto-detected from script repo'
+grep -q "auto-detected from script repo" "$REPO/scripts/install.sh" && pass "T_v3.14.3 install.sh contains 'auto-detected from script repo'" || fail "T_v3.14.3 install.sh missing 'auto-detected from script repo'"
+
+# T_v3.14.4: install.sh contains 'rev-parse --abbrev-ref HEAD'
+grep -q "rev-parse --abbrev-ref HEAD" "$REPO/scripts/install.sh" && pass "T_v3.14.4 install.sh contains 'rev-parse --abbrev-ref HEAD'" || fail "T_v3.14.4 install.sh missing 'rev-parse --abbrev-ref HEAD'"
+
 # Exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

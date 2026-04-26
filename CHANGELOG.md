@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.9] - 2026-04-26
+### Improved
+- **install.ps1 / install.sh** auto-detect branch from script's own git repo when `-Branch` / `--branch` is not explicitly passed. Prevents the common "step 4 failed: install-merge.mjs missing" trap when the local clone is on a non-main branch but install defaults to main. Falls back to `main` if not running from a git repo. Logs branch source (explicit / auto-detected / default).
+
 ## [3.8.8] - 2026-04-26
 ### Fixed
 - **CRITICAL** install.ps1 runtime failure on Windows PS 5.1 at init step: `$PSVersionTable.Platform` property doesn't exist in PS < 6, throws under StrictMode. Replaced with `$PSVersionTable.ContainsKey('Platform')` hashtable lookup which is safe in both PS 5.1 and PS 7+. Audited install.ps1 + uninstall.ps1 for similar PSVersionTable property accesses.

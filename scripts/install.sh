@@ -12,7 +12,7 @@ set -eu
 
 # --- defaults --------------------------------------------------------------
 PREFIX="${HOME}/PRISM"
-BRANCH="main"
+BRANCH="${BRANCH:-}"
 DRY_RUN=0
 NO_BACKUP=0
 REPO_URL="https://github.com/vosser24/PRISM"
@@ -54,7 +54,8 @@ Usage: bash scripts/install.sh [flags]
 Flags:
   --dry-run         Print the plan without making any changes; exits 0.
   --prefix <dir>    Clone destination (default: ~/PRISM).
-  --branch <name>   Git branch to check out (default: main).
+  --branch <name>   Git branch to clone (default: auto-detect from script's
+                    repo if running from a clone, else 'main').
   --no-backup       Skip the ~/.claude/ backup step (NOT recommended).
   --help            Show this help and exit 0.
 
@@ -95,6 +96,7 @@ while [ $# -gt 0 ]; do
         --branch)
             [ $# -ge 2 ] || die "--branch requires a branch-name argument"
             BRANCH="$2"
+            BRANCH_SOURCE="explicit"
             shift 2
             ;;
         *)
@@ -112,9 +114,32 @@ case "$PREFIX" in
     "~/"*) PREFIX="$HOME/${PREFIX#~/}" ;;
 esac
 
+# Auto-detect branch from script's own git repo if not explicitly passed.
+BRANCH_SOURCE="${BRANCH_SOURCE:-}"
+if [ -z "$BRANCH" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$SCRIPT_DIR"
+  while [ -n "$REPO_ROOT" ] && [ ! -d "$REPO_ROOT/.git" ]; do
+    PARENT="$(dirname "$REPO_ROOT")"
+    if [ "$PARENT" = "$REPO_ROOT" ]; then REPO_ROOT=""; break; fi
+    REPO_ROOT="$PARENT"
+  done
+  if [ -n "$REPO_ROOT" ]; then
+    DETECTED="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ -n "$DETECTED" ] && [ "$DETECTED" != "HEAD" ]; then
+      BRANCH="$DETECTED"
+      BRANCH_SOURCE="auto-detected from script repo"
+    fi
+  fi
+  if [ -z "$BRANCH" ]; then
+    BRANCH="main"
+    BRANCH_SOURCE="default; pass --branch to override"
+  fi
+fi
+
 log "PRISM installer starting"
 log "  prefix=$PREFIX"
-log "  branch=$BRANCH"
+log "  branch=${BRANCH} (${BRANCH_SOURCE})"
 log "  dry-run=$DRY_RUN"
 log "  no-backup=$NO_BACKUP"
 
