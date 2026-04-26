@@ -511,5 +511,26 @@ PS7_QQ_UNINSTALL=$(grep -P '(?<![\w])\?\?(?!\?)' "$REPO/scripts/uninstall.ps1" 2
 PS7_TERNARY_UNINSTALL=$(grep -P '\?\s*:' "$REPO/scripts/uninstall.ps1" 2>/dev/null || true)
 [ -z "$PS7_TERNARY_UNINSTALL" ] && pass "T_v3.10.4 uninstall.ps1 has no PS7-only ?: ternaries" || fail "T_v3.10.4 uninstall.ps1 still has ?: operator(s): $PS7_TERNARY_UNINSTALL"
 
+# ============================================================
+# Category v3.11 — PowerShell 5.1 inline $_ subexpression guard (NEW in v3.8.6)
+# ============================================================
+section "Category v3.11 — PS 5.1 inline \$_ subexpression guard"
+
+# T_v3.11.1 install.ps1 must have zero occurrences of $($_. pattern
+! grep -q '\$(\$_\.' "$REPO/scripts/install.ps1" && pass "T_v3.11.1 install.ps1 has no \$(\$_. inline subexpressions" || fail "T_v3.11.1 install.ps1 still contains \$(\$_. inline subexpression(s)"
+
+# T_v3.11.2 uninstall.ps1 must have zero occurrences of $($_. pattern
+! grep -q '\$(\$_\.' "$REPO/scripts/uninstall.ps1" && pass "T_v3.11.2 uninstall.ps1 has no \$(\$_. inline subexpressions" || fail "T_v3.11.2 uninstall.ps1 still contains \$(\$_. inline subexpression(s)"
+
+# T_v3.11.3 install.ps1 brace balance
+INST_OPEN_11=$(grep -o '{' "$REPO/scripts/install.ps1" 2>/dev/null | wc -l)
+INST_CLOSE_11=$(grep -o '}' "$REPO/scripts/install.ps1" 2>/dev/null | wc -l)
+[ "$INST_OPEN_11" = "$INST_CLOSE_11" ] && pass "T_v3.11.3 install.ps1 braces balanced ($INST_OPEN_11/$INST_CLOSE_11)" || fail "T_v3.11.3 install.ps1 brace mismatch ($INST_OPEN_11 open, $INST_CLOSE_11 close)"
+
+# T_v3.11.4 uninstall.ps1 brace balance
+UN_OPEN_11=$(grep -o '{' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
+UN_CLOSE_11=$(grep -o '}' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
+[ "$UN_OPEN_11" = "$UN_CLOSE_11" ] && pass "T_v3.11.4 uninstall.ps1 braces balanced ($UN_OPEN_11/$UN_CLOSE_11)" || fail "T_v3.11.4 uninstall.ps1 brace mismatch ($UN_OPEN_11 open, $UN_CLOSE_11 close)"
+
 # Exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

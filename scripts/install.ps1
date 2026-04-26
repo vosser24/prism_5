@@ -385,8 +385,10 @@ try {
     }
     exit 0
 } catch {
+    $errStep = $Script:CurrentStep
+    $errMsg = $_.Exception.Message
     Write-Host ''
-    Write-Host "[install] FAILED at step: $($Script:CurrentStep)" -ForegroundColor Red
-    Write-Host "[install] error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[install] FAILED at step: $errStep" -ForegroundColor Red
+    Write-Host "[install] error: $errMsg" -ForegroundColor Red
     exit 1
 }

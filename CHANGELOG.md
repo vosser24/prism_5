@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.6] - 2026-04-26
+### Fixed
+- **CRITICAL** install.ps1 second PowerShell 5.1 parser bug uncovered by v3.8.5 fix: inline `$($_.Exception.Message)` subexpression in catch block tripped PS 5.1's parser ("Array index expression is missing or not valid" at line 390). Refactored all `$($_.X.Y)` subexpressions in strings to extract the value to a local variable first, then interpolate the variable. Same scrub applied to uninstall.ps1.
+
 ## [3.8.5] - 2026-04-26
 ### Fixed
 - **CRITICAL** install.ps1 parser error on Windows PowerShell 5.1: replaced PS7-only null-coalescing `??` operator (line 371) with PS5.1-compatible `if ($null -ne ...) { ... } else { ... }` pattern. Scrubbed install.ps1 + uninstall.ps1 for any other PS7-only syntax (`?:` ternary, `?.` null-conditional, `&&`/`||` pipeline chains).
