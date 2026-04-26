@@ -1,5 +1,5 @@
 #requires -Version 5.1
-# PRISM uninstaller (v3.8.3) -- defensive rewrite.
+# PRISM uninstaller (v3.8.4) -- defensive rewrite.
 # Removes PRISM-owned files from ~/.claude/ and surgically edits
 # ~/.claude/settings.json to drop PRISM hook entries / statusLine / env.
 #
@@ -166,6 +166,17 @@ $CntState    = 0
 $CntMemory   = 0
 $Preserved   = New-Object System.Collections.Generic.List[string]
 
+# Paths (relative to ~/.claude) whose user-mutated state must be preserved
+# across the prism-plan skill-dir deletion in step 6. These files live INSIDE
+# the skill dir so the bulk delete would otherwise wipe them.
+#   - roster.json       : agent registrations, notebooklm_notebook_id, task counts, escalation history
+#   - update-log.json   : version history
+$PreservePaths = @(
+    'skills\prism-plan\references\roster.json',
+    'skills\prism-plan\references\update-log.json'
+)
+$PreservedRestored = New-Object System.Collections.Generic.List[string]
+
 # --- Helpers (defined BEFORE main flow) ----------------------------------
 function Log-Line {
     param([string]$Message)
@@ -323,6 +334,31 @@ foreach ($item in $cmdItems) {
     if (Remove-IfExists -Path $item.FullName) { $CntCommands++ }
 }
 
+# --- Step 6 (pre): Preserve user-mutated data inside prism-plan ----------
+# CRITICAL: roster.json + update-log.json live inside skills/prism-plan/
+# and would be wiped by the recursive skill-dir delete below. Copy them
+# to a temp preserve dir BEFORE deletion; restore AFTER all PRISM removal.
+$PreserveTemp = Join-Path $env:TEMP ('prism-uninstall-preserve-' + $TS)
+Log-Line 'step 6 (pre): preserving user-mutated data inside prism-plan'
+$preservedCount = 0
+foreach ($rel in $PreservePaths) {
+    $abs = Join-Path $ClaudeDir $rel
+    if (Test-Path -LiteralPath $abs) {
+        if ($IsDryRun) {
+            Log-Line ('  PRESERVE: would copy ' + $abs + ' -> ' + $PreserveTemp)
+        } else {
+            $tempPath = Join-Path $PreserveTemp $rel
+            $tempDir  = Split-Path -Parent $tempPath
+            New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+            Copy-Item -LiteralPath $abs -Destination $tempPath -Force -ErrorAction SilentlyContinue
+            $preservedCount++
+        }
+    }
+}
+if ($preservedCount -gt 0) {
+    Log-Line ('  preserved ' + $preservedCount + ' user-data file(s) to ' + $PreserveTemp)
+}
+
 # --- Step 6: Skills (8 by exact name) ------------------------------------
 Log-Line 'step 6: removing PRISM-owned skills (by exact name)'
 foreach ($s in $PrismSkills) {
@@ -413,6 +449,35 @@ if (-not (Test-Path -LiteralPath $SettingsPath)) {
     }
 }
 
+# --- Step 12 (post): Restore preserved user data ------------------------
+# Move the temp-preserved roster.json + update-log.json back into the
+# (just-deleted) skills/prism-plan/references/ directory, recreating
+# the parent path as needed.
+Log-Line 'step 12 (post): restoring preserved user data'
+foreach ($rel in $PreservePaths) {
+    $tempPath  = Join-Path $PreserveTemp $rel
+    $finalPath = Join-Path $ClaudeDir $rel
+    if ($IsDryRun) {
+        $abs = Join-Path $ClaudeDir $rel
+        if (Test-Path -LiteralPath $abs) {
+            Log-Line ('  RESTORE: would restore ' + $finalPath)
+            $PreservedRestored.Add($rel) | Out-Null
+        }
+    } else {
+        if (Test-Path -LiteralPath $tempPath) {
+            $finalDir = Split-Path -Parent $finalPath
+            New-Item -ItemType Directory -Force -Path $finalDir | Out-Null
+            Copy-Item -LiteralPath $tempPath -Destination $finalPath -Force -ErrorAction SilentlyContinue
+            Log-Line ('  restored: ' + $finalPath)
+            $PreservedRestored.Add($rel) | Out-Null
+        }
+    }
+}
+# Cleanup the preservation temp dir.
+if (-not $IsDryRun -and (Test-Path -LiteralPath $PreserveTemp)) {
+    Remove-Item -LiteralPath $PreserveTemp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # --- Step 13: Final report -----------------------------------------------
 Log-Line '----- UNINSTALL REPORT -----'
 if ($IsDryRun) {
@@ -434,10 +499,19 @@ Log-Line ('  backup at: ' + $BackupDir)
 if ($Preserved.Count -gt 0) {
     Log-Line '  preserved paths:'
     foreach ($line in $Preserved) {
-        Log-Line ('    ' + $line)
+        Log-Line ('    - ' + $line)
     }
 } else {
     Log-Line '  preserved paths: (none)'
+}
+
+if ($PreservedRestored.Count -gt 0) {
+    Log-Line '  preserved (user data):'
+    foreach ($rel in $PreservedRestored) {
+        Log-Line ('    - ' + ($rel -replace '\\','/'))
+    }
+} else {
+    Log-Line '  preserved (user data): (none)'
 }
 
 # --- Step 14: Optional reinstall chain -----------------------------------

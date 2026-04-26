@@ -444,6 +444,18 @@ grep -q "PRISM_CONVERSATION_MODE" "$REPO/hooks/prism-prompt-tier-router.mjs" && 
 # CHANGELOG documents v3.8.0
 grep -q "## \[3.8.0\]" "$REPO/CHANGELOG.md" && pass "T_v3.8.4 CHANGELOG has v3.8.0 section" || fail "T_v3.8.4 CHANGELOG missing v3.8.0"
 
+# ============================================================
+# Category v3.9 — Uninstall preserves user data (NEW in v3.8.4)
+# ============================================================
+section "Category v3.9 — Uninstall preserves user data"
+
+# Both uninstallers reference the preserve paths
+grep -q "prism-plan/references/roster.json\|prism-plan\\\\references\\\\roster.json" "$REPO/scripts/uninstall.ps1" && pass "T_v3.8.4.1 uninstall.ps1 preserves roster.json" || fail "T_v3.8.4.1 uninstall.ps1 missing roster.json preserve"
+grep -q "prism-plan/references/roster.json" "$REPO/scripts/uninstall.sh" && pass "T_v3.8.4.2 uninstall.sh preserves roster.json" || fail "T_v3.8.4.2 uninstall.sh missing roster.json preserve"
+
+grep -q "prism-plan/references/update-log.json\|prism-plan\\\\references\\\\update-log.json" "$REPO/scripts/uninstall.ps1" && pass "T_v3.8.4.3 uninstall.ps1 preserves update-log.json" || fail "T_v3.8.4.3 uninstall.ps1 missing update-log.json preserve"
+grep -q "prism-plan/references/update-log.json" "$REPO/scripts/uninstall.sh" && pass "T_v3.8.4.4 uninstall.sh preserves update-log.json" || fail "T_v3.8.4.4 uninstall.sh missing update-log.json preserve"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

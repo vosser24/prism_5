@@ -33,6 +33,21 @@ CNT_MEMORY=0
 # Preserved-paths accumulator (newline-separated)
 PRESERVED=""
 
+# Paths (relative to ~/.claude) whose user-mutated state must be preserved
+# across the prism-plan skill-dir deletion in step 6. These files live INSIDE
+# the skill dir so the bulk delete would otherwise wipe them.
+#   - roster.json     : agent registrations, notebooklm_notebook_id, task counts, escalation history
+#   - update-log.json : version history
+PRESERVE_PATHS="skills/prism-plan/references/roster.json
+skills/prism-plan/references/update-log.json"
+
+# Set when step 6 (pre) creates the temp dir; cleaned at end of run.
+PRESERVE_TEMP=""
+
+# Newline-separated list of relative paths actually restored, for the
+# final report (and for dry-run preview accuracy).
+PRESERVED_RESTORED=""
+
 # --- helpers ---------------------------------------------------------------
 log() {
     printf '[uninstall] %s\n' "$*"
@@ -309,6 +324,38 @@ log "step 5: removing PRISM commands"
 del_glob CNT_COMMANDS "$CLAUDE_DIR/commands/prism-*.md"
 
 # =========================================================================
+# Step 6 (pre) — Preserve user-mutated data inside prism-plan
+# =========================================================================
+# CRITICAL: roster.json + update-log.json live inside skills/prism-plan/
+# and would be wiped by the recursive skill-dir delete below. Copy them
+# to a temp preserve dir BEFORE deletion; restore AFTER all PRISM removal.
+CURRENT_STEP="6pre/preserve-user-data"
+PRESERVE_TEMP="${TMPDIR:-/tmp}/prism-uninstall-preserve-${TS}"
+log "step 6 (pre): preserving user-mutated data inside prism-plan"
+preserved_count=0
+# IFS=newline to iterate the multi-line PRESERVE_PATHS string portably.
+OLD_IFS="$IFS"
+IFS='
+'
+for rel in $PRESERVE_PATHS; do
+    [ -n "$rel" ] || continue
+    abs="$CLAUDE_DIR/$rel"
+    if [ -f "$abs" ]; then
+        if [ "$PURGE" -eq 0 ]; then
+            log "  PRESERVE: would copy $abs -> $PRESERVE_TEMP"
+        else
+            mkdir -p "$PRESERVE_TEMP/$(dirname "$rel")"
+            cp -p "$abs" "$PRESERVE_TEMP/$rel"
+            preserved_count=$(( preserved_count + 1 ))
+        fi
+    fi
+done
+IFS="$OLD_IFS"
+if [ "$preserved_count" -gt 0 ]; then
+    log "  preserved $preserved_count user-data file(s) to $PRESERVE_TEMP"
+fi
+
+# =========================================================================
 # Step 6 — Skills (8 by exact name)
 # =========================================================================
 CURRENT_STEP="6/skills"
@@ -495,6 +542,45 @@ NODE_EOF
 fi
 
 # =========================================================================
+# Step 12 (post) — Restore preserved user data
+# =========================================================================
+# Move the temp-preserved roster.json + update-log.json back into the
+# (just-deleted) skills/prism-plan/references/ directory, recreating
+# the parent path as needed.
+CURRENT_STEP="12post/restore-user-data"
+log "step 12 (post): restoring preserved user data"
+OLD_IFS="$IFS"
+IFS='
+'
+for rel in $PRESERVE_PATHS; do
+    [ -n "$rel" ] || continue
+    src="$PRESERVE_TEMP/$rel"
+    dst="$CLAUDE_DIR/$rel"
+    if [ "$PURGE" -eq 0 ]; then
+        # In dry-run, nothing was copied to the temp dir; preview based on
+        # the live source file presence so the report is accurate.
+        if [ -f "$CLAUDE_DIR/$rel" ]; then
+            log "  RESTORE: would restore $dst"
+            PRESERVED_RESTORED="${PRESERVED_RESTORED}${rel}
+"
+        fi
+    else
+        if [ -f "$src" ]; then
+            mkdir -p "$(dirname "$dst")"
+            cp -p "$src" "$dst"
+            log "  restored: $dst"
+            PRESERVED_RESTORED="${PRESERVED_RESTORED}${rel}
+"
+        fi
+    fi
+done
+IFS="$OLD_IFS"
+# Cleanup the preservation temp dir.
+if [ "$PURGE" -eq 1 ] && [ -n "$PRESERVE_TEMP" ] && [ -d "$PRESERVE_TEMP" ]; then
+    rm -rf -- "$PRESERVE_TEMP"
+fi
+
+# =========================================================================
 # Step 13 — Final report
 # =========================================================================
 CURRENT_STEP="13/report"
@@ -519,10 +605,19 @@ if [ -n "$PRESERVED" ]; then
     log "  preserved paths:"
     # printf each preserved line under the report
     printf '%s' "$PRESERVED" | while IFS= read -r line; do
-        [ -n "$line" ] && log "    $line"
+        [ -n "$line" ] && log "    - $line"
     done
 else
     log "  preserved paths: (none)"
+fi
+
+if [ -n "$PRESERVED_RESTORED" ]; then
+    log "  preserved (user data):"
+    printf '%s' "$PRESERVED_RESTORED" | while IFS= read -r rel; do
+        [ -n "$rel" ] && log "    - $rel"
+    done
+else
+    log "  preserved (user data): (none)"
 fi
 
 # =========================================================================

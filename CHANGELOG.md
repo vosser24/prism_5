@@ -4,6 +4,38 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.4] - 2026-04-25
+
+CRITICAL data-loss hotfix: uninstaller now preserves
+`references/roster.json` and `references/update-log.json`.
+
+### Fixed
+
+- v3.8.3 (and all earlier versions) wiped roster.json and update-log.json
+  when removing the prism-plan skill directory. roster.json contains
+  user-mutated state (agent registrations, `notebooklm_notebook_id`
+  values, task counts, escalation history). For users with researched
+  specialists via agent-factory, this would silently lose every
+  NotebookLM notebook link on uninstall — making the cloud notebooks
+  effectively orphaned.
+
+### Changed
+
+- `scripts/uninstall.ps1`: copies roster.json + update-log.json to
+  `$env:TEMP\prism-uninstall-preserve-<ts>\` BEFORE the prism-plan
+  skill directory deletion; restores them to
+  `~/.claude/skills/prism-plan/references/` AFTER all PRISM removal.
+  Cleanup of preserve temp at end of run.
+- `scripts/uninstall.sh`: same logic in bash.
+- Both scripts: final report now lists the preserved files explicitly.
+
+### Migration
+
+Users who already ran v3.8.3's `--purge` and lost roster.json: restore
+from your `~/.claude/backups/pre-uninstall-<ts>/` backup directory.
+The backup IS still made unconditionally; only the in-place roster
+was wiped from `~/.claude/skills/prism-plan/references/`.
+
 ## [3.8.3] - 2026-04-25
 
 Hotfix: full rewrite of uninstall.ps1 after v3.8.0/v3.8.1/v3.8.2
