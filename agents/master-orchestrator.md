@@ -103,6 +103,17 @@ NotebookLM notebooks (per-agent research archives):
   ✓ demand-forecasting       (23 sources, last note: 60d ago)
   …
 
+Orphan NotebookLM notebooks (NEW in v3.7.0 — exist in cloud but no agent linked):
+  [Bash: compute set difference: `notebooklm list` IDs MINUS the
+   `notebooklm_notebook_id` values from roster.agents. Filter out IDs in
+   ~/.claude/.prism-orphan-notebook-skiplist.json (added via /prism-roster --reconcile-cloud [I]gnore)]
+  ⚠ <notebook-name>          (<N> sources, last source <date>)
+    → Wire via: `@agent-factory --from-notebook <id>`
+    → Or skip via: `/prism-roster --reconcile-cloud` and choose [I]gnore
+  ⚠ <notebook-name>          (<N> sources, last source <date>)
+  ...
+  (None — all cloud notebooks linked or skiplisted)  ← if zero orphans
+
 MCP servers (connected):
   [from settings.json mcpServers + runtime detection]
   ✓ postgres, github, context7
@@ -112,6 +123,13 @@ Gap hypothesis for THIS request:
   <1-2 sentences: which inventory lines cover the request, which don't,
    and what's the smallest creation path for any gap>
 ```
+
+If the request needs a domain that has an orphan notebook:
+  Suggest to user: "Found orphan notebook '<name>' that may match this domain.
+                     Wire it as agent before proceeding? [Y/n]"
+  If [Y]: dispatch `@agent-factory --from-notebook <id>` BEFORE assembling the panel.
+  If [n]: continue with current inventory; note the missed opportunity in the
+          panel composition's 'Resource gaps' notes.
 
 Now proceed to stakes + team assembly with this inventory as ground truth.
 

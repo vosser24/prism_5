@@ -401,6 +401,32 @@ QUOTED=$(grep -c '"node \\"\${CLAUDE_PLUGIN_ROOT}' "$REPO/.claude-plugin/plugin.
 # CHANGELOG v3.5.0 migration recipe — should NOT have `--purge` in the migration step
 ! grep -A 10 "Migration path for existing manual-install users" "$REPO/CHANGELOG.md" 2>/dev/null | grep -q "uninstall.sh --purge" && pass "T_v3.6.18 CHANGELOG migration recipe no longer uses --purge" || fail "T_v3.6.18 CHANGELOG migration recipe still has dangerous --purge"
 
+# ============================================================
+# Category v3.7 — Orphan notebook discovery (NEW in v3.7.0)
+# ============================================================
+section "Category v3.7 — Orphan notebook discovery"
+
+# agent-factory --from-notebook mode documented
+grep -q -- "--from-notebook" "$REPO/agents/agent-factory.md" && pass "T_v3.7.1 agent-factory --from-notebook documented" || fail "T_v3.7.1 agent-factory missing --from-notebook"
+
+# agent-factory marks --from-notebook entries with source: "from-notebook"
+grep -q "from-notebook" "$REPO/agents/agent-factory.md" && pass "T_v3.7.2 agent-factory tags source from-notebook" || fail "T_v3.7.2 agent-factory missing source tag"
+
+# /prism-roster --reconcile-cloud documented
+grep -q -- "--reconcile-cloud" "$REPO/commands/prism-roster.md" && pass "T_v3.7.3 prism-roster --reconcile-cloud documented" || fail "T_v3.7.3 prism-roster missing --reconcile-cloud"
+
+# /prism-roster reconcile-cloud has [W]/[D]/[I]/[S] prompt structure
+grep -q "Wrap" "$REPO/commands/prism-roster.md" && pass "T_v3.7.4 reconcile-cloud has [W]rap action" || fail "T_v3.7.4 reconcile-cloud missing Wrap action"
+
+# Skiplist file path documented
+grep -q "prism-orphan-notebook-skiplist" "$REPO/commands/prism-roster.md" && pass "T_v3.7.5 reconcile-cloud documents skiplist path" || fail "T_v3.7.5 reconcile-cloud missing skiplist path"
+
+# master-orchestrator Phase 0a has orphan notebook section
+grep -q "Orphan NotebookLM notebooks" "$REPO/agents/master-orchestrator.md" && pass "T_v3.7.6 Phase 0a surfaces orphan notebooks" || fail "T_v3.7.6 Phase 0a missing orphan notebooks section"
+
+# master-orchestrator references --from-notebook wiring suggestion
+grep -q -- "--from-notebook" "$REPO/agents/master-orchestrator.md" && pass "T_v3.7.7 Phase 0a references --from-notebook wiring" || fail "T_v3.7.7 Phase 0a missing --from-notebook reference"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

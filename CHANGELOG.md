@@ -4,6 +4,82 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.7.0] - 2026-04-25
+
+Closes the orphan-NotebookLM-notebook discovery gap. Pre-existing
+notebooks (e.g., research-backed agents whose local agent.md was
+deleted, or notebooks imported from another machine) are now
+discoverable, surfaced in Phase 0a inventory, and wireable as new
+agents in one command. Compose-first thesis fully extended to
+cloud-stored research.
+
+### Added
+
+- **`agent-factory --from-notebook <notebook-id>`** — reverses the
+  standard agent-factory flow. Instead of research → notebook → agent,
+  this mode reads an existing NotebookLM notebook (sources, summary)
+  and generates a matching `agent.md` + `roster.agents` entry with
+  `notebooklm_notebook_id` linked to the EXISTING notebook (no new
+  notebook spawned). Sets `source: "from-notebook"` to distinguish
+  from `agent-factory`-created and `reconcile`-created entries.
+  Default model: `sonnet` (conservative; user can upgrade).
+
+- **`/prism-roster --reconcile-cloud`** — extends `--reconcile`. After
+  local reconciliation, scans `notebooklm list` for notebooks NOT
+  linked to any roster entry (orphans). For each orphan, prompts:
+  [W]rap as new agent (dispatches `@agent-factory --from-notebook`),
+  [D]elete the notebook (with double confirmation),
+  [I]gnore (adds to skiplist `~/.claude/.prism-orphan-notebook-skiplist.json`),
+  [S]kip (re-prompts next run). Cloud step is read-only by default;
+  only deletes/wraps on per-orphan user confirmation. Backs up
+  `roster.json` to `.bak` before any wrap.
+
+- **Master-orchestrator Phase 0a — orphan-notebook surfacing.** New
+  inventory sub-section lists NotebookLM notebooks present in cloud
+  but not linked to any roster agent. If the user's request matches
+  an orphan's likely domain, the orchestrator suggests wiring it via
+  `@agent-factory --from-notebook` BEFORE assembling the panel.
+  Closes the failure mode where research-backed knowledge sits
+  orphaned in NotebookLM cloud while the panel falls back to
+  hardcoded personas.
+
+### How it solves the "nuclear-physicist" scenario
+
+You have a NotebookLM notebook from 6 months ago with curated
+nuclear-physics research, but no local agent.md and no roster entry.
+- Pre-v3.7.0: invisible to PRISM. Panel falls back to generic persona.
+- v3.7.0: Phase 0a flags the orphan notebook. User runs
+  `/prism-roster --reconcile-cloud` (or accepts the inline suggestion),
+  picks [W]rap. Agent-factory generates the agent.md from notebook
+  contents, registers in roster with the notebook ID, takes ~30s.
+  Next panel: the rostered nuclear-physicist agent is dispatched
+  with full notebook backing.
+
+### Mechanics
+
+Manifest 3.6.0 → 3.7.0. install-merge §4d auto-stamps update-log.
+Hook count unchanged at 16. Manifest entries unchanged at 85.
+No new files in the manifest (changes are doc/protocol updates to
+existing agents/commands).
+
+### Skiplist convention
+
+`~/.claude/.prism-orphan-notebook-skiplist.json` schema:
+```json
+{
+  "skipped_ids": ["notebook-id-1", "notebook-id-2"]
+}
+```
+Local-only, not synced anywhere. Removing the file restores
+all-orphan visibility on next `--reconcile-cloud` run.
+
+### Closes audit findings
+
+- Orphan-notebook discovery gap surfaced in v3.6.0 audit retrospective
+- `agent-factory` was one-way (create only) — now bidirectional
+- Phase 0a inventory was complete for linked notebooks but blind to
+  orphan notebooks in the same cloud account
+
 ## [3.6.0] - 2026-04-25
 
 Bundled release: pre-install audit fixes for v3.5.0 + comprehensive end-to-end audit suite. Closes the two CRITICAL findings from the v3.5.0 plugin-install pre-flight audit AND ships the multi-hour real-environment audit infrastructure.

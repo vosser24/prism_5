@@ -7,6 +7,7 @@ Usage:
   /prism-roster                → display mode (default — all agents)
   /prism-roster --team <id>    → display only agents with matching team_id (v3.1+)
   /prism-roster --reconcile    → scan ~/.claude/agents/ and register any orphan agent files in roster.json
+  /prism-roster --reconcile-cloud  → ALSO scans NotebookLM cloud for orphan notebooks (v3.7+); offers to wire up unlinked notebooks as new agents via agent-factory --from-notebook
 
 ## Default mode (no args)
 
@@ -182,3 +183,74 @@ Next steps:
 - Does not upgrade old roster schema versions. If `schema_version` is
   below the current code's expectation, warn and exit; ask user to run
   `/prism-update`.
+- `/prism-roster --reconcile` (without `--reconcile-cloud`) does NOT scan NotebookLM cloud. Cloud-orphan notebooks remain invisible. For cloud + local, use `--reconcile-cloud`.
+
+---
+
+## Reconcile-cloud mode (`--reconcile-cloud`)
+
+**Extends `--reconcile`**: also scans NotebookLM cloud for orphan notebooks. An orphan notebook is one that exists in NotebookLM but isn't linked to any agent in `roster.agents.*.notebooklm_notebook_id`.
+
+This closes the gap where users have valuable notebooks (sometimes from agent-factory runs months ago whose agent.md got deleted) that PRISM can't see.
+
+### PROTOCOL
+
+1. **Run standard local reconcile first** (the existing `--reconcile` flow): scan `~/.claude/agents/*.md` for local orphans, register them.
+
+2. **Cloud notebook discovery**:
+   ```bash
+   notebooklm list 2>/dev/null
+   ```
+   Returns all notebooks in the user's NotebookLM account with names + IDs.
+   If `notebooklm` CLI is missing → emit warning, skip cloud step (graceful fallback).
+
+3. **Build linked-set**: collect every `notebooklm_notebook_id` from `roster.agents.*` (excluding nulls).
+
+4. **Compute orphan-set**: notebooks present in NotebookLM but NOT in linked-set.
+
+5. **For each orphan**, prompt the user:
+   ```
+   Orphan NotebookLM notebook: '<name>' (<N> sources, last source <date>)
+   ID: <notebook-id>
+   Action:
+     [W]rap as new agent (calls @agent-factory --from-notebook <id>)
+     [D]elete the notebook from NotebookLM (notebooklm delete --notebook <id>)
+     [I]gnore (leave orphan, won't ask again this session — adds to skip list)
+     [S]kip (decide later, will re-prompt next reconcile-cloud)
+   ```
+
+6. **For [W]**: dispatch `@agent-factory --from-notebook <notebook-id>` (see agent-factory.md v3.7+ for the new mode). Report success/failure inline; continue to next orphan.
+
+7. **For [D]**: confirm one more time ("Permanently delete notebook 'X' with N sources? [y/N]"); only delete on `y`. Default to keep.
+
+8. **For [I]**: append the notebook ID to `~/.claude/.prism-orphan-notebook-skiplist.json` (created if absent). Future `--reconcile-cloud` runs filter against this list.
+
+9. **Final report**:
+   ```
+   Reconcile-cloud — <date>
+
+   Local reconciliation: <N> agent files reconciled (see standard reconcile output)
+
+   Cloud notebooks:
+     Total in NotebookLM: M
+     Already linked: L
+     Orphans found: O
+       Wrapped as agents: W
+       Deleted: D
+       Ignored (added to skiplist): I
+       Skipped (will re-prompt): S
+   ```
+
+### Safety rules
+
+- **Cloud step is read-only by default**: only deletes/wraps on explicit per-orphan user confirmation.
+- **Backup roster.json to .bak before any wrap action** (the wrap modifies roster.agents).
+- **Skiplist file is local-only**: not synced anywhere. Removing the file restores all-orphan visibility.
+- **Notebook deletion is permanent** in NotebookLM cloud — confirm twice before the irreversible op.
+
+### When to use
+
+- After upgrading from a pre-v3.7 PRISM where you may have orphan notebooks accumulated
+- After importing a teammate's NotebookLM account (you'd have notebooks with no local agents)
+- Periodically (monthly?) to keep cloud + local in sync
+- Before running `/prism-audit-full` so the audit sees the full picture
