@@ -427,6 +427,23 @@ grep -q "Orphan NotebookLM notebooks" "$REPO/agents/master-orchestrator.md" && p
 # master-orchestrator references --from-notebook wiring suggestion
 grep -q -- "--from-notebook" "$REPO/agents/master-orchestrator.md" && pass "T_v3.7.7 Phase 0a references --from-notebook wiring" || fail "T_v3.7.7 Phase 0a missing --from-notebook reference"
 
+# ============================================================
+# Category v3.8 — Conversational-friction reduction (NEW in v3.8.0)
+# ============================================================
+section "Category v3.8 — Continuation classifier"
+
+# Continuation detection in tier router
+grep -q "continuation-inherit\|shouldInheritPreviousTier\|continuation detection" "$REPO/hooks/prism-prompt-tier-router.mjs" && pass "T_v3.8.1 prism-prompt-tier-router has continuation detection" || fail "T_v3.8.1 tier router missing continuation detection"
+
+# Agent-model-guard explicit-opus exemption
+grep -q "passthrough-explicit-opus-on-non-haiku\|explicit-opus-on-non-haiku\|model === 'opus'" "$REPO/hooks/prism-agent-model-guard.mjs" && pass "T_v3.8.2 agent-model-guard has explicit-opus exemption" || fail "T_v3.8.2 agent-model-guard missing explicit-opus exemption"
+
+# PRISM_CONVERSATION_MODE env var
+grep -q "PRISM_CONVERSATION_MODE" "$REPO/hooks/prism-prompt-tier-router.mjs" && pass "T_v3.8.3 PRISM_CONVERSATION_MODE supported" || fail "T_v3.8.3 PRISM_CONVERSATION_MODE not supported"
+
+# CHANGELOG documents v3.8.0
+grep -q "## \[3.8.0\]" "$REPO/CHANGELOG.md" && pass "T_v3.8.4 CHANGELOG has v3.8.0 section" || fail "T_v3.8.4 CHANGELOG missing v3.8.0"
+
 # Hook syntax checks — every prism-*.mjs must parse
 section "Hook syntax checks (parse gate)"
 for f in "$REPO/hooks/prism-"*.mjs "$REPO/hooks/lib/prism-"*.mjs; do

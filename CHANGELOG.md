@@ -4,6 +4,71 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.0] - 2026-04-25
+
+Conversational-friction reduction. Eliminates the per-turn dispatch
+ceremony that fires on short user follow-ups in interactive sessions
+("ok", "yes", "go", "proceed" → haiku via keyword-floor → guard
+denies every parent tool). Closes ~80% of the friction we hit during
+v3.x release-engineering today.
+
+### Added
+
+- **Continuation detection** in `hooks/prism-prompt-tier-router.mjs`.
+  Short messages (<8 words) OR explicit approval phrases ("ok",
+  "yes", "go", "proceed", "ship", "approved", "continue", etc.) that
+  follow an opus/sonnet sentinel <5min old now INHERIT the previous
+  tier instead of re-classifying as haiku. New sentinel `source`
+  value: `"continuation-inherit"`. Eliminates the dispatch-guard
+  spam during interactive Q&A.
+
+- **`PRISM_CONVERSATION_MODE` env var.** Set to `1` to make ALL
+  turns inherit the previous tier when one exists (no length / age
+  guards). Opt-in escape for development sessions where you want
+  zero classifier overhead. Off by default. Project-scoped via
+  `.claude/settings.local.json` env block.
+
+- **Agent-model-guard exemption** for `model: opus` on non-haiku
+  turns. When a dispatch explicitly specifies opus AND the sentinel
+  is non-haiku, the guard now passes through silently (no nudge
+  even in soft mode). Closes the cascade where parent dispatches
+  opus subagents and gets advisory noise on every one.
+
+### Mechanics
+
+Manifest 3.7.0 → 3.8.0. plugin.json 3.7.0 → 3.8.0 (THIS time staged
+and committed in the version-bump commit; v3.7.0 had a follow-up
+chore commit for this oversight). install-merge §4d auto-stamps
+update-log. Hook count unchanged at 16.
+
+### Migration
+
+Zero migration needed. Continuation-inherit is purely additive — if
+the previous sentinel doesn't exist or is stale, normal classification
+runs unchanged. `PRISM_CONVERSATION_MODE` is opt-in.
+
+### Why this matters
+
+In interactive Claude Code sessions where users send a long opus-tier
+prompt followed by short approvals/follow-ups ("yes", "ship it",
+"continue", "what about X"), the keyword-floor classifier scored
+those short messages as haiku. The dispatch-guard then denied every
+parent tool, forcing `!opus-force:` prefix or subagent ceremony on
+each turn. v3.8.0 makes the classifier session-aware: a short
+follow-up after an opus context inherits opus tier. Same discipline
+on first-message-of-conversation; no friction on continuation.
+
+Solves the friction we hit shipping v3.7.0 in this very session.
+
+### Tests
+
+`tests/v3/run-static.sh` Category v3.8 with 4 assertions
+(T_v3.8.1–T_v3.8.4) verifying:
+- prism-prompt-tier-router has continuation detection
+- prism-agent-model-guard has explicit-opus exemption
+- PRISM_CONVERSATION_MODE env var documented
+- continuation-inherit source value used in tier router
+
 ## [3.7.0] - 2026-04-25
 
 Closes the orphan-NotebookLM-notebook discovery gap. Pre-existing

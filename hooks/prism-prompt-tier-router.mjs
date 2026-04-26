@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-// PRISM Prompt Tier Router (v3.2.0) — UserPromptSubmit
+// PRISM Prompt Tier Router (v3.8.0) — UserPromptSubmit
+//
+// v3.8.0: continuation detection — short follow-up messages (<8 words) or
+// explicit approval phrases ("ok", "yes", "go", "proceed") that follow an
+// opus/sonnet sentinel <5min old now INHERIT the previous tier instead of
+// re-classifying as haiku. Eliminates the per-turn dispatch ceremony.
+// PRISM_CONVERSATION_MODE=1 forces always-inherit for development sessions.
 //
 // v3.2.0: API classifier path removed (see hooks/lib/prism-opus-classifier.mjs).
 // Keyword-floor regex is the sole classification mechanism. To compensate for
@@ -21,7 +27,7 @@
 //   soft: sentinel + advice only
 //   off:  no-op
 
-import {readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync} from 'node:fs';
+import {readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, existsSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {classifyPrompt, toSentinel} from './lib/prism-opus-classifier.mjs';
@@ -39,6 +45,38 @@ function appendLog(obj) {
     mkdirSync(dirname(LOG_PATH), {recursive: true});
     appendFileSync(LOG_PATH, JSON.stringify(obj) + '\n');
   } catch {}
+}
+
+function readSentinel(sessionId) {
+  try {
+    const p = sentinelPath(sessionId);
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, 'utf-8'));
+  } catch { return null; }
+}
+
+// v3.8.0: continuation detection — short follow-up messages should inherit
+// the previous turn's tier instead of re-classifying. Eliminates the
+// "user types 'ok' → haiku → guards block everything" failure mode.
+function shouldInheritPreviousTier(prompt, previousSentinel) {
+  if (!previousSentinel || !previousSentinel.tier) return false;
+  // PRISM_CONVERSATION_MODE=1: always inherit when a sentinel exists,
+  // regardless of length / approval / age. Opt-in for dev sessions.
+  if (String(process.env.PRISM_CONVERSATION_MODE || '') === '1') return true;
+  if (previousSentinel.tier === 'haiku') return false; // already cheap, no need to inherit
+
+  const trimmed = String(prompt || '').trim().toLowerCase();
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+
+  // Short messages (<8 words) AND previous turn was opus/sonnet AND sentinel
+  // is recent (<5min old) → inherit.
+  const APPROVAL_PHRASES = /\b(ok|okay|yes|yep|yeah|go|proceed|ship|approve|approved|continue|next|fine|good|sure|do it|let's go|run it|execute)\b/i;
+  const isApproval = APPROVAL_PHRASES.test(trimmed);
+  const isShort = wordCount < 8;
+  const ageMs = previousSentinel.ts ? (Date.now() - new Date(previousSentinel.ts).getTime()) : Infinity;
+  const isFresh = ageMs < 5 * 60 * 1000; // 5 min
+
+  return (isShort || isApproval) && isFresh;
 }
 
 function gitSnapshot(cwd) {
@@ -135,6 +173,50 @@ async function main() {
     const prompt = String(input.prompt || '');
     const sessionId = input.session_id || 'anon';
     const cwd = input.cwd || process.cwd();
+
+    // v3.8.0: continuation detection — short/approval follow-ups inherit prev tier.
+    const prevSentinel = readSentinel(sessionId);
+    if (shouldInheritPreviousTier(prompt, prevSentinel)) {
+      const inheritedSentinel = {
+        ...prevSentinel,
+        ts: new Date().toISOString(),
+        source: 'continuation-inherit',
+        rationale: `inherited from previous turn (${prevSentinel.tier}); short or approval-phrase`,
+        dispatched: false, // reset dispatch flag for new turn
+      };
+      try {
+        const p = sentinelPath(sessionId);
+        mkdirSync(dirname(p), {recursive: true});
+        const tmp = p + '.tmp';
+        writeFileSync(tmp, JSON.stringify(inheritedSentinel, null, 2));
+        renameSync(tmp, p);
+      } catch {
+        try {
+          const p = sentinelPath(sessionId);
+          writeFileSync(p, JSON.stringify(inheritedSentinel, null, 2));
+        } catch {}
+      }
+      appendLog({
+        event: 'prompt_tier_router',
+        ts: inheritedSentinel.ts,
+        session_id: sessionId,
+        tier: inheritedSentinel.tier,
+        source: 'continuation-inherit',
+        rationale: inheritedSentinel.rationale,
+        summon_panel: !!inheritedSentinel.summon_panel,
+        force_opus: !!inheritedSentinel.force_opus,
+        mode: MODE,
+      });
+      const advice = `PRISM TIER ROUTER: ${inheritedSentinel.tier} (continuation-inherit from previous turn). Source: continuation-inherit`;
+      const out = {
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: advice,
+        },
+      };
+      process.stdout.write(JSON.stringify(out));
+      process.exit(0);
+    }
 
     const git = gitSnapshot(cwd);
     const classification = await classifyPrompt({

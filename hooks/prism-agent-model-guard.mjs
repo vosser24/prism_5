@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// PRISM Agent Model Guard (v2.9.1)
+// PRISM Agent Model Guard (v3.8.0)
+//
+// v3.8.0: explicit-opus-on-non-haiku exemption. When dispatch already specifies
+// model:'opus' AND parent sentinel tier is non-haiku, pass through silently
+// (no nudge even in soft mode). The user is being explicit about heavyweight
+// model in heavyweight context — no guidance needed.
 //
 // v2.9.1 (TIER-DRIFT-001): split `hard` mode semantics. Previously any non-opus
 // dispatch without an explicit model was denied under hard — that overshot the
@@ -131,6 +136,20 @@ async function main() {
       tool: 'Agent',
       subagent_type: subagentType,
       action: 'passthrough-master-orchestrator',
+    });
+    process.exit(0);
+  }
+
+  // v3.8.0: if the dispatch already specifies model: opus AND parent sentinel
+  // tier is non-haiku, don't even nudge. The user is being explicit about
+  // using a heavyweight model in a heavyweight context — no guidance needed.
+  if (input.tool_input && input.tool_input.model === 'opus' && sentinelEarly && sentinelEarly.tier !== 'haiku') {
+    appendLog({
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      tool: 'Agent',
+      subagent_type: subagentType,
+      action: 'passthrough-explicit-opus-on-non-haiku',
     });
     process.exit(0);
   }
