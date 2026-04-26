@@ -4,6 +4,31 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.1] - 2026-04-25
+
+Hotfix: PowerShell parser error in uninstall.ps1.
+
+### Fixed
+
+- **`scripts/uninstall.ps1` line 208 (and any siblings)** — replaced
+  `<text>` documentation markers in `Write-UninstallLog` strings with
+  `[text]`. PowerShell's strict parser treated unquoted `<` as the
+  reserved redirection operator, causing parse failure on Windows
+  before the script could even run. Cascading "missing }" / "missing
+  catch" errors were downstream parser confusion. Same fix applied
+  defensively to `scripts/install.ps1` if any sibling occurrences
+  existed.
+
+### Mechanics
+
+Manifest 3.8.0 → 3.8.1. install-merge §4d auto-stamps update-log
+on next run for users who already pulled v3.8.0.
+
+### Migration
+
+Zero. Pull v3.8.1, re-run `.\scripts\uninstall.ps1` — it now parses
+correctly. No state changes.
+
 ## [3.8.0] - 2026-04-25
 
 Conversational-friction reduction. Eliminates the per-turn dispatch

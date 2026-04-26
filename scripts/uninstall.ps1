@@ -205,7 +205,7 @@ try {
     } else {
         Write-UninstallLog "step 2: backing up ~/.claude/ -> $BackupDir"
         if ($IsDryRun) {
-            Write-UninstallLog "  DRY-RUN: would: copy <each ~/.claude/* except backups/> -> $BackupDir/"
+            Write-UninstallLog "  DRY-RUN: would: copy [each ~/.claude/* except backups/] -> $BackupDir/"
         } else {
             New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
             $entries = Get-ChildItem -LiteralPath $ClaudeDir -Force -ErrorAction SilentlyContinue |
