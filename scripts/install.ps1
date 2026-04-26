@@ -1,6 +1,6 @@
 # PRISM PowerShell installer (v3.4.0)
 #
-# Native PowerShell port of scripts/install.sh — same step structure,
+# Native PowerShell port of scripts/install.sh -- same step structure,
 # same flag semantics, idiomatic PowerShell. Compatible with:
 #   - PowerShell 5.1 (Windows default)
 #   - PowerShell 7+ (cross-platform)
@@ -53,7 +53,7 @@ Examples:
 if ($Help) { Show-Help; exit 0 }
 
 # =========================================================================
-# Step 0 — Prereq check
+# Step 0 -- Prereq check
 # =========================================================================
 function Test-Prereq {
     $Script:CurrentStep = '0/prereq'
@@ -61,29 +61,30 @@ function Test-Prereq {
     $missing = @()
 
     $node = Get-Command node -ErrorAction SilentlyContinue
-    if ($node) { Write-InstallLog "  ok: node $(& node --version)" } else { $missing += 'node' }
+    if ($node) { $nodeVer = (& node --version); Write-InstallLog ('  ok: node ' + $nodeVer) } else { $missing += 'node' }
 
     $py = Get-Command python -ErrorAction SilentlyContinue
     if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
-    if ($py) { Write-InstallLog "  ok: python ($((& $py.Source --version) -replace '\s+',' '))" } else { $missing += 'python/python3' }
+    if ($py) { $pyVer = ((& $py.Source --version) -replace '\s+',' '); Write-InstallLog ('  ok: python (' + $pyVer + ')') } else { $missing += 'python/python3' }
 
     $git = Get-Command git -ErrorAction SilentlyContinue
-    if ($git) { Write-InstallLog "  ok: $((& git --version))" } else { $missing += 'git' }
+    if ($git) { $gitVer = (& git --version); Write-InstallLog ('  ok: ' + $gitVer) } else { $missing += 'git' }
 
     if ($missing.Count -gt 0) {
-        Write-Error "missing prerequisites: $($missing -join ', '). Install from https://nodejs.org / https://python.org / https://git-scm.com"
+        $missingStr = $missing -join ', '
+        Write-Error ('missing prerequisites: ' + $missingStr + '. Install from https://nodejs.org / https://python.org / https://git-scm.com')
     }
 }
 
 # =========================================================================
-# Step 1 — Clone or update
+# Step 1 -- Clone or update
 # =========================================================================
 function Sync-Repo {
     $Script:CurrentStep = '1/clone'
     Write-InstallLog "step 1: clone or update repo at $Prefix"
 
     if (Test-Path (Join-Path $Prefix '.git')) {
-        Write-InstallLog "  existing repo at $Prefix — updating to branch $Branch"
+        Write-InstallLog ('  existing repo at ' + $Prefix + ' -- updating to branch ' + $Branch)
         if ($DryRun) {
             Write-InstallLog "  DRY-RUN: git -C `"$Prefix`" fetch ; git -C `"$Prefix`" checkout $Branch ; git -C `"$Prefix`" pull"
         } else {
@@ -102,7 +103,7 @@ function Sync-Repo {
 }
 
 # =========================================================================
-# Step 2 — Backup ~/.claude/
+# Step 2 -- Backup ~/.claude/
 # =========================================================================
 function Backup-ClaudeHome {
     $Script:CurrentStep = '2/backup'
@@ -134,7 +135,7 @@ function Backup-ClaudeHome {
 }
 
 # =========================================================================
-# Step 2.5 — Resolve node + write ~/.claude/prism.env
+# Step 2.5 -- Resolve node + write ~/.claude/prism.env
 # =========================================================================
 function Resolve-Node {
     $Script:CurrentStep = '2.5/node-resolution'
@@ -194,7 +195,7 @@ function Resolve-Node {
         New-Item -ItemType Directory -Force -Path $envDir | Out-Null
     }
 
-    # Write UTF-8 NO BOM — preserves Windows backslashes verbatim. Closes
+    # Write UTF-8 NO BOM -- preserves Windows backslashes verbatim. Closes
     # the v2.7.2 BOM trap pattern.
     $content = "PRISM_NODE=$resolved`n"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -203,7 +204,7 @@ function Resolve-Node {
 }
 
 # =========================================================================
-# Step 3 — Manifest-driven file copy
+# Step 3 -- Manifest-driven file copy
 # =========================================================================
 function Copy-ManifestFiles {
     $Script:CurrentStep = '3/manifest-copy'
@@ -211,10 +212,10 @@ function Copy-ManifestFiles {
 
     $manifestPath = Join-Path $Prefix 'manifest.json'
     if (-not (Test-Path $manifestPath)) {
-        # In dry-run, prefix may not be cloned yet — fall back to script-relative.
+        # In dry-run, prefix may not be cloned yet -- fall back to script-relative.
         $sourceManifest = Join-Path $PSScriptRoot '..\manifest.json'
         if ($DryRun -and (Test-Path $sourceManifest)) {
-            Write-InstallLog "  DRY-RUN: prefix not yet cloned — using source manifest at $sourceManifest"
+            Write-InstallLog ('  DRY-RUN: prefix not yet cloned -- using source manifest at ' + $sourceManifest)
             $manifestPath = $sourceManifest
         } else {
             Write-Error "manifest.json not found at $manifestPath"
@@ -228,7 +229,7 @@ function Copy-ManifestFiles {
     }
 
     if ($DryRun) {
-        Write-InstallLog "  DRY-RUN: would copy $($files.Count) manifest entries from $Prefix to ~/.claude/"
+        Write-InstallLog ('  DRY-RUN: would copy ' + $files.Count + ' manifest entries from ' + $Prefix + ' to ~/.claude/')
         return
     }
 
@@ -240,7 +241,7 @@ function Copy-ManifestFiles {
         $dest = $dest -replace '/', '\'
 
         if (-not (Test-Path $src)) {
-            Write-InstallLog "  WARN: missing source $($entry.src)"
+            Write-InstallLog ('  WARN: missing source ' + $entry.src)
             $skipped++
             continue
         }
@@ -254,11 +255,11 @@ function Copy-ManifestFiles {
         $copied++
     }
 
-    Write-InstallLog "  copied: $copied, skipped: $skipped (of $($files.Count) manifest entries)"
+    Write-InstallLog ('  copied: ' + $copied + ', skipped: ' + $skipped + ' (of ' + $files.Count + ' manifest entries)')
 }
 
 # =========================================================================
-# Step 4 — install-merge
+# Step 4 -- install-merge
 # =========================================================================
 function Invoke-InstallMerge {
     $Script:CurrentStep = '4/install-merge'
@@ -291,7 +292,7 @@ function Invoke-InstallMerge {
 }
 
 # =========================================================================
-# Step 5 — verify
+# Step 5 -- verify
 # =========================================================================
 function Invoke-Verify {
     $Script:CurrentStep = '5/verify'
@@ -322,7 +323,7 @@ function Invoke-Verify {
 }
 
 # =========================================================================
-# Step 6 — Final report
+# Step 6 -- Final report
 # =========================================================================
 function Write-FinalReport {
     $Script:CurrentStep = '6/report'
@@ -347,12 +348,12 @@ function Write-FinalReport {
         $latestBackup = Get-ChildItem -Path $backupRoot -Directory -Filter 'pre-prism-*' -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
-        if ($latestBackup) { Write-InstallLog "  backup:     $($latestBackup.FullName)" }
+        if ($latestBackup) { Write-InstallLog ('  backup:     ' + $latestBackup.FullName) }
     }
 
     if ($script:VerifyExit -and $script:VerifyExit -ne 0) {
         Write-Host ''
-        Write-Warning "verify.mjs exit $script:VerifyExit — see scripts/verify.mjs output above for which checks failed"
+        Write-Warning ('verify.mjs exit ' + $script:VerifyExit + ' -- see scripts/verify.mjs output above for which checks failed')
     }
 
     Write-InstallLog ''
@@ -366,8 +367,8 @@ try {
     Write-InstallLog 'PRISM installer starting'
     Write-InstallLog "  prefix=$Prefix"
     Write-InstallLog "  branch=$Branch"
-    Write-InstallLog "  dry-run=$([int]$DryRun.IsPresent)"
-    Write-InstallLog "  no-backup=$([int]$NoBackup.IsPresent)"
+    Write-InstallLog ('  dry-run=' + [int]$DryRun.IsPresent)
+    Write-InstallLog ('  no-backup=' + [int]$NoBackup.IsPresent)
     $psPlatform = if ($null -ne $PSVersionTable.Platform) { $PSVersionTable.Platform } else { 'Win32NT' }
     Write-InstallLog "  platform=$psPlatform"
 
@@ -388,7 +389,7 @@ try {
     $errStep = $Script:CurrentStep
     $errMsg = $_.Exception.Message
     Write-Host ''
-    Write-Host "[install] FAILED at step: $errStep" -ForegroundColor Red
-    Write-Host "[install] error: $errMsg" -ForegroundColor Red
+    Write-Host ('[install] FAILED at step: ' + $errStep) -ForegroundColor Red
+    Write-Host ('[install] error: ' + $errMsg) -ForegroundColor Red
     exit 1
 }

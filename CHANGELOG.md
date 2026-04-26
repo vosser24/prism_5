@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.7] - 2026-04-26
+### Fixed
+- **CRITICAL** install.ps1 third PowerShell 5.1 parser bug: catch block at line 387-392 still tripped PS 5.1 even after $_ subexpression refactor. Hex-audit revealed no non-ASCII bytes, no BOM, no smart quotes, and pure CRLF line endings — the smoking gun was `$()` subexpression interpolation inside double-quoted strings throughout the file (lines 64, 68, 71, 74, 231, 243, 257, 350, 369, 370). PS 5.1's tokenizer misparses nested `$()` blocks inside `"..."` even when syntactically valid in PS7+. Refactored ALL `"...$(...)"` patterns to `('literal' + $var)` concatenation, which bypasses the PS 5.1 string-interp tokenizer entirely. Also normalized line endings to CRLF and stripped any non-ASCII chars in install.ps1 + uninstall.ps1. Added v3.12 static-test assertions: zero non-ASCII bytes, brace balance.
+
 ## [3.8.6] - 2026-04-26
 ### Fixed
 - **CRITICAL** install.ps1 second PowerShell 5.1 parser bug uncovered by v3.8.5 fix: inline `$($_.Exception.Message)` subexpression in catch block tripped PS 5.1's parser ("Array index expression is missing or not valid" at line 390). Refactored all `$($_.X.Y)` subexpressions in strings to extract the value to a local variable first, then interpolate the variable. Same scrub applied to uninstall.ps1.

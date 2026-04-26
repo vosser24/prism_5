@@ -532,5 +532,37 @@ UN_OPEN_11=$(grep -o '{' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
 UN_CLOSE_11=$(grep -o '}' "$REPO/scripts/uninstall.ps1" 2>/dev/null | wc -l)
 [ "$UN_OPEN_11" = "$UN_CLOSE_11" ] && pass "T_v3.11.4 uninstall.ps1 braces balanced ($UN_OPEN_11/$UN_CLOSE_11)" || fail "T_v3.11.4 uninstall.ps1 brace mismatch ($UN_OPEN_11 open, $UN_CLOSE_11 close)"
 
+# ============================================================
+# Category v3.12 — PS 5.1 encoding + concat guard (NEW in v3.8.7)
+# ============================================================
+section "Category v3.12 — PS 5.1 encoding + concat guard"
+
+# T_v3.12.1 install.ps1 zero non-ASCII bytes
+! grep -qP '[^\x00-\x7F]' "$REPO/scripts/install.ps1" && pass "T_v3.12.1 install.ps1 zero non-ASCII bytes" || fail "T_v3.12.1 install.ps1 contains non-ASCII bytes"
+
+# T_v3.12.2 uninstall.ps1 zero non-ASCII bytes
+! grep -qP '[^\x00-\x7F]' "$REPO/scripts/uninstall.ps1" && pass "T_v3.12.2 uninstall.ps1 zero non-ASCII bytes" || fail "T_v3.12.2 uninstall.ps1 contains non-ASCII bytes"
+
+# T_v3.12.3 install.ps1 catch block uses concat pattern
+grep -q "'\[install\] error: ' +" "$REPO/scripts/install.ps1" && pass "T_v3.12.3 install.ps1 catch block uses concat pattern" || fail "T_v3.12.3 install.ps1 catch block missing concat pattern ('[install] error: ' +)"
+
+# T_v3.12.4 install.ps1 has consistent line endings (CRLF or LF, not mixed)
+python3 -c "
+import sys
+with open('$REPO/scripts/install.ps1', 'rb') as f:
+    content = f.read()
+crlf = content.count(b'\r\n')
+lf_only = content.count(b'\n') - crlf
+cr_only = content.count(b'\r') - crlf
+if lf_only > 0 and crlf > 0:
+    print('MIXED')
+    sys.exit(1)
+elif cr_only > 0:
+    print('MIXED_CR')
+    sys.exit(1)
+else:
+    print('OK')
+" 2>/dev/null && pass "T_v3.12.4 install.ps1 has consistent line endings (not mixed)" || fail "T_v3.12.4 install.ps1 has mixed line endings"
+
 # Exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
