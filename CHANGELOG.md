@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.5] - 2026-04-26
+### Fixed
+- **CRITICAL** install.ps1 parser error on Windows PowerShell 5.1: replaced PS7-only null-coalescing `??` operator (line 371) with PS5.1-compatible `if ($null -ne ...) { ... } else { ... }` pattern. Scrubbed install.ps1 + uninstall.ps1 for any other PS7-only syntax (`?:` ternary, `?.` null-conditional, `&&`/`||` pipeline chains).
+
 ## [3.8.4] - 2026-04-25
 
 CRITICAL data-loss hotfix: uninstaller now preserves

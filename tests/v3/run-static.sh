@@ -490,5 +490,26 @@ for(const e of m.files){
 console.log(miss.join('\\n'));")
 if [ -z "$MISSING" ]; then pass "all manifest src paths exist in repo"; else fail "missing src paths: $MISSING"; fi
 
+# ============================================================
+# Category v3.10 — PowerShell 5.1 compatibility (NEW in v3.8.5)
+# ============================================================
+section "Category v3.10 — PowerShell 5.1 compatibility"
+
+# T_v3.10.1 install.ps1 must contain zero ?? null-coalescing operators
+PS7_QQ_INSTALL=$(grep -P '(?<![\w])\?\?(?!\?)' "$REPO/scripts/install.ps1" 2>/dev/null || true)
+[ -z "$PS7_QQ_INSTALL" ] && pass "T_v3.10.1 install.ps1 has no PS7-only ?? operators" || fail "T_v3.10.1 install.ps1 still has ?? operator(s): $PS7_QQ_INSTALL"
+
+# T_v3.10.2 install.ps1 must contain zero ?: ternary operators
+PS7_TERNARY_INSTALL=$(grep -P '\?\s*:' "$REPO/scripts/install.ps1" 2>/dev/null || true)
+[ -z "$PS7_TERNARY_INSTALL" ] && pass "T_v3.10.2 install.ps1 has no PS7-only ?: ternaries" || fail "T_v3.10.2 install.ps1 still has ?: operator(s): $PS7_TERNARY_INSTALL"
+
+# T_v3.10.3 uninstall.ps1 must contain zero ?? null-coalescing operators
+PS7_QQ_UNINSTALL=$(grep -P '(?<![\w])\?\?(?!\?)' "$REPO/scripts/uninstall.ps1" 2>/dev/null || true)
+[ -z "$PS7_QQ_UNINSTALL" ] && pass "T_v3.10.3 uninstall.ps1 has no PS7-only ?? operators" || fail "T_v3.10.3 uninstall.ps1 still has ?? operator(s): $PS7_QQ_UNINSTALL"
+
+# T_v3.10.4 uninstall.ps1 must contain zero ?: ternary operators
+PS7_TERNARY_UNINSTALL=$(grep -P '\?\s*:' "$REPO/scripts/uninstall.ps1" 2>/dev/null || true)
+[ -z "$PS7_TERNARY_UNINSTALL" ] && pass "T_v3.10.4 uninstall.ps1 has no PS7-only ?: ternaries" || fail "T_v3.10.4 uninstall.ps1 still has ?: operator(s): $PS7_TERNARY_UNINSTALL"
+
 # Exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
