@@ -369,8 +369,8 @@ try {
     Write-InstallLog "  branch=$Branch"
     Write-InstallLog ('  dry-run=' + [int]$DryRun.IsPresent)
     Write-InstallLog ('  no-backup=' + [int]$NoBackup.IsPresent)
-    $psPlatform = if ($null -ne $PSVersionTable.Platform) { $PSVersionTable.Platform } else { 'Win32NT' }
-    Write-InstallLog "  platform=$psPlatform"
+    $platformValue = if ($PSVersionTable.ContainsKey('Platform')) { $PSVersionTable.Platform } else { 'Win32NT' }
+    Write-InstallLog ('  platform=' + $platformValue)
 
     Test-Prereq
     Sync-Repo

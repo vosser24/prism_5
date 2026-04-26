@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.8] - 2026-04-26
+### Fixed
+- **CRITICAL** install.ps1 runtime failure on Windows PS 5.1 at init step: `$PSVersionTable.Platform` property doesn't exist in PS < 6, throws under StrictMode. Replaced with `$PSVersionTable.ContainsKey('Platform')` hashtable lookup which is safe in both PS 5.1 and PS 7+. Audited install.ps1 + uninstall.ps1 for similar PSVersionTable property accesses.
+
 ## [3.8.7] - 2026-04-26
 ### Fixed
 - **CRITICAL** install.ps1 third PowerShell 5.1 parser bug: catch block at line 387-392 still tripped PS 5.1 even after $_ subexpression refactor. Hex-audit revealed no non-ASCII bytes, no BOM, no smart quotes, and pure CRLF line endings — the smoking gun was `$()` subexpression interpolation inside double-quoted strings throughout the file (lines 64, 68, 71, 74, 231, 243, 257, 350, 369, 370). PS 5.1's tokenizer misparses nested `$()` blocks inside `"..."` even when syntactically valid in PS7+. Refactored ALL `"...$(...)"` patterns to `('literal' + $var)` concatenation, which bypasses the PS 5.1 string-interp tokenizer entirely. Also normalized line endings to CRLF and stripped any non-ASCII chars in install.ps1 + uninstall.ps1. Added v3.12 static-test assertions: zero non-ASCII bytes, brace balance.

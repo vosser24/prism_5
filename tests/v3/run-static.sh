@@ -564,5 +564,32 @@ else:
     print('OK')
 " 2>/dev/null && pass "T_v3.12.4 install.ps1 has consistent line endings (not mixed)" || fail "T_v3.12.4 install.ps1 has mixed line endings"
 
+# Category v3.13 — PS 5.1 PSVersionTable.Platform safe lookup (NEW in v3.8.8)
+# ============================================================
+section "Category v3.13 — PS 5.1 PSVersionTable.Platform safe lookup"
+
+# T_v3.13.1 install.ps1 contains ContainsKey('Platform') check
+grep -q "\$PSVersionTable.ContainsKey('Platform')" "$REPO/scripts/install.ps1" && pass "T_v3.13.1 install.ps1 contains ContainsKey('Platform') check" || fail "T_v3.13.1 install.ps1 missing ContainsKey('Platform') check"
+
+# T_v3.13.2 install.ps1 .Platform only inside ContainsKey guard
+python3 -c "
+import sys, re
+with open('$REPO/scripts/install.ps1', 'r', encoding='utf-8', errors='replace') as f:
+    content = f.read()
+# Find all lines containing .Platform
+lines = [(i+1, l) for i, l in enumerate(content.splitlines()) if '.Platform' in l]
+bad = [(n, l) for n, l in lines if 'ContainsKey' not in l]
+if bad:
+    for n, l in bad:
+        print(f'Line {n}: {l.strip()}')
+    sys.exit(1)
+" 2>/dev/null && pass "T_v3.13.2 install.ps1 .Platform only inside ContainsKey guard" || fail "T_v3.13.2 install.ps1 has raw .Platform access outside ContainsKey guard"
+
+# T_v3.13.3 uninstall.ps1 has no raw PSVersionTable.Platform or .OS access
+! grep -q '\$PSVersionTable\.Platform\|\$PSVersionTable\.OS' "$REPO/scripts/uninstall.ps1" && pass "T_v3.13.3 uninstall.ps1 has no raw PSVersionTable.Platform/.OS access" || fail "T_v3.13.3 uninstall.ps1 has raw PSVersionTable.Platform/.OS access"
+
+# T_v3.13.4 install.ps1 has no raw PSVersionTable.OS access
+! grep -q '\$PSVersionTable\.OS' "$REPO/scripts/install.ps1" && pass "T_v3.13.4 install.ps1 has no raw PSVersionTable.OS access" || fail "T_v3.13.4 install.ps1 has raw PSVersionTable.OS access"
+
 # Exit
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
