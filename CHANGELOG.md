@@ -4,6 +4,44 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [3.8.3] - 2026-04-25
+
+Hotfix: full rewrite of uninstall.ps1 after v3.8.0/v3.8.1/v3.8.2
+incremental scrubs failed. Three Linux-sandbox-based attempts to
+patch the file couldn't reproduce the Windows PowerShell parser
+error. Pivot: rewrite from scratch with strict-conservative idioms.
+
+### Changed
+
+- `scripts/uninstall.ps1` rewritten end-to-end (~250 lines vs 537
+  before). Same external behavior — same flags (-Purge, -KeepMemory,
+  -NoBackup, -ReinstallPath, -Help), same artifact list, same
+  surgical settings.json edit. New internal style:
+  - No top-level try/catch wrapping (uses explicit Test-Path guards
+    and Remove-Item -ErrorAction SilentlyContinue)
+  - No < / > characters anywhere in strings
+  - No -> arrows in user-facing messages
+  - No nested try blocks, no inline here-strings inside try
+  - Functions defined before main flow
+  - Single-quoted strings preferred; double-quotes only when interpolating
+  - The settings.json edit script (Node.js) lives as a top-level
+    here-string variable and is piped to `node -` outside any try
+- Renamed -Reinstall to -ReinstallPath for clarity (no flag conflict
+  in older PS versions). Backwards compat: positional still accepts.
+
+### Mechanics
+
+Manifest 3.8.2 → 3.8.3.
+
+### Why three previous fixes failed
+
+v3.8.0 shipped the original 537-line uninstall.ps1. v3.8.1 patched
+one `<...>` marker. v3.8.2 patched 11 more (`<>`, `->`). All scrubs
+PASSED structural balance checks in Linux sandbox but Windows still
+reported the same `try {` / missing-`}` cascade. Without `pwsh` in
+the sandbox to run AST parse, we were debugging blind. Rewrite is
+the only deterministic path forward.
+
 ## [3.8.2] - 2026-04-25
 
 Hotfix: comprehensive `uninstall.ps1` parser-error scrub.
