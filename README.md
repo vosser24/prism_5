@@ -158,6 +158,20 @@ See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient state → f
 
 Issues and PRs welcome at https://github.com/vosser24/PRISM. Before submitting, run `tests/v3/run-static.sh` and ensure all assertions pass (76/76 as of v3.3.0).
 
+## Standalone statusLine (no full PRISM install)
+
+Single-line install on Linux/Mac/Git-Bash:
+```bash
+curl -fsSL https://raw.githubusercontent.com/vosser24/PRISM/claude/audit-pending-pushes-Rg1p8/scripts/install-statusline-only.sh | bash
+```
+
+Single-line install on Windows PowerShell:
+```powershell
+iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/PRISM/claude/audit-pending-pushes-Rg1p8/scripts/install-statusline-only.ps1 | iex
+```
+
+Requires: node + curl (bash) / Invoke-WebRequest (PS, built-in).
+
 ## License
 
 See repository for license details.
