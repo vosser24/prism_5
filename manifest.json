@@ -33,6 +33,10 @@
       "dest": "~/.claude/commands/prism-audit-full.md"
     },
     {
+      "src": "commands/prism-bootstrap.md",
+      "dest": "~/.claude/commands/prism-bootstrap.md"
+    },
+    {
       "src": "commands/prism-deps.md",
       "dest": "~/.claude/commands/prism-deps.md"
     },
@@ -246,8 +250,28 @@
       "dest": "~/.claude/skills/workflow-orchestration/SKILL.md"
     },
     {
+      "src": "tools/lib/prism-state.mjs",
+      "dest": "~/.claude/tools/lib/prism-state.mjs"
+    },
+    {
+      "src": "tools/lib/prism-state.ps1",
+      "dest": "~/.claude/tools/lib/prism-state.ps1"
+    },
+    {
       "src": "tools/lib/prism-tier-classify.mjs",
       "dest": "~/.claude/tools/lib/prism-tier-classify.mjs"
+    },
+    {
+      "src": "tools/prism-bootstrap.mjs",
+      "dest": "~/.claude/tools/prism-bootstrap.mjs"
+    },
+    {
+      "src": "tools/prism-state.mjs",
+      "dest": "~/.claude/tools/prism-state.mjs"
+    },
+    {
+      "src": "tools/prism-state.ps1",
+      "dest": "~/.claude/tools/prism-state.ps1"
     },
     {
       "src": "tools/prism-context-audit.mjs",

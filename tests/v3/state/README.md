@@ -1,4 +1,48 @@
-# Phase-1 state-file tests
+# Phase-1 state-file + Phase-2 bootstrap tests
+
+## Test inside Claude Code (recommended for end-to-end review)
+
+This is the path to take if you want to try `/prism-bootstrap` against
+a real test project from inside Claude Code.
+
+```sh
+# 1. Pull the v3.10.0 phase 1+2 branch into your PRISM clone
+cd ~/PRISM
+git fetch origin claude/prism-v3-phase-1-0eVY1
+git checkout claude/prism-v3-phase-1-0eVY1
+
+# 2. Re-install — this copies the new files into ~/.claude/ per manifest.json
+bash scripts/install.sh
+# Windows:  powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+
+# 3. Open a NEW project in Claude Code (NOT Nexus Reporting 3 — D002 §9
+#    forbids that until v3.10.0 is stable). Use a throwaway Django/React/
+#    whatever folder with a .git/.
+
+# 4. Inside Claude Code, run:
+#       /prism-bootstrap
+#    Expected behaviour: identity → structure → discovery → roster → health
+#    phases run in order, each updating .claude/.prism-state.json.
+#    Re-running /prism-bootstrap on the same project = safe no-op.
+#
+#    Variants to try:
+#       /prism-bootstrap --dry-run         # plan only, no writes
+#       /prism-bootstrap --skip-discover   # for projects without DB/API
+#       /prism-bootstrap --force           # re-run all phases
+```
+
+## What "good" looks like (in-Claude-Code run)
+
+After `/prism-bootstrap` completes:
+- `.claude/.prism-state.json` exists, valid, checksum matches
+- `.claude/{references,rules,agents,hooks}/` directories exist
+- `docs/prism/{adjudications,deviations,smoke}/` directories exist
+- `tasks/` directory exists
+- `.claude/rules/capture-conventions.md` was written
+- `CLAUDE.md` exists (created or audited)
+- `node ~/.claude/tools/prism-bootstrap.mjs status` shows all 5 phases
+  with non-null `completed_at`
+- Re-running `/prism-bootstrap` reports "no changes needed"
 
 ## How to test by hand (5-minute review path)
 
@@ -108,6 +152,7 @@ Locked design: `docs/prism/adjudications/D001-bootstrap-unification.md`,
 | `test-prism-state.mjs` | Node unit tests — schema, checksum, validation, atomic write/read, mutators, detect-and-adopt, idempotency. No external deps. |
 | `test-prism-state.ps1` | PowerShell unit tests — mirrors the Node suite for the PS module. **Critical assertion: written file MUST NOT have a UTF-8 BOM.** |
 | `testbed-edge-cases.mjs` | End-to-end exercise against a real testbed dir. Simulates fresh, detect-and-adopt, corruption, partial-init, and crash-mid-write scenarios. |
+| `test-prism-bootstrap.mjs` | Phase 2 helper tests — drives `tools/prism-bootstrap.mjs` against ephemeral testbeds: git guard, init-state-if-missing (fresh + adopt), plan/--force/--skip-discover, phase-structure idempotency, phase-conventions, start/complete/fail-phase, full bootstrap walk. |
 
 ## Run
 
