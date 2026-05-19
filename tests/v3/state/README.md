@@ -33,11 +33,13 @@ bash scripts/install.sh
 
 ## What "good" looks like (in-Claude-Code run)
 
-After `/prism-bootstrap` completes:
+After `/prism-bootstrap` completes (scaffold scope locked by D003):
 - `.claude/.prism-state.json` exists, valid, checksum matches
-- `.claude/{references,rules,agents,hooks}/` directories exist
-- `docs/prism/{adjudications,deviations,smoke}/` directories exist
-- `tasks/` directory exists
+- `.claude/{references,rules,agents,hooks,skills,commands}/` directories exist
+- `docs/prism/{adjudications,deviations,lessons,smoke}/` directories exist
+- `tasks/` exists with `todo.md`, `lessons-tactical.md`, `lessons-strategic.md`
+- `.mcp.json` and `CLAUDE.local.md` exist
+- `.gitignore` carries the `# --- PRISM ---` block
 - `.claude/rules/capture-conventions.md` was written
 - `CLAUDE.md` exists (created or audited)
 - `node ~/.claude/tools/prism-bootstrap.mjs status` shows all 5 phases

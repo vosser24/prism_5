@@ -137,29 +137,68 @@ test('plan --force re-includes completed phases', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('phase-structure creates 8 dirs and is idempotent', () => {
+test('phase-structure creates full scaffold (11 dirs + 5 files) and is idempotent', () => {
   const root = makeTestbed('struct');
   try {
     run(root, 'init-state-if-missing', 'tb');
     const r1 = run(root, 'phase-structure');
     assertEq(r1.status, 0, r1.stderr);
-    assert(/created=8/.test(r1.stdout));
+    assert(/dirs created=11/.test(r1.stdout), r1.stdout);
+    assert(/files created=5/.test(r1.stdout), r1.stdout);
+    assert(/\.gitignore created/.test(r1.stdout), r1.stdout);
     for (const d of ['.claude/references', '.claude/rules', '.claude/agents', '.claude/hooks',
-                     'docs/prism/adjudications', 'docs/prism/deviations', 'docs/prism/smoke', 'tasks']) {
+                     '.claude/skills', '.claude/commands',
+                     'docs/prism/adjudications', 'docs/prism/deviations',
+                     'docs/prism/lessons', 'docs/prism/smoke', 'tasks']) {
       assert(existsSync(join(root, d)), `${d} should exist`);
+    }
+    for (const f of ['tasks/todo.md', 'tasks/lessons-tactical.md', 'tasks/lessons-strategic.md',
+                     '.mcp.json', 'CLAUDE.local.md', '.gitignore']) {
+      assert(existsSync(join(root, f)), `${f} should exist`);
     }
     // Idempotent re-run
     const r2 = run(root, 'phase-structure');
     assertEq(r2.status, 0);
-    assert(/created=0 existed=8/.test(r2.stdout));
+    assert(/dirs created=0 existed=11/.test(r2.stdout), r2.stdout);
+    assert(/files created=0 existed=5/.test(r2.stdout), r2.stdout);
+    assert(/\.gitignore present/.test(r2.stdout), r2.stdout);
     // Phase marked complete with metadata
     const state = readStateFile(root);
     assert(state.phases.structure.completed_at, 'completed_at set');
     assertEq(state.phases.structure.dirs_created, 0, 'meta from latest run');
+    assertEq(state.phases.structure.files_created, 0);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('phase-structure --dry-run does not create dirs or update state', () => {
+test('phase-structure does not overwrite existing seed files', () => {
+  const root = makeTestbed('struct-noclobber');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    writeFileSync(join(root, '.mcp.json'), '{"mcpServers":{"keep":"me"}}');
+    run(root, 'phase-structure');
+    const body = readFileSync(join(root, '.mcp.json'), 'utf8');
+    assert(body.includes('keep'), 'existing .mcp.json must not be overwritten');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('phase-structure merges PRISM block into existing .gitignore', () => {
+  const root = makeTestbed('struct-gitignore');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    writeFileSync(join(root, '.gitignore'), 'node_modules/\n*.pyc\n');
+    const r = run(root, 'phase-structure');
+    assert(/\.gitignore merged/.test(r.stdout), r.stdout);
+    const body = readFileSync(join(root, '.gitignore'), 'utf8');
+    assert(body.includes('node_modules/'), 'original entries preserved');
+    assert(body.includes('# --- PRISM ---'), 'PRISM block appended');
+    // Re-run is a no-op (no duplicate block)
+    run(root, 'phase-structure');
+    const body2 = readFileSync(join(root, '.gitignore'), 'utf8');
+    assertEq(body2.split('# --- PRISM ---').length, 2, 'PRISM block appears exactly once');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('phase-structure --dry-run does not create dirs/files or update state', () => {
   const root = makeTestbed('struct-dry');
   try {
     run(root, 'init-state-if-missing', 'tb');
@@ -168,6 +207,8 @@ test('phase-structure --dry-run does not create dirs or update state', () => {
     assertEq(r.status, 0);
     assert(/DRY-RUN/.test(r.stdout));
     assert(!existsSync(join(root, 'tasks')), 'tasks should NOT exist after dry-run');
+    assert(!existsSync(join(root, '.mcp.json')), '.mcp.json should NOT exist after dry-run');
+    assert(!existsSync(join(root, '.gitignore')), '.gitignore should NOT exist after dry-run');
     const after = readStateFile(root);
     assertEq(after.phases.structure.completed_at, before.phases.structure.completed_at);
   } finally { rmSync(root, {recursive: true, force: true}); }

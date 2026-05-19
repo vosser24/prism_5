@@ -55,7 +55,7 @@
 // under phases.structure.conventions_written = true.
 
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
 
 import {
@@ -148,30 +148,130 @@ function summarizePhases(state) {
 
 // ------------------------------ structure phase ------------------------------
 
+// Full project scaffold. Scope locked by D003-bootstrap-scaffold-scope.md
+// (supersedes the narrower D001 structure-phase table). The goal is that one
+// /prism-bootstrap run produces every directory and seed file a PRISM project
+// needs to track its own progress — no second command, no manual fill-in.
+
 const STRUCTURE_DIRS = [
+  // PRISM working knowledge
   '.claude/references',
   '.claude/rules',
+  // Claude Code project-local conventions
   '.claude/agents',
   '.claude/hooks',
+  '.claude/skills',
+  '.claude/commands',
+  // PRISM institutional memory
   'docs/prism/adjudications',
   'docs/prism/deviations',
+  'docs/prism/lessons',
   'docs/prism/smoke',
+  // Active work tracking
   'tasks',
 ];
 
+const TASKS_TODO_BODY = `# Active work
+
+Current tasks for this project. PRISM reads this at session start.
+
+## In progress
+
+## Up next
+
+## Done
+`;
+
+const LESSONS_TACTICAL_BODY = `# Tactical lessons
+
+Code-level patterns, gotchas, and fixes worth remembering across tasks.
+Append entries as \`YYYY-MM-DD — <lesson>\`. \`/prism-clean\` promotes
+durable findings here.
+`;
+
+const LESSONS_STRATEGIC_BODY = `# Strategic lessons
+
+Architecture decisions and cross-cutting trade-off rationale.
+Locked panel decisions belong in \`docs/prism/adjudications/\` instead —
+this file is for lighter-weight strategic notes.
+`;
+
+const MCP_JSON_BODY = `{
+  "mcpServers": {}
+}
+`;
+
+const CLAUDE_LOCAL_BODY = `# Personal project notes
+
+Git-ignored. Personal overrides and scratch notes for this project — not
+shared with the team. See \`CLAUDE.md\` for the shared project memory.
+`;
+
+// Seed files: written only when absent. { relPath: body }
+const STRUCTURE_FILES = {
+  'tasks/todo.md': TASKS_TODO_BODY,
+  'tasks/lessons-tactical.md': LESSONS_TACTICAL_BODY,
+  'tasks/lessons-strategic.md': LESSONS_STRATEGIC_BODY,
+  '.mcp.json': MCP_JSON_BODY,
+  'CLAUDE.local.md': CLAUDE_LOCAL_BODY,
+};
+
+const GITIGNORE_BLOCK = `# --- PRISM ---
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/.prism-state.json
+.claude/.prism-telemetry-rollup.json
+.claude/tools-scan.json
+# --- end PRISM ---
+`;
+
+const GITIGNORE_MARKER = '# --- PRISM ---';
+
+// Idempotently ensure the project .gitignore carries the PRISM block.
+// - no file        → create with the block
+// - file w/o block → append the block
+// - file w/ block  → no-op
+function ensureGitignore() {
+  const abs = join(opts.root, '.gitignore');
+  if (!existsSync(abs)) {
+    if (!opts.dryRun) writeFileSync(abs, GITIGNORE_BLOCK);
+    return 'created';
+  }
+  const body = readFileSync(abs, 'utf8');
+  if (body.includes(GITIGNORE_MARKER)) return 'present';
+  const sep = body.endsWith('\n') ? '\n' : '\n\n';
+  if (!opts.dryRun) writeFileSync(abs, body + sep + GITIGNORE_BLOCK);
+  return 'merged';
+}
+
 function ensureStructure() {
-  const created = [];
-  const existed = [];
+  const dirsCreated = [];
+  const dirsExisted = [];
   for (const rel of STRUCTURE_DIRS) {
     const abs = join(opts.root, rel);
     if (existsSync(abs)) {
-      existed.push(rel);
+      dirsExisted.push(rel);
     } else {
       if (!opts.dryRun) mkdirSync(abs, {recursive: true});
-      created.push(rel);
+      dirsCreated.push(rel);
     }
   }
-  return {created, existed};
+  const filesCreated = [];
+  const filesExisted = [];
+  for (const [rel, body] of Object.entries(STRUCTURE_FILES)) {
+    const abs = join(opts.root, rel);
+    if (existsSync(abs)) {
+      filesExisted.push(rel);
+    } else {
+      if (!opts.dryRun) {
+        mkdirSync(dirname(abs), {recursive: true});
+        writeFileSync(abs, body);
+      }
+      filesCreated.push(rel);
+    }
+  }
+  const gitignore = ensureGitignore();
+  return {dirsCreated, dirsExisted, filesCreated, filesExisted, gitignore};
 }
 
 // ------------------------------ conventions phase ------------------------------
@@ -335,16 +435,22 @@ try {
 
     case 'phase-structure': {
       const state = loadStateOrDie();
-      const result = ensureStructure();
-      stdout.write(`structure phase: created=${result.created.length} existed=${result.existed.length}\n`);
-      if (result.created.length) {
-        for (const d of result.created) stdout.write(`  + ${d}\n`);
-      }
+      const r = ensureStructure();
+      stdout.write(
+        `structure phase: dirs created=${r.dirsCreated.length} existed=${r.dirsExisted.length}; ` +
+        `files created=${r.filesCreated.length} existed=${r.filesExisted.length}; ` +
+        `.gitignore ${r.gitignore}\n`
+      );
+      for (const d of r.dirsCreated) stdout.write(`  + ${d}/\n`);
+      for (const f of r.filesCreated) stdout.write(`  + ${f}\n`);
       // Capture-conventions is part of structure phase metadata; do NOT
       // run it here unless caller invokes phase-conventions explicitly.
       const next = markPhaseCompleted(state, 'structure', {
-        dirs_created: result.created.length,
-        dirs_existed: result.existed.length,
+        dirs_created: r.dirsCreated.length,
+        dirs_existed: r.dirsExisted.length,
+        files_created: r.filesCreated.length,
+        files_existed: r.filesExisted.length,
+        gitignore: r.gitignore,
       });
       persistOrPrint(next, 'phase-structure complete');
       break;

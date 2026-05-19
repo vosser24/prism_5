@@ -100,7 +100,9 @@ Complete with meta: `{"claude_md_lines": N, "had_existing": true|false}`.
 
 ### Phase 2 — structure
 
-Goal: create the canonical PRISM directory tree.
+Goal: create the **complete** PRISM project scaffold in one shot. Scope is
+locked by `docs/prism/adjudications/D003-bootstrap-scaffold-scope.md` (which
+supersedes D001's narrower structure-phase table).
 
 Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-structure`
 Then:  `node ~/.claude/tools/prism-bootstrap.mjs phase-conventions`
@@ -108,9 +110,17 @@ Then:  `node ~/.claude/tools/prism-bootstrap.mjs phase-conventions`
 Both are idempotent. The structure helper creates:
 
 ```
-.claude/references/    .claude/rules/    .claude/agents/    .claude/hooks/
-docs/prism/adjudications/   docs/prism/deviations/   docs/prism/smoke/
+.claude/references/   .claude/rules/      .claude/agents/
+.claude/hooks/        .claude/skills/     .claude/commands/
+docs/prism/adjudications/   docs/prism/deviations/
+docs/prism/lessons/         docs/prism/smoke/
 tasks/
+
+# seed files — written only when absent, never overwritten:
+tasks/todo.md   tasks/lessons-tactical.md   tasks/lessons-strategic.md
+.mcp.json       CLAUDE.local.md
+
+# .gitignore — created, or PRISM block appended once if it already exists
 ```
 
 The conventions helper writes `.claude/rules/capture-conventions.md` if
@@ -120,7 +130,12 @@ Both `complete-phase structure` calls are folded — the helper handles the
 state write itself.
 
 If `--dry-run`: pass `--dry-run` to both helper calls; helper prints
-"DRY-RUN: would write state" and skips the disk write.
+"DRY-RUN: would write state" and skips every disk write.
+
+Note: this phase only *creates* directories. Populating `.claude/agents/`
+(roster phase), `.claude/skills/` + `.claude/references/` (discovery phase),
+and global-memory pointers in CLAUDE.md (identity phase) happens in those
+later phases — see D003 §"Populating skills, agents, and global memory".
 
 ### Phase 3 — discovery
 
