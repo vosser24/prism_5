@@ -179,5 +179,39 @@ test('complete: no state file exits 3', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('idempotency: two completes in a row produce valid state with advanced timestamps', () => {
+  const root = makeTestbed('idem');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const r1 = run(root, 'complete');
+    assertEq(r1.status, 0, r1.stderr);
+    const after1 = readStateFile(root);
+
+    const r2 = spawnSync('node', ['-e', 'setTimeout(() => process.exit(0), 50)'], {encoding: 'utf8'});
+    assertEq(r2.status, 0);
+
+    const r3 = run(root, 'complete');
+    assertEq(r3.status, 0, r3.stderr);
+    const after2 = readStateFile(root);
+
+    assert(after2.last_sync_at > after1.last_sync_at, 'last_sync_at advanced');
+    const planR = run(root, 'plan');
+    assertEq(planR.status, 0, 'state valid after two completes: ' + planR.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('crash safety: complete fails atomically — state stays valid on bad --meta', () => {
+  const root = makeTestbed('crash');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const before = readStateFile(root);
+    const r = run(root, 'complete', '--meta', '{not json');
+    assertEq(r.status, 5);
+    const after = readStateFile(root);
+    assertEq(after.last_sync_at, before.last_sync_at, 'state unchanged on meta error');
+    assertEq(after.checksum, before.checksum, 'checksum unchanged');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
