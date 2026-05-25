@@ -25,6 +25,10 @@ metadata:
 | `agents/master-orchestrator.md` (thin wrapper rewrite) | `agents/master-orchestrator.md` (overwrites prior) | **Phase E** |
 | `tools/prism-deep-dive.mjs` (default flip + prose alignment) | `tools/prism-deep-dive.mjs` (overwrites prior) | **Phase E re-sync** |
 | `commands/prism-deep-dive.md` (instruction update for new default) | `commands/prism-deep-dive.md` (overwrites prior) | **Phase E re-sync** |
+| `agents/agent-factory.md` (tense fix) | `agents/agent-factory.md` (overwrites prior) | **Phase E final** |
+| `hooks/prism-clean-nudge.mjs` | `hooks/prism-clean-nudge.mjs` (`~/.claude/hooks/` was empty pre-F — created the dir) | **Phase F** |
+| `hooks/lib/prism-exec.{sh,cmd}` (wrappers needed by the new hook entry) | `hooks/lib/` (also new dir) | **Phase F** |
+| `settings.json` merge: SessionEnd[matcher=clear] + PreCompact entries | `~/.claude/settings.json` (merged via `/tmp/merge-phase-f-hooks.mjs`) | **Phase F** |
 
 ## Cleanup commands (run AFTER smoke is captured + before re-installing from main)
 
@@ -33,6 +37,13 @@ Remove-Item -Recurse -Force $env:USERPROFILE\.claude\tools
 Remove-Item -Force $env:USERPROFILE\.claude\commands\prism-*.md
 Remove-Item -Recurse -Force $env:USERPROFILE\.claude\skills\prism-discover, $env:USERPROFILE\.claude\skills\prism-chat, $env:USERPROFILE\.claude\skills\prism-plan, $env:USERPROFILE\.claude\skills\blueprint-prompt, $env:USERPROFILE\.claude\skills\master-orchestrator
 Remove-Item -Force $env:USERPROFILE\.claude\agents\agent-factory.md, $env:USERPROFILE\.claude\agents\master-orchestrator.md
+Remove-Item -Recurse -Force $env:USERPROFILE\.claude\hooks
+```
+
+**Settings merge revert (Phase F):** Phase F's hook registration also mutated `~/.claude/settings.json`. To revert the SessionEnd + PreCompact entries (or undo the whole merge if reinstalling from main), filter them out by command-string match (the value contains `prism-clean-nudge.mjs` exactly):
+
+```powershell
+node -e "const fs=require('fs'); const p=$env:USERPROFILE+'/.claude/settings.json'; const s=JSON.parse(fs.readFileSync(p,'utf8')); const M='prism-clean-nudge.mjs'; function f(arr){return Array.isArray(arr)?arr.filter(b=>!b.hooks?.some(h=>h.command?.includes(M))).map(b=>({...b,hooks:b.hooks?.filter(h=>!h.command?.includes(M))})).filter(b=>b.hooks?.length>0):arr;}; s.hooks.SessionEnd=f(s.hooks.SessionEnd); s.hooks.PreCompact=f(s.hooks.PreCompact); if(!s.hooks.SessionEnd?.length)delete s.hooks.SessionEnd; if(!s.hooks.PreCompact?.length)delete s.hooks.PreCompact; fs.writeFileSync(p, JSON.stringify(s,null,2)+'\n'); console.log('reverted Phase F hook entries');"
 ```
 
 **Note:** Removing `~/.claude/agents/master-orchestrator.md` only undoes the Phase E thin-wrapper version. If a properly-shipped master-orchestrator agent existed at user-level before any of this work, you'd need to restore it from `~/.claude/backups/` (the installer creates timestamped backups at install time).
