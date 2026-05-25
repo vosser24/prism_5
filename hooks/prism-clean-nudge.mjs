@@ -17,7 +17,7 @@
 import {readFileSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = process.env.HOME || process.env.USERPROFILE || '';
 const LOG = join(H, '.claude', '.prism-routing.jsonl');
 
 function appendLog(obj) {
