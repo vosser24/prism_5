@@ -122,5 +122,66 @@ test('slug-derive --source state: returns slug locked in .prism-state.json', () 
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('agent-write: creates <root>/.claude/agents/master-<slug>.md with locked frontmatter', () => {
+  const root = makeTestbed('agentwrite');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo-cli');
+    assertEq(r.status, 0, r.stderr);
+    const path = join(root, '.claude', 'agents', 'master-foo-cli.md');
+    assert(existsSync(path), 'file written: ' + path);
+    const body = readFileSync(path, 'utf8');
+    assert(body.startsWith('---\n'), 'frontmatter starts');
+    assert(/name:\s*master-foo-cli/.test(body), 'name field: ' + body.slice(0, 200));
+    assert(/memory:\s*project/.test(body), 'memory: project');
+    assert(/skills:\s*\[master-orchestrator\]/.test(body), 'skills frontmatter');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-write: refuses to overwrite existing file without --force', () => {
+  const root = makeTestbed('agentwrite-collision');
+  try {
+    const dir = join(root, '.claude', 'agents');
+    mkdirSync(dir, {recursive: true});
+    writeFileSync(join(dir, 'master-foo.md'), '# existing\n');
+    const r = run(root, 'agent-write', '--slug', 'foo');
+    assertEq(r.status, 7, 'exit 7 on collision: ' + r.stderr);
+    assert(/already exists/.test(r.stderr), r.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-write --force: overwrites existing file', () => {
+  const root = makeTestbed('agentwrite-force');
+  try {
+    const dir = join(root, '.claude', 'agents');
+    mkdirSync(dir, {recursive: true});
+    writeFileSync(join(dir, 'master-foo.md'), '# existing\n');
+    const r = run(root, 'agent-write', '--slug', 'foo', '--force');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(dir, 'master-foo.md'), 'utf8');
+    assert(/name:\s*master-foo/.test(body), 'overwritten with frontmatter');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-write --orchestrator-protocol inline: inlines fallback body for pre-Phase-E', () => {
+  const root = makeTestbed('agentwrite-inline');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo', '--orchestrator-protocol', 'inline');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/Five unbreakable rules/.test(body), 'inlined orchestrator protocol present');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-write --orchestrator-protocol skill-ref: thin body that defers to skill', () => {
+  const root = makeTestbed('agentwrite-skillref');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo', '--orchestrator-protocol', 'skill-ref');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/Load skill: master-orchestrator/.test(body), 'thin skill-ref body');
+    assert(!/Five unbreakable rules/.test(body), 'no inlined protocol when skill-ref mode');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
