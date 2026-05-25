@@ -101,6 +101,7 @@ export function createInitialState(projectName, {now = nowIso()} = {}) {
     schema_version: SCHEMA_VERSION,
     prism_version: PRISM_VERSION,
     project_name: String(projectName ?? ''),
+    project_slug: null,             // D004 §1: locked once /prism-deep-dive derives it
     initialized_at: now,
     last_run: now,
     last_sync_at: null,
@@ -161,6 +162,7 @@ export function migrateV1ToV2(state) {
     ...state,
     schema_version: 2,
     prism_version: PRISM_VERSION,
+    project_slug: state.project_slug ?? null,  // D004 §1: seed v2-only field
     phases: newPhases,
     checksum: null,  // invalidated by migration; caller rewrites
   };
@@ -464,6 +466,16 @@ export function setSyncStamps(state, {at = nowIso(), nextRecommended = null} = {
     last_run: at,
     next_sync_recommended: nextRecommended,
   };
+}
+
+// D004 §1: lock the project_slug for determinism across re-runs.
+// Called once by /prism-deep-dive after the slug is derived. Strips the
+// checksum so writeStateAtomic recomputes it.
+export function setProjectSlug(state, slug) {
+  const trimmed = String(slug || '').trim();
+  if (!trimmed) throw new Error('setProjectSlug: slug must be non-empty');
+  const {checksum: _ignored, ...rest} = state;
+  return {...rest, project_slug: trimmed};
 }
 
 export function isPhaseCompleted(state, phaseName) {

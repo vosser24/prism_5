@@ -34,6 +34,7 @@ import {
   nowIso,
   readState,
   setLastCommand,
+  setProjectSlug,
   setSyncStamps,
   synthesizeFromFilesystem,
   validateState,
@@ -668,6 +669,52 @@ test('readState transparently migrates a v1 state file', () => {
   } finally {
     rmSync(root, {recursive: true, force: true});
   }
+});
+
+// ------------------------------------------------------------ project_slug (D004 §1)
+
+test('createInitialState: includes project_slug field default null', () => {
+  const state = createInitialState('test-project');
+  assertEq(state.project_slug, null, 'project_slug default null');
+});
+
+test('setProjectSlug: returns new state with project_slug set and checksum cleared', () => {
+  let state = createInitialState('tb');
+  state = setProjectSlug(state, 'foo-cli');
+  assertEq(state.project_slug, 'foo-cli');
+  assert(!state.checksum, 'checksum cleared on mutation');
+});
+
+test('setProjectSlug: rejects empty or whitespace-only slug', () => {
+  const state = createInitialState('tb');
+  let threw = false;
+  try { setProjectSlug(state, '   '); } catch { threw = true; }
+  assert(threw, 'empty/whitespace slug rejected');
+});
+
+test('migrateV1ToV2: project_slug field set to null on v1 → v2 migration', () => {
+  // Construct a synthetic v1 state object (using the lib's v1 shape)
+  const v1 = {
+    schema_version: 1,
+    prism_version: '3.10.0',
+    project_name: 'old-project',
+    initialized_at: '2026-01-01T00:00:00.000Z',
+    last_run: '2026-01-01T00:00:00.000Z',
+    last_sync_at: null,
+    next_sync_recommended: null,
+    phases: {
+      identity: {completed_at: null},
+      structure: {completed_at: null},
+      discovery: {completed_at: null},
+      roster: {completed_at: null},
+      health: {completed_at: null},
+    },
+    last_command: null,
+    phase_failures: [],
+  };
+  const migrated = migrateV1ToV2(v1);
+  assertEq(migrated.schema_version, 2);
+  assertEq(migrated.project_slug, null, 'project_slug seeded null on migration');
 });
 
 // ------------------------------------------------------------ summary
