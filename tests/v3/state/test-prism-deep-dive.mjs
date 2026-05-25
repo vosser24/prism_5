@@ -247,5 +247,15 @@ test('memory-seed: accepts --profile as a file path', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('memory-seed: exits 5 when --profile is valid JSON but not an object', () => {
+  const root = makeTestbed('memseed-badprofile');
+  try {
+    mkdirSync(join(root, '.claude', 'agents'), {recursive: true});
+    const r = run(root, 'memory-seed', '--slug', 'foo', '--profile', 'null');
+    assertEq(r.status, 5, 'null profile → exit 5: ' + r.stderr);
+    assert(/must be a JSON object/.test(r.stderr), 'diagnostic: ' + r.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -236,13 +236,18 @@ const MEMORY_MD_HARD_CAP_BYTES = 25 * 1024;  // D004 §5: hard validator at 25 K
 
 function loadProfile(profileArg) {
   // Heuristic: if it parses as JSON, it's inline; otherwise treat as file path.
-  try { return JSON.parse(profileArg); }
+  let parsed;
+  try { parsed = JSON.parse(profileArg); }
   catch {
     if (!existsSync(profileArg)) die(`--profile is neither valid JSON nor an existing file: ${profileArg}`, 5);
     const body = readFileSync(profileArg, 'utf8');
-    try { return JSON.parse(body); }
+    try { parsed = JSON.parse(body); }
     catch (e) { die(`--profile file contains invalid JSON: ${e.message}`, 5); }
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    die(`--profile must be a JSON object, got: ${JSON.stringify(parsed)}`, 5);
+  }
+  return parsed;
 }
 
 function renderMemoryMd({slug, profile}) {
