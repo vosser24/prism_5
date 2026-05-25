@@ -94,17 +94,6 @@ test('slug-derive --source claude-md: exits non-zero when no Project Identity se
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('slug-derive --source basename: exits 6 with prompt reason for generic name', () => {
-  const root = mkdtempSync(join(tmpdir(), 'project-'));  // basename starts with "project"
-  spawnSync('git', ['init', '-q'], {cwd: root});
-  try {
-    const r = run(root, 'slug-derive', '--source', 'basename');
-    // The mkdtemp suffix makes it project-XXXXX, which is NOT exactly "project" — should pass.
-    // But we want a separate test for the actual generic-name case.
-    // Use a fake basename via a symlink-style assertion: skip and rely on the next test.
-  } finally { rmSync(root, {recursive: true, force: true}); }
-});
-
 test('slug-derive --source auto: tries claude-md, falls back to basename', () => {
   const root = makeTestbed('slug-auto');
   try {

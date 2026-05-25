@@ -122,8 +122,11 @@ function deriveSlug(root, source) {
       return {slug, source: 'basename'};
     }
     case 'state': {
-      const slug = deriveFromState(root);
-      if (!slug) die('no project_slug in .prism-state.json (run /prism-bootstrap first)', 6);
+      const r = readState(root);
+      if (r.status === 'missing') die('no .prism-state.json (run /prism-bootstrap first)', 6);
+      if (r.status !== 'ok') die(`state file error (${r.status}): ${(r.errors || []).join('; ')}`, 6);
+      const slug = r.state.project_slug || null;
+      if (!slug) die('project_slug not set in .prism-state.json (run /prism-deep-dive first)', 6);
       return {slug, source: 'state'};
     }
     case 'prompt': {
