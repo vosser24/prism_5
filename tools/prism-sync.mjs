@@ -68,10 +68,75 @@ function die(msg, code = 1) {
   exit(code);
 }
 
+// ------------------------------ phase planning ------------------------------
+
+function loadStateOrDie() {
+  const r = readState(opts.root);
+  if (r.status === 'missing') {
+    die('no state file. Run: /prism-bootstrap first.', 3);
+  }
+  if (r.status !== 'ok') {
+    die(`state ${r.status}: ${r.errors.join('; ')}`, 4);
+  }
+  return r.state;
+}
+
+function claudeMdChangedSince(referenceIso) {
+  const path = join(opts.root, 'CLAUDE.md');
+  if (!existsSync(path)) return false;
+  if (!referenceIso) return true;
+  const mtimeMs = statSync(path).mtimeMs;
+  const refMs = new Date(referenceIso).getTime();
+  return mtimeMs > refMs;
+}
+
+function planMaintenancePhases(state) {
+  const reasons = {};
+  const pending = [];
+
+  pending.push('structure');
+  reasons.structure = 'verify scaffold';
+
+  const baseline = state.last_sync_at || state.initialized_at;
+  const claudeChanged = claudeMdChangedSince(baseline);
+  if (claudeChanged) {
+    pending.push('identity');
+    reasons.identity = 'CLAUDE.md modified since last sync';
+  }
+
+  pending.push('discovery');
+  reasons.discovery = 'conservative re-scan';
+
+  pending.push('roster');
+  reasons.roster = 'reconcile orphan agents';
+
+  pending.push('health');
+  reasons.health = 'verify wiring';
+
+  return {pending, reasons, claude_md_changed: claudeChanged};
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
   switch (cmd) {
+    case 'plan': {
+      if (opts.smartDrift) {
+        stderr.write('WARNING: --smart-drift is EXPERIMENTAL and not yet implemented; falling back to conservative.\n');
+      }
+      const state = loadStateOrDie();
+      const planned = planMaintenancePhases(state);
+      stdout.write(JSON.stringify({
+        project: state.project_name,
+        mode: 'conservative',
+        pending: planned.pending,
+        reasons: planned.reasons,
+        last_sync_at: state.last_sync_at,
+        last_run: state.last_run,
+        claude_md_changed: planned.claude_md_changed,
+      }, null, 2) + '\n');
+      break;
+    }
     default:
       die(`unknown command: ${cmd}`);
   }
