@@ -137,6 +137,40 @@ try {
       }, null, 2) + '\n');
       break;
     }
+
+    case 'complete': {
+      const state = loadStateOrDie();
+      let meta = {};
+      if (named.meta) {
+        try {
+          meta = JSON.parse(named.meta);
+        } catch (e) {
+          die(`--meta is not valid JSON: ${e.message}`, 5);
+        }
+        if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+          die('--meta must be a JSON object keyed by phase name', 5);
+        }
+      }
+
+      const now = nowIso();
+      const nextRecommended = new Date(Date.now() + 7 * 86400_000).toISOString();
+
+      let next = setSyncStamps(state, {at: now, nextRecommended});
+      for (const phase of ['discovery', 'roster', 'health']) {
+        const phaseMeta = meta[phase] && typeof meta[phase] === 'object' ? meta[phase] : {};
+        next = markPhaseCompleted(next, phase, phaseMeta, {now});
+      }
+      for (const phase of ['identity', 'structure']) {
+        if (meta[phase] && typeof meta[phase] === 'object') {
+          next = markPhaseCompleted(next, phase, meta[phase], {now});
+        }
+      }
+
+      writeStateAtomic(opts.root, next);
+      stdout.write(`sync complete: last_sync_at=${now}, next_sync_recommended=${nextRecommended}\n`);
+      break;
+    }
+
     default:
       die(`unknown command: ${cmd}`);
   }

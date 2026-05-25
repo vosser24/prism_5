@@ -115,5 +115,69 @@ test('plan --smart-drift: prints EXPERIMENTAL warning but falls back to conserva
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('complete: stamps last_sync_at and refreshes phase timestamps', () => {
+  const root = makeTestbed('complete-basic');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const before = readStateFile(root);
+    assertEq(before.last_sync_at, null, 'fresh state has null last_sync_at');
+
+    const meta = JSON.stringify({
+      discovery: {references_count: 12, tables_indexed: 4},
+      roster: {agents_registered: 3, orphans_remaining: 0},
+      health: {status: 'green', checks_passed: 5, checks_failed: 0},
+    });
+    const r = run(root, 'complete', '--meta', meta);
+    assertEq(r.status, 0, r.stderr);
+    assert(/sync complete/.test(r.stdout), r.stdout);
+
+    const after = readStateFile(root);
+    assert(after.last_sync_at, 'last_sync_at set');
+    assert(after.next_sync_recommended, 'next_sync_recommended set');
+    const gap = new Date(after.next_sync_recommended).getTime() - new Date(after.last_sync_at).getTime();
+    assert(gap > 6 * 86400_000, `next_sync_recommended ~7d ahead, got ${gap}ms`);
+    assertEq(after.phases.discovery.references_count, 12);
+    assertEq(after.phases.roster.agents_registered, 3);
+    assertEq(after.phases.health.status, 'green');
+    assertEq(after.phases.discovery.completed_at, after.last_sync_at);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('complete: --meta with invalid JSON exits 5', () => {
+  const root = makeTestbed('complete-badmeta');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'complete', '--meta', '{not json');
+    assertEq(r.status, 5, r.stderr);
+    assert(/--meta is not valid JSON/.test(r.stderr), r.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('complete: no --meta → still stamps sync timestamps, no phase mutations', () => {
+  const root = makeTestbed('complete-nometa');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    bootstrap(root, 'phase-structure');
+    const before = readStateFile(root);
+    const r = run(root, 'complete');
+    assertEq(r.status, 0, r.stderr);
+    const after = readStateFile(root);
+    assert(after.last_sync_at, 'last_sync_at set');
+    assert(after.phases.discovery.completed_at, 'discovery refreshed');
+    assert(after.phases.roster.completed_at, 'roster refreshed');
+    assert(after.phases.health.completed_at, 'health refreshed');
+    assertEq(after.phases.structure.dirs_created, before.phases.structure.dirs_created,
+      'structure meta preserved');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('complete: no state file exits 3', () => {
+  const root = makeTestbed('complete-nostate');
+  try {
+    const r = run(root, 'complete');
+    assertEq(r.status, 3, r.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
