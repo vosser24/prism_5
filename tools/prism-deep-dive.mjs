@@ -151,10 +151,12 @@ function deriveSlug(root, source) {
 
 // ------------------------------ agent-write templates ------------------------------
 
-// D004 §3: Phase E will migrate the orchestrator body to a skill. Until then,
-// agent-write defaults to --orchestrator-protocol=inline so the agent works
-// standalone. Phase E will flip projects to --orchestrator-protocol=skill-ref
-// once the skill exists at ~/.claude/skills/master-orchestrator/SKILL.md.
+// D004 §3: Phase E (completed) migrated the orchestrator body to a skill at
+// ~/.claude/skills/master-orchestrator/SKILL.md. agent-write defaults to
+// --orchestrator-protocol=skill-ref so generated master-<slug> agents pick up
+// the skill automatically. The --orchestrator-protocol=inline mode remains
+// available for environments where the skill isn't installed (e.g., dev
+// branches before re-sync); it emits the 5-rule fallback body verbatim.
 
 const ORCH_PROTOCOL_INLINE = `## Operating protocol (inlined; Phase E will migrate to skills:master-orchestrator)
 
@@ -339,7 +341,7 @@ try {
     }
     case 'agent-write': {
       if (!named.slug) die('agent-write requires --slug <s>', 5);
-      const protocol = named.protocol || 'inline';
+      const protocol = named.protocol || 'skill-ref';
       if (!['inline', 'skill-ref'].includes(protocol)) {
         die(`--orchestrator-protocol must be inline or skill-ref, got ${protocol}`, 5);
       }

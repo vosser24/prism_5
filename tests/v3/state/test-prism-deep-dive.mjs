@@ -183,6 +183,19 @@ test('agent-write --orchestrator-protocol skill-ref: thin body that defers to sk
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('agent-write default (no --orchestrator-protocol flag): skill-ref body (Phase E)', () => {
+  const root = makeTestbed('agentwrite-default');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/Load skill: master-orchestrator/.test(body), 'default body must be skill-ref shape (Phase E flip)');
+    assert(!/Five unbreakable rules/.test(body), 'default must NOT inline the protocol (Phase E flip)');
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
+});
+
 test('memory-seed: writes MEMORY.md with router sections from profile JSON', () => {
   const root = makeTestbed('memseed');
   try {
