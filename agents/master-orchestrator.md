@@ -9,6 +9,7 @@ tools: Read, Write, Bash, Grep, Glob, Agent
 model: opus
 maxTurns: 80
 memory: true
+skills: [master-orchestrator]
 ---
 
 Load skill: master-orchestrator

@@ -422,10 +422,10 @@ grep -q "Wrap" "$REPO/commands/prism-roster.md" && pass "T_v3.7.4 reconcile-clou
 grep -q "prism-orphan-notebook-skiplist" "$REPO/commands/prism-roster.md" && pass "T_v3.7.5 reconcile-cloud documents skiplist path" || fail "T_v3.7.5 reconcile-cloud missing skiplist path"
 
 # master-orchestrator Phase 0a has orphan notebook section
-grep -q "Orphan NotebookLM notebooks" "$REPO/agents/master-orchestrator.md" && pass "T_v3.7.6 Phase 0a surfaces orphan notebooks" || fail "T_v3.7.6 Phase 0a missing orphan notebooks section"
+grep -q "Orphan NotebookLM notebooks" "$REPO/skills/master-orchestrator/SKILL.md" && pass "T_v3.7.6 Phase 0a surfaces orphan notebooks" || fail "T_v3.7.6 Phase 0a missing orphan notebooks section"
 
 # master-orchestrator references --from-notebook wiring suggestion
-grep -q -- "--from-notebook" "$REPO/agents/master-orchestrator.md" && pass "T_v3.7.7 Phase 0a references --from-notebook wiring" || fail "T_v3.7.7 Phase 0a missing --from-notebook reference"
+grep -q -- "--from-notebook" "$REPO/skills/master-orchestrator/SKILL.md" && pass "T_v3.7.7 Phase 0a references --from-notebook wiring" || fail "T_v3.7.7 Phase 0a missing --from-notebook reference"
 
 # ============================================================
 # Category v3.8 — Conversational-friction reduction (NEW in v3.8.0)
