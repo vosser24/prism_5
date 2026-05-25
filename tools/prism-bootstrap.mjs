@@ -54,9 +54,11 @@
 // (phase 4) is part of the structure phase: this helper records it
 // under phases.structure.conventions_written = true.
 
+import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
+import {fileURLToPath} from 'node:url';
 
 import {
   PHASES,
@@ -68,6 +70,7 @@ import {
   markPhaseStarted,
   readState,
   setLastCommand,
+  setProjectSlug,
   synthesizeFromFilesystem,
   writeStateAtomic,
 } from './lib/prism-state.mjs';
@@ -503,19 +506,58 @@ try {
     }
 
     case 'phase-project-master': {
-      // v3.11.0 Phase B stub. Opt-in only — refuse unless --with-deep-dive is
-      // set, matching the planner. Phase D of D004 will replace this stub
-      // with /prism-deep-dive + agent-factory --master-<slug> generation.
+      // v4.0 Phase D wiring. Opt-in only — refuse unless --with-deep-dive is set.
+      // The bootstrap helper cannot run AskUserQuestion, so it requires
+      // slug-derive --source auto to succeed non-interactively. If that fails
+      // (generic basename, no CLAUDE.md identity), the user must run
+      // /prism-deep-dive directly (which can prompt).
       if (!opts.withDeepDive) {
         die('phase-project-master is opt-in. Pass --with-deep-dive to run.', 6);
       }
       const state = loadStateOrDie();
-      const next = markPhaseCompleted(state, 'project-master', {
-        stub: true,
-        note: 'Phase D will generate <project>/.claude/agents/master-<slug>.md.',
+      const markStarted = markPhaseStarted(state, 'project-master');
+      writeStateAtomic(opts.root, setLastCommand(markStarted, 'bootstrap:project-master'));
+
+      // Resolve the deep-dive helper path relative to this file's own dir.
+      // Use fileURLToPath so Windows drive letters resolve correctly
+      // (raw .pathname yields "/Y:/..." which Node mis-resolves to "Y:\Y:\...").
+      const helperPath = fileURLToPath(new URL('./prism-deep-dive.mjs', import.meta.url));
+      const slugRes = spawnSync(process.execPath, [helperPath, 'slug-derive', '--source', 'auto', '--root', opts.root], {encoding: 'utf8'});
+      if (slugRes.status === 6) {
+        // Generic basename or no identity → the slash command must drive (it can prompt).
+        stdout.write(
+          `project-master phase: slug needs user prompting (basename is generic, no CLAUDE.md identity).\n` +
+          `  run /prism-deep-dive to complete this phase interactively.\n`
+        );
+        // Do NOT mark complete — slash command will close it.
+        break;
+      }
+      if (slugRes.status !== 0) {
+        die(`slug-derive failed: ${slugRes.stderr || slugRes.stdout}`, 1);
+      }
+      const slugInfo = JSON.parse(slugRes.stdout);
+
+      // We've derived the slug non-interactively. But we STILL don't drive the
+      // discovery + AskUserQuestion turn here (bootstrap is helper-only). Tell
+      // the user to run /prism-deep-dive — but seed the phase with the slug so
+      // the slash command picks it up from state.
+      stdout.write(
+        `project-master phase: slug locked (${slugInfo.slug} via ${slugInfo.source}).\n` +
+        `  run /prism-deep-dive to complete agent generation interactively.\n`
+      );
+
+      // Persist slug to state but mark the phase complete from the bootstrap
+      // orchestrator's POV — the slash command can re-open it via start-phase
+      // if it needs to add the artifact paths. setProjectSlug strips the
+      // checksum field; restore checksum: null so writeStateAtomic's validator
+      // (which requires checksum to be string|null, not undefined) accepts it.
+      const withSlug = {...setProjectSlug(loadStateOrDie(), slugInfo.slug), checksum: null};
+      const next = markPhaseCompleted(withSlug, 'project-master', {
+        slug: slugInfo.slug,
+        source: slugInfo.source,
+        completed_via: 'phase-project-master (slug only; agent files written by /prism-deep-dive)',
       });
-      persistOrPrint(next, 'phase-project-master complete (stub)');
-      stdout.write(`project-master phase: stub (Phase D wires agent-factory deep-dive)\n`);
+      persistOrPrint(next, 'phase-project-master complete (slug locked)');
       break;
     }
 
