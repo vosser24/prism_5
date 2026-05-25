@@ -165,31 +165,12 @@
         ]
       }
     ],
-    "SessionEnd": [
-      {
-        "matcher": "clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-clean-nudge.mjs"
-          }
-        ]
-      }
-    ],
     "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-session-start.mjs"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-clean-nudge.mjs"
           }
         ]
       }
