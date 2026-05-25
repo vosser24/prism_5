@@ -251,7 +251,7 @@ test('append-decision: refuses when appending would exceed 25 KB cap', () => {
   const root = makeTestbed('append-dec-cap');
   try {
     seedMemoryMd(root, 'foo');
-    // Pad MEMORY.md to just under 25 KB so the next append crosses
+    // Pad MEMORY.md to ~26 KB — already over the 25 KB cap — so the helper refuses when appending
     const path = join(root, '.claude', 'agents', 'MEMORY.md');
     const body = readFileSync(path, 'utf8');
     const padding = '<!-- pad -->\n'.repeat(2000); // ~26 KB of padding
@@ -303,6 +303,7 @@ test('append-lesson: refuses when MEMORY.md does not exist', () => {
   try {
     const r = run(root, 'append-lesson', '--slug', 'foo', '--date', '2026-05-25', '--title', 'x');
     assertEq(r.status, 6, 'expected exit 6');
+    assert(/MEMORY\.md/.test(r.stderr), 'stderr should mention MEMORY.md');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
