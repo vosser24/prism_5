@@ -178,6 +178,40 @@ Invoke the existing `/prism-health` checks. Report status to the user.
 
 Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
 
+### Phase 6 — project-master (opt-in via --with-deep-dive)
+
+This phase is **skipped by default** (D004 §8). To run it, the user invoked
+`/prism-bootstrap --with-deep-dive` OR runs `/prism-deep-dive` directly.
+
+Two paths:
+
+**Path A — opt-in via bootstrap flag:**
+
+Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-project-master --with-deep-dive`
+
+Outcomes:
+- Exit 0 with "slug locked" message → phase complete (slug recorded in
+  state; the actual agent generation happens when the user runs
+  `/prism-deep-dive` to drive the AskUserQuestion turn).
+- Exit 0 with "slug needs user prompting" message → tell the user to run
+  `/prism-deep-dive` directly. Do NOT try to AskUserQuestion in the bootstrap
+  flow — that's the deep-dive slash command's responsibility.
+- Exit 6 ("opt-in") → the user passed `--with-deep-dive` but the bootstrap
+  helper didn't honor it. Re-check the invocation.
+
+After the helper returns, **invoke /prism-deep-dive yourself** (as the
+bootstrap slash command) to complete the agent generation. Do not leave the
+user with a half-built master.
+
+**Path B — direct deep-dive (recommended for clarity):**
+
+If the user did NOT pass `--with-deep-dive`, the planner skips this phase
+silently. Surface a one-line nudge at the end of bootstrap:
+
+  *"To create your project-master agent, run `/prism-deep-dive`."*
+
+Per D004 §8, this is the opt-in default. Do NOT auto-prompt or auto-run.
+
 ---
 
 ## Step N — final report
