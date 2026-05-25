@@ -20,6 +20,7 @@ import {join} from 'node:path';
 import {
   MAX_PHASE_FAILURES,
   PHASES,
+  PHASE_STATUSES,
   PRISM_VERSION,
   SCHEMA_VERSION,
   computeChecksum,
@@ -28,6 +29,8 @@ import {
   isPhaseCompleted,
   markPhaseCompleted,
   markPhaseFailed,
+  markPhaseStarted,
+  migrateV1ToV2,
   nowIso,
   readState,
   setLastCommand,
@@ -460,6 +463,208 @@ test('full bootstrap + re-run is idempotent', () => {
     assertEq(r.state.phase_failures.length, 0);
     // Phase metadata preserved
     for (const p of PHASES) assertEq(r.state.phases[p].n, p.length);
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
+});
+
+// ------------------------------------------------------------ v2 schema (Phase B)
+
+test('SCHEMA_VERSION is 2 and PHASES has 7 entries', () => {
+  assertEq(SCHEMA_VERSION, 2);
+  assertEq(PHASES.length, 7);
+  assert(PHASES.includes('plugin-validate'));
+  assert(PHASES.includes('project-master'));
+});
+
+test('createInitialState sets v2 sentinel fields on every phase', () => {
+  const s = createInitialState('proj');
+  for (const p of PHASES) {
+    assertEq(s.phases[p].status, null);
+    assertEq(s.phases[p].started_at, null);
+    assertEq(s.phases[p].completed_at, null);
+    assertEq(s.phases[p].artifact_hashes, []);
+  }
+});
+
+test('markPhaseStarted sets status=in-progress and started_at', () => {
+  let s = createInitialState('proj');
+  s = markPhaseStarted(s, 'discovery');
+  assertEq(s.phases.discovery.status, 'in-progress');
+  assert(s.phases.discovery.started_at, 'started_at set');
+  // Other phases untouched
+  assertEq(s.phases.identity.status, null);
+});
+
+test('markPhaseCompleted sets status=complete and preserves started_at', () => {
+  let s = createInitialState('proj');
+  s = markPhaseStarted(s, 'discovery');
+  const startedAt = s.phases.discovery.started_at;
+  s = markPhaseCompleted(s, 'discovery', {references_count: 7});
+  assertEq(s.phases.discovery.status, 'complete');
+  assertEq(s.phases.discovery.started_at, startedAt);
+  assert(s.phases.discovery.completed_at);
+  assertEq(s.phases.discovery.references_count, 7);
+});
+
+test('markPhaseCompleted accepts artifact_hashes via metadata', () => {
+  let s = createInitialState('proj');
+  const hashes = [{path: 'CLAUDE.md', sha256: 'abc123'}];
+  s = markPhaseCompleted(s, 'identity', {artifact_hashes: hashes, claude_md_lines: 100});
+  assertEq(s.phases.identity.artifact_hashes, hashes);
+  assertEq(s.phases.identity.claude_md_lines, 100);
+});
+
+test('markPhaseFailed sets phase entry status=failed AND appends to phase_failures', () => {
+  let s = createInitialState('proj');
+  s = markPhaseStarted(s, 'discovery');
+  s = markPhaseFailed(s, 'discovery', 'db unreachable');
+  assertEq(s.phases.discovery.status, 'failed');
+  assertEq(s.phase_failures.length, 1);
+  assertEq(s.phase_failures[0].phase, 'discovery');
+});
+
+test('isPhaseCompleted reflects status=complete (preferred) and completed_at (fallback)', () => {
+  // Explicit v2 status
+  let s1 = createInitialState('proj');
+  s1.phases.identity.status = 'complete';
+  s1.phases.identity.completed_at = nowIso();
+  assert(isPhaseCompleted(s1, 'identity'));
+  // Legacy fallback: status null but completed_at set (v1-migrated)
+  let s2 = createInitialState('proj');
+  s2.phases.identity.completed_at = nowIso();
+  assert(isPhaseCompleted(s2, 'identity'));
+  // Truly incomplete
+  let s3 = createInitialState('proj');
+  assert(!isPhaseCompleted(s3, 'identity'));
+});
+
+test('validateState rejects invalid status value', () => {
+  const s = createInitialState('proj');
+  s.phases.identity.status = 'wat';
+  const v = validateState(s);
+  assert(!v.ok);
+  assert(v.errors.some(e => e.includes('phases.identity.status')), v.errors.join(';'));
+});
+
+test('validateState rejects non-array artifact_hashes', () => {
+  const s = createInitialState('proj');
+  s.phases.identity.artifact_hashes = 'oops';
+  const v = validateState(s);
+  assert(!v.ok);
+  assert(v.errors.some(e => e.includes('artifact_hashes')), v.errors.join(';'));
+});
+
+test('PHASE_STATUSES exports the three explicit statuses', () => {
+  assertEq(PHASE_STATUSES, ['in-progress', 'complete', 'failed']);
+});
+
+// ------------------------------------------------------------ v1 → v2 migration
+
+test('migrateV1ToV2: empty v1 state migrates to v2 with sentinel fields', () => {
+  const v1 = {
+    schema_version: 1,
+    prism_version: '3.10.0',
+    project_name: 'old',
+    initialized_at: '2026-01-01T00:00:00.000Z',
+    last_run: '2026-01-01T00:00:00.000Z',
+    last_sync_at: null,
+    next_sync_recommended: null,
+    phases: {
+      identity: {completed_at: null},
+      structure: {completed_at: null},
+      // v1 had only 5 phases; missing entries are added by migration
+    },
+    last_command: null,
+    phase_failures: [],
+    checksum: null,
+  };
+  const v2 = migrateV1ToV2(v1);
+  assertEq(v2.schema_version, 2);
+  for (const p of PHASES) {
+    assert(v2.phases[p], `phase ${p} present after migration`);
+    assert('status' in v2.phases[p], `status field added for ${p}`);
+    assert('started_at' in v2.phases[p]);
+    assert('artifact_hashes' in v2.phases[p]);
+  }
+  assertEq(v2.phases.identity.status, null);
+});
+
+test('migrateV1ToV2: completed v1 phase becomes status=complete with started_at = completed_at', () => {
+  const completedAt = '2026-01-02T12:00:00.000Z';
+  const v1 = {
+    schema_version: 1,
+    prism_version: '3.10.0',
+    project_name: 'old',
+    initialized_at: '2026-01-01T00:00:00.000Z',
+    last_run: completedAt,
+    last_sync_at: null,
+    next_sync_recommended: null,
+    phases: {
+      identity: {completed_at: completedAt, claude_md_lines: 180},
+      structure: {completed_at: completedAt, dirs_created: 11, synthesized: true},
+    },
+    last_command: null,
+    phase_failures: [],
+    checksum: null,
+  };
+  const v2 = migrateV1ToV2(v1);
+  assertEq(v2.phases.identity.status, 'complete');
+  assertEq(v2.phases.identity.completed_at, completedAt);
+  assertEq(v2.phases.identity.started_at, completedAt);
+  assertEq(v2.phases.identity.claude_md_lines, 180, 'v1 metadata preserved');
+  assertEq(v2.phases.structure.synthesized, true, 'synthesized flag preserved');
+  assertEq(v2.phases.structure.dirs_created, 11);
+  // New v2 phases default to null status
+  assertEq(v2.phases['plugin-validate'].status, null);
+  assertEq(v2.phases['project-master'].status, null);
+});
+
+test('migrateV1ToV2: v2 input is returned as-is', () => {
+  const v2 = createInitialState('already-v2');
+  const out = migrateV1ToV2(v2);
+  assertEq(out.schema_version, 2);
+  // Same phase set
+  for (const p of PHASES) assert(out.phases[p]);
+});
+
+test('readState transparently migrates a v1 state file', () => {
+  const root = makeTmpRoot('v1read');
+  try {
+    // Build a v1-shaped state and write it WITH a correct v1 checksum, so the
+    // reader can verify it before migrating.
+    const completedAt = '2026-02-03T11:00:00.000Z';
+    const v1 = {
+      schema_version: 1,
+      prism_version: '3.10.0',
+      project_name: 'legacy',
+      initialized_at: '2026-02-01T00:00:00.000Z',
+      last_run: completedAt,
+      last_sync_at: null,
+      next_sync_recommended: null,
+      phases: {
+        identity: {completed_at: completedAt, claude_md_lines: 150},
+        structure: {completed_at: null},
+        discovery: {completed_at: null},
+        roster: {completed_at: null},
+        health: {completed_at: null},
+      },
+      last_command: null,
+      phase_failures: [],
+      checksum: null,
+    };
+    v1.checksum = computeChecksum(v1);
+    mkdirSync(join(root, '.claude'), {recursive: true});
+    writeFileSync(getStatePath(root), JSON.stringify(v1, null, 2) + '\n');
+
+    const r = readState(root);
+    assertEq(r.status, 'ok');
+    assertEq(r.migrated, true);
+    assertEq(r.state.schema_version, 2);
+    assertEq(r.state.phases.identity.status, 'complete');
+    assertEq(r.state.phases.identity.claude_md_lines, 150);
+    // v2-only phases initialized
+    assertEq(r.state.phases['plugin-validate'].status, null);
   } finally {
     rmSync(root, {recursive: true, force: true});
   }

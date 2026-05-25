@@ -176,7 +176,7 @@ Goal: verify wiring; produce a green/yellow/red report.
 
 Invoke the existing `/prism-health` checks. Report status to the user.
 
-Complete with meta: `{"status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`.
+Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
 
 ---
 

@@ -69,7 +69,7 @@ test('init-state-if-missing creates fresh state', () => {
     assert(/mode: fresh/.test(r.stdout));
     const state = readStateFile(root);
     assertEq(state.project_name, 'tb');
-    assertEq(state.schema_version, 1);
+    assertEq(state.schema_version, 2);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
@@ -111,7 +111,8 @@ test('plan: lists pending phases for a fresh state', () => {
     const r = run(root, 'plan');
     assertEq(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assertEq(out.pending, ['identity', 'structure', 'discovery', 'roster', 'health']);
+    // project-master is opt-in only; default plan skips it (D004 §3).
+    assertEq(out.pending, ['identity', 'structure', 'plugin-validate', 'discovery', 'roster', 'health']);
     assertEq(out.completed, []);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
@@ -291,14 +292,95 @@ test('full bootstrap walk: init → structure → conventions → individual pha
     run(root, 'start-phase', 'roster');
     run(root, 'complete-phase', 'roster', '--meta', '{"agents_registered":12,"orphans_remaining":0}');
     run(root, 'start-phase', 'health');
-    run(root, 'complete-phase', 'health', '--meta', '{"status":"green"}');
+    run(root, 'complete-phase', 'health', '--meta', '{"health_status":"green"}');
     const r = run(root, 'plan');
     const out = JSON.parse(r.stdout);
-    assertEq(out.pending, []);
+    // plugin-validate is a new v2 phase, still pending. project-master is
+    // opt-in only — default planner skips it without --with-deep-dive.
+    assertEq(out.pending, ['plugin-validate']);
     assertEq(out.completed, ['identity', 'structure', 'discovery', 'roster', 'health']);
     const state = readStateFile(root);
-    assertEq(state.phases.health.status, 'green');
+    assertEq(state.phases.health.health_status, 'green');
+    assertEq(state.phases.health.status, 'complete');  // v2 sentinel
     assertEq(state.phases.discovery.references_count, 5);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ------------------------------ v2 phases (Phase B) ------------------------------
+
+test('phase-plugin-validate writes a stub sentinel', () => {
+  const root = makeTestbed('pv');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'phase-plugin-validate');
+    assertEq(r.status, 0, r.stderr);
+    assert(/plugin-validate phase: stub/.test(r.stdout), r.stdout);
+    const state = readStateFile(root);
+    assertEq(state.phases['plugin-validate'].status, 'complete');
+    assertEq(state.phases['plugin-validate'].stub, true);
+    assert(state.phases['plugin-validate'].completed_at);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('phase-project-master refuses without --with-deep-dive', () => {
+  const root = makeTestbed('pm-refuse');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'phase-project-master');
+    assertEq(r.status, 6);
+    assert(/opt-in/.test(r.stderr), r.stderr);
+    const state = readStateFile(root);
+    assertEq(state.phases['project-master'].status, null, 'not advanced');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('phase-project-master writes stub when --with-deep-dive is set', () => {
+  const root = makeTestbed('pm-go');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'phase-project-master', '--with-deep-dive');
+    assertEq(r.status, 0, r.stderr);
+    assert(/project-master phase: stub/.test(r.stdout), r.stdout);
+    const state = readStateFile(root);
+    assertEq(state.phases['project-master'].status, 'complete');
+    assertEq(state.phases['project-master'].stub, true);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('plan --with-deep-dive includes project-master', () => {
+  const root = makeTestbed('pm-plan');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'plan', '--with-deep-dive');
+    const out = JSON.parse(r.stdout);
+    assert(out.pending.includes('project-master'), 'plan: ' + JSON.stringify(out));
+    assertEq(out.with_deep_dive, true);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('start-phase sets sentinel status=in-progress', () => {
+  const root = makeTestbed('sent');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    run(root, 'start-phase', 'discovery');
+    const state = readStateFile(root);
+    assertEq(state.phases.discovery.status, 'in-progress');
+    assert(state.phases.discovery.started_at, 'started_at set');
+    assertEq(state.last_command, 'bootstrap:discovery');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('crash resume: in-progress phase plans first on re-run', () => {
+  const root = makeTestbed('resume');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    run(root, 'phase-structure');
+    run(root, 'start-phase', 'discovery');
+    // Simulate crash by not completing — re-run plan should still include discovery
+    const r = run(root, 'plan');
+    const out = JSON.parse(r.stdout);
+    assert(out.pending.includes('discovery'), 'discovery still pending');
+    assertEq(out.last_command, 'bootstrap:discovery');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 

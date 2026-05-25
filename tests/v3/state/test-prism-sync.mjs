@@ -125,7 +125,7 @@ test('complete: stamps last_sync_at and refreshes phase timestamps', () => {
     const meta = JSON.stringify({
       discovery: {references_count: 12, tables_indexed: 4},
       roster: {agents_registered: 3, orphans_remaining: 0},
-      health: {status: 'green', checks_passed: 5, checks_failed: 0},
+      health: {health_status: 'green', checks_passed: 5, checks_failed: 0},
     });
     const r = run(root, 'complete', '--meta', meta);
     assertEq(r.status, 0, r.stderr);
@@ -138,7 +138,8 @@ test('complete: stamps last_sync_at and refreshes phase timestamps', () => {
     assert(gap > 6 * 86400_000, `next_sync_recommended ~7d ahead, got ${gap}ms`);
     assertEq(after.phases.discovery.references_count, 12);
     assertEq(after.phases.roster.agents_registered, 3);
-    assertEq(after.phases.health.status, 'green');
+    assertEq(after.phases.health.health_status, 'green');
+    assertEq(after.phases.health.status, 'complete');
     assertEq(after.phases.discovery.completed_at, after.last_sync_at);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });

@@ -65,6 +65,7 @@ import {
   isPhaseCompleted,
   markPhaseCompleted,
   markPhaseFailed,
+  markPhaseStarted,
   readState,
   setLastCommand,
   synthesizeFromFilesystem,
@@ -74,7 +75,14 @@ import {
 // ------------------------------ args ------------------------------
 
 const args = argv.slice(2);
-const opts = {root: process.cwd(), dryRun: false, force: false, skipDiscover: false, noGitGuard: false};
+const opts = {
+  root: process.cwd(),
+  dryRun: false,
+  force: false,
+  skipDiscover: false,
+  withDeepDive: false,
+  noGitGuard: false,
+};
 const positional = [];
 const named = {};
 
@@ -84,6 +92,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--dry-run') opts.dryRun = true;
   else if (a === '--force') opts.force = true;
   else if (a === '--skip-discover') opts.skipDiscover = true;
+  else if (a === '--with-deep-dive') opts.withDeepDive = true;
   else if (a === '--no-git-guard') opts.noGitGuard = true;
   else if (a === '--meta') named.meta = args[++i];
   else if (a === '-h' || a === '--help' || a === 'help') usage();
@@ -94,19 +103,22 @@ const cmd = positional.shift();
 if (!cmd) usage(1);
 
 function usage(code = 0) {
-  stdout.write(`Usage: prism-bootstrap <command> [args] [--root <path>] [--dry-run] [--force] [--skip-discover] [--no-git-guard]
+  stdout.write(`Usage: prism-bootstrap <command> [args] [--root <path>] [--dry-run] [--force] [--skip-discover] [--with-deep-dive] [--no-git-guard]
 
 Commands:
   plan
   status
   phase-structure
   phase-conventions
+  phase-plugin-validate
+  phase-project-master
   start-phase <name>
   complete-phase <name> [--meta '<json>']
   fail-phase <name> "<error>"
   init-state-if-missing <project-name>
 
-Phases (locked schema): ${PHASES.join(' | ')}
+Phases (v2 schema): ${PHASES.join(' | ')}
+project-master is opt-in: planner skips it unless --with-deep-dive is set.
 `);
   exit(code);
 }
@@ -125,6 +137,9 @@ function planPhases(state) {
   const plan = [];
   for (const p of PHASES) {
     if (p === 'discovery' && opts.skipDiscover) continue;
+    // D004 §3 + §4: project-master is opt-in. Default plan skips it; users
+    // who want the deep-dive flow re-run with --with-deep-dive.
+    if (p === 'project-master' && !opts.withDeepDive) continue;
     if (opts.force) {
       plan.push(p);
     } else if (!isPhaseCompleted(state, p)) {
@@ -373,6 +388,7 @@ try {
         project: state.project_name,
         force: opts.force,
         skip_discover: opts.skipDiscover,
+        with_deep_dive: opts.withDeepDive,
         pending: plan,
         completed: PHASES.filter(p => isPhaseCompleted(state, p)),
         last_command: state.last_command,
@@ -470,12 +486,48 @@ try {
       break;
     }
 
+    case 'phase-plugin-validate': {
+      // v3.11.0 Phase B stub. The full implementation is Phase C
+      // (/prism-validate-plugins) per D004 — this stub just registers a
+      // sentinel so the 7-phase planner can advance past plugin-validate
+      // when /prism-bootstrap runs idempotently. The slash command will
+      // eventually wire `claude plugin list --json` here.
+      const state = loadStateOrDie();
+      const next = markPhaseCompleted(state, 'plugin-validate', {
+        stub: true,
+        note: 'Phase C will populate plugin reachability + version drift checks.',
+      });
+      persistOrPrint(next, 'phase-plugin-validate complete (stub)');
+      stdout.write(`plugin-validate phase: stub (Phase C wires the real validator)\n`);
+      break;
+    }
+
+    case 'phase-project-master': {
+      // v3.11.0 Phase B stub. Opt-in only — refuse unless --with-deep-dive is
+      // set, matching the planner. Phase D of D004 will replace this stub
+      // with /prism-deep-dive + agent-factory --master-<slug> generation.
+      if (!opts.withDeepDive) {
+        die('phase-project-master is opt-in. Pass --with-deep-dive to run.', 6);
+      }
+      const state = loadStateOrDie();
+      const next = markPhaseCompleted(state, 'project-master', {
+        stub: true,
+        note: 'Phase D will generate <project>/.claude/agents/master-<slug>.md.',
+      });
+      persistOrPrint(next, 'phase-project-master complete (stub)');
+      stdout.write(`project-master phase: stub (Phase D wires agent-factory deep-dive)\n`);
+      break;
+    }
+
     case 'start-phase': {
       const name = positional[0];
       if (!name) die('start-phase requires <name>');
       ensurePhaseName(name);
       const state = loadStateOrDie();
-      const next = setLastCommand(state, `bootstrap:${name}`);
+      // v2 sentinel: mark the phase as in-progress AND set last_command for
+      // crash-resume. Both writes happen in one atomic state update.
+      const withSentinel = markPhaseStarted(state, name);
+      const next = setLastCommand(withSentinel, `bootstrap:${name}`);
       persistOrPrint(next, `start-phase ${name}`);
       stdout.write(`last_command set to bootstrap:${name}\n`);
       break;

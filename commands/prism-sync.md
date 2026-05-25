@@ -86,7 +86,7 @@ Record: `{agents_registered, orphans_remaining}`.
 
 Invoke the existing `/prism-health` checks. Report status to the user.
 
-Record: `{status, checks_passed, checks_failed}`.
+Record: `{health_status, checks_passed, checks_failed}`. (The v2 sentinel `status` is reserved for orchestrator phase state.)
 
 ---
 
@@ -100,7 +100,7 @@ by phase name. Example:
   "structure": {"dirs_created": 0, "files_created": 0, "gitignore": "present"},
   "discovery": {"references_count": 14, "tables_indexed": 6, "endpoints_indexed": 12},
   "roster": {"agents_registered": 4, "orphans_remaining": 0},
-  "health": {"status": "green", "checks_passed": 5, "checks_failed": 0}
+  "health": {"health_status": "green", "checks_passed": 5, "checks_failed": 0}
 }
 ```
 
