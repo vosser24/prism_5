@@ -180,8 +180,8 @@ const ORCH_PROTOCOL_SKILL_REF = `## Operating protocol
 Load skill: master-orchestrator
 `;
 
-function renderMasterAgent({slug, protocol}) {
-  const today = new Date().toISOString().slice(0, 10);
+function renderMasterAgent({slug, protocol, created}) {
+  const today = created || new Date().toISOString().slice(0, 10);
   const protocolBody = protocol === 'skill-ref' ? ORCH_PROTOCOL_SKILL_REF : ORCH_PROTOCOL_INLINE;
   return `---
 name: master-${slug}
@@ -240,8 +240,13 @@ function diffMasterAgent({root, slug, protocol}) {
     die(`refusing: agent file not found at ${agentPath}. ` +
         `Run /prism-deep-dive first (no --upgrade) to seed it.`, 6);
   }
+  // Preserve the on-disk created: date so diff shows only protocol/content changes,
+  // not calendar drift from comparing against today.
+  const onDisk = readFileSync(agentPath, 'utf8');
+  const createdMatch = onDisk.match(/^created:\s*(.+)$/m);
+  const created = createdMatch ? createdMatch[1].trim() : undefined;
   // Render what we WOULD write, into a temp path, then diff against on-disk.
-  const newBody = renderMasterAgent({slug, protocol});
+  const newBody = renderMasterAgent({slug, protocol, created});
   // Write to a sibling .tmp file so git diff --no-index can compare.
   const tmpPath = agentPath + '.diff-preview';
   writeFileSync(tmpPath, newBody, 'utf8');
@@ -249,6 +254,9 @@ function diffMasterAgent({root, slug, protocol}) {
     const r = spawnSync('git', ['diff', '--no-index', '--no-color', agentPath, tmpPath], {
       encoding: 'utf8',
     });
+    if (r.error) {
+      die(`git diff --no-index spawn failed: ${r.error.message}`, 9);
+    }
     // git diff --no-index: exit 0 = no diff, exit 1 = diff present
     if (r.status === 0) {
       return {hasDiff: false, diff: ''};
