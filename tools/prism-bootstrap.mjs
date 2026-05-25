@@ -527,7 +527,7 @@ try {
         // Generic basename or no identity → the slash command must drive (it can prompt).
         stdout.write(
           `project-master phase: slug needs user prompting (basename is generic, no CLAUDE.md identity).\n` +
-          `  run /prism-deep-dive to complete this phase interactively.\n`
+          `  Run /prism-deep-dive to complete this phase interactively.\n`
         );
         // Do NOT mark complete — slash command will close it.
         break;
@@ -543,15 +543,13 @@ try {
       // the slash command picks it up from state.
       stdout.write(
         `project-master phase: slug locked (${slugInfo.slug} via ${slugInfo.source}).\n` +
-        `  run /prism-deep-dive to complete agent generation interactively.\n`
+        `  Run /prism-deep-dive to complete agent generation interactively.\n`
       );
 
       // Persist slug to state but mark the phase complete from the bootstrap
       // orchestrator's POV — the slash command can re-open it via start-phase
-      // if it needs to add the artifact paths. setProjectSlug strips the
-      // checksum field; restore checksum: null so writeStateAtomic's validator
-      // (which requires checksum to be string|null, not undefined) accepts it.
-      const withSlug = {...setProjectSlug(loadStateOrDie(), slugInfo.slug), checksum: null};
+      // if it needs to add the artifact paths.
+      const withSlug = setProjectSlug(loadStateOrDie(), slugInfo.slug);
       const next = markPhaseCompleted(withSlug, 'project-master', {
         slug: slugInfo.slug,
         source: slugInfo.source,

@@ -382,7 +382,7 @@ test('phase-project-master --with-deep-dive: completes only if slug-derive succe
       '# Test\n\n## Project Identity\n\nname: pm-test\n');
     const r = run(root, 'phase-project-master', '--with-deep-dive');
     assertEq(r.status, 0, r.stderr);
-    assert(/run \/prism-deep-dive/.test(r.stdout), 'instructs user to run slash command: ' + r.stdout);
+    assert(/\/prism-deep-dive/i.test(r.stdout), 'instructs user to run slash command: ' + r.stdout);
     const state = readStateFile(root);
     assertEq(state.phases['project-master'].status, 'complete');
   } finally { rmSync(root, {recursive: true, force: true}); }

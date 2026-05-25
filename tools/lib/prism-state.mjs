@@ -469,13 +469,14 @@ export function setSyncStamps(state, {at = nowIso(), nextRecommended = null} = {
 }
 
 // D004 §1: lock the project_slug for determinism across re-runs.
-// Called once by /prism-deep-dive after the slug is derived. Strips the
-// checksum so writeStateAtomic recomputes it.
+// Called once by /prism-deep-dive after the slug is derived.
 export function setProjectSlug(state, slug) {
   const trimmed = String(slug || '').trim();
   if (!trimmed) throw new Error('setProjectSlug: slug must be non-empty');
-  const {checksum: _ignored, ...rest} = state;
-  return {...rest, project_slug: trimmed};
+  // Set checksum to null (not undefined) so writeStateAtomic's validator passes
+  // and the stamp step recomputes a fresh hash. Stripping the key produced
+  // undefined, which the validator rejects (Task 9 follow-up).
+  return {...state, project_slug: trimmed, checksum: null};
 }
 
 export function isPhaseCompleted(state, phaseName) {
