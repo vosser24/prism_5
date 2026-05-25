@@ -41,6 +41,42 @@ function makeTestbed(label) {
   return root;
 }
 
+function seedMemoryMd(root, slug) {
+  // Mirror the exact shape that tools/prism-deep-dive.mjs renderMemoryMd writes,
+  // including the two Phase-H anchor comments that the new subcommands key on.
+  const dir = join(root, '.claude', 'agents');
+  mkdirSync(dir, {recursive: true});
+  const body = [
+    `# MEMORY.md — master-${slug} router`,
+    '',
+    '## Project profile',
+    '',
+    '- **Stack**: test',
+    '- **Datasources**: ',
+    '- **Active workstreams**:',
+    '  - (none captured yet)',
+    '',
+    '## Recent decisions (last 10, pointer-only)',
+    '',
+    '<!-- /prism-clean appends `[[D###]]` lines here per Phase H. -->',
+    '',
+    '## Recent lessons (last 10, pointer-only)',
+    '',
+    '<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->',
+    '',
+    '## Active specialists',
+    '',
+    '- (none hired yet)',
+    '',
+  ].join('\n');
+  writeFileSync(join(dir, 'MEMORY.md'), body, 'utf8');
+  return join(dir, 'MEMORY.md');
+}
+
+function readMemoryMd(root) {
+  return readFileSync(join(root, '.claude', 'agents', 'MEMORY.md'), 'utf8');
+}
+
 function run(cwd, ...args) {
   const r = spawnSync(process.execPath, [HELPER, ...args, '--root', cwd], {encoding: 'utf8'});
   return {stdout: r.stdout, stderr: r.stderr, status: r.status};
@@ -159,6 +195,124 @@ test('git-stats: one commit since past date → commits: 1, files_changed: 1', (
     assert(out.files_changed >= 0 && out.files_changed <= 1, 'files_changed: ' + out.files_changed);
     assert(out.insertions >= 0, 'insertions non-negative');
     assert(out.deletions >= 0, 'deletions non-negative');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase H — append-decision
+// ─────────────────────────────────────────────────────────────────────────
+
+test('append-decision: happy path appends pointer line under the D### anchor', () => {
+  const root = makeTestbed('append-dec-happy');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-decision', '--slug', 'foo', '--d-number', '042', '--title', 'Test decision');
+    assertEq(r.status, 0, r.stderr);
+    const body = readMemoryMd(root);
+    assert(/- \[\[D042\]\] Test decision/.test(body), 'pointer line missing');
+    // Anchor comment must still be present
+    assert(/<!-- \/prism-clean appends `\[\[D###\]\]`/.test(body), 'anchor stripped');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-decision: trims to last 10 pointers (oldest dropped)', () => {
+  const root = makeTestbed('append-dec-trim');
+  try {
+    seedMemoryMd(root, 'foo');
+    // Append 12 pointers — first 2 should be trimmed
+    for (let i = 1; i <= 12; i++) {
+      const r = run(root, 'append-decision', '--slug', 'foo',
+                    '--d-number', String(i).padStart(3, '0'),
+                    '--title', `Decision ${i}`);
+      assertEq(r.status, 0, r.stderr);
+    }
+    const body = readMemoryMd(root);
+    // First two should be gone
+    assert(!/\[\[D001\]\]/.test(body), 'D001 should have been trimmed');
+    assert(!/\[\[D002\]\]/.test(body), 'D002 should have been trimmed');
+    // Last ten should remain
+    for (let i = 3; i <= 12; i++) {
+      const tag = `[[D${String(i).padStart(3, '0')}]]`;
+      assert(body.includes(tag), `${tag} should remain in last-10 window`);
+    }
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-decision: refuses when MEMORY.md does not exist', () => {
+  const root = makeTestbed('append-dec-nomem');
+  try {
+    const r = run(root, 'append-decision', '--slug', 'foo', '--d-number', '001', '--title', 'x');
+    assertEq(r.status, 6, 'expected exit 6 (missing MEMORY.md)');
+    assert(/MEMORY\.md/.test(r.stderr), 'stderr should mention MEMORY.md');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-decision: refuses when appending would exceed 25 KB cap', () => {
+  const root = makeTestbed('append-dec-cap');
+  try {
+    seedMemoryMd(root, 'foo');
+    // Pad MEMORY.md to just under 25 KB so the next append crosses
+    const path = join(root, '.claude', 'agents', 'MEMORY.md');
+    const body = readFileSync(path, 'utf8');
+    const padding = '<!-- pad -->\n'.repeat(2000); // ~26 KB of padding
+    writeFileSync(path, body + padding, 'utf8');
+    const r = run(root, 'append-decision', '--slug', 'foo', '--d-number', '001', '--title', 'x');
+    assertEq(r.status, 8, 'expected exit 8 (>25 KB cap)');
+    assert(/25 ?KB|25600|cap/i.test(r.stderr), 'stderr should mention the cap');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase H — append-lesson
+// ─────────────────────────────────────────────────────────────────────────
+
+test('append-lesson: happy path appends pointer line under the lessons anchor', () => {
+  const root = makeTestbed('append-les-happy');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-lesson', '--slug', 'foo',
+                  '--date', '2026-05-25', '--title', 'Test lesson');
+    assertEq(r.status, 0, r.stderr);
+    const body = readMemoryMd(root);
+    assert(/- \[\[lessons-tactical#2026-05-25\]\] Test lesson/.test(body), 'pointer line missing');
+    assert(/<!-- \/prism-clean appends `\[\[lessons-tactical/.test(body), 'anchor stripped');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-lesson: trims to last 10 pointers', () => {
+  const root = makeTestbed('append-les-trim');
+  try {
+    seedMemoryMd(root, 'foo');
+    for (let i = 1; i <= 12; i++) {
+      const date = `2026-05-${String(i).padStart(2, '0')}`;
+      const r = run(root, 'append-lesson', '--slug', 'foo', '--date', date, '--title', `Lesson ${i}`);
+      assertEq(r.status, 0, r.stderr);
+    }
+    const body = readMemoryMd(root);
+    assert(!/2026-05-01/.test(body), 'first lesson should have been trimmed');
+    assert(!/2026-05-02/.test(body), 'second lesson should have been trimmed');
+    for (let i = 3; i <= 12; i++) {
+      const date = `2026-05-${String(i).padStart(2, '0')}`;
+      assert(body.includes(date), `${date} should remain in last-10 window`);
+    }
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-lesson: refuses when MEMORY.md does not exist', () => {
+  const root = makeTestbed('append-les-nomem');
+  try {
+    const r = run(root, 'append-lesson', '--slug', 'foo', '--date', '2026-05-25', '--title', 'x');
+    assertEq(r.status, 6, 'expected exit 6');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-lesson: rejects malformed --date', () => {
+  const root = makeTestbed('append-les-baddate');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-lesson', '--slug', 'foo', '--date', 'not-a-date', '--title', 'x');
+    assertEq(r.status, 5, 'expected exit 5 (bad arg)');
+    assert(/date/i.test(r.stderr), 'stderr should mention date');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
