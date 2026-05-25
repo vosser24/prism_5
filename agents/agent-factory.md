@@ -137,8 +137,10 @@ project-scoped by definition (D004 §1).
 - **Project-local write is the rule for THIS mode only.** Do not confuse
   this with the global-only rule for all other factory modes.
 - **No skill-creator dispatch.** This mode does not spawn skill-creator;
-  the master loads the existing `skills:[master-orchestrator]` (Phase E
-  ships the skill itself; pre-Phase-E the helper inlines a fallback body).
+  the master loads the existing `skills:[master-orchestrator]` skill, which
+  now lives at `~/.claude/skills/master-orchestrator/SKILL.md` (Phase E
+  shipped this; pre-Phase-E environments used an inlined 5-rule fallback
+  body emitted by `--orchestrator-protocol inline`).
 - **Restart prompt.** After completion, tell the user: *"Restart Claude
   Code (/exit + claude) for the new agent to become the session-thread
   identity. /clear alone is NOT enough — the agent registry only scans on
