@@ -25,6 +25,7 @@ metadata:
 | `agents/master-orchestrator.md` (thin wrapper rewrite) | `agents/master-orchestrator.md` (overwrites prior) | **Phase E** |
 | `tools/prism-deep-dive.mjs` (default flip + prose alignment) | `tools/prism-deep-dive.mjs` (overwrites prior) | **Phase E re-sync** |
 | `commands/prism-deep-dive.md` (instruction update for new default) | `commands/prism-deep-dive.md` (overwrites prior) | **Phase E re-sync** |
+| `tools/prism-clean.mjs` + `tools/prism-deep-dive.mjs` + `commands/prism-clean.md` + `commands/prism-deep-dive.md` (Phase H append-decision / append-lesson / agent-diff / --upgrade) | (already covered by bulk rows above; re-sync required) | **Phase H** |
 
 ## Cleanup commands (run AFTER smoke is captured + before re-installing from main)
 
