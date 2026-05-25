@@ -116,6 +116,15 @@
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-kb-autosync.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-agent-write-register.mjs"
+          }
+        ]
       }
     ],
     "SubagentStop": [
