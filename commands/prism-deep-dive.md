@@ -105,9 +105,11 @@ output path. Report each one to the user as it lands.
 
 Run: `node ~/.claude/tools/prism-deep-dive.mjs agent-write --slug <slug>`
 
-The helper defaults to `--orchestrator-protocol inline` (Phase E will flip
-this to `skill-ref` once the skill exists). Do NOT pass `--orchestrator-protocol
-skill-ref` until Phase E ships.
+The helper defaults to `--orchestrator-protocol skill-ref` (Phase E completed).
+The generated agent loads its operating protocol from
+`~/.claude/skills/master-orchestrator/SKILL.md`. To target environments
+without the skill installed, pass `--orchestrator-protocol inline` explicitly
+so the helper emits the 5-rule fallback body verbatim.
 
 If the file already exists (exit 7): surface to the user. Ask whether to
 overwrite — if yes, re-run with `--force`.

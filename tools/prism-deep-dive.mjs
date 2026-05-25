@@ -158,7 +158,7 @@ function deriveSlug(root, source) {
 // available for environments where the skill isn't installed (e.g., dev
 // branches before re-sync); it emits the 5-rule fallback body verbatim.
 
-const ORCH_PROTOCOL_INLINE = `## Operating protocol (inlined; Phase E will migrate to skills:master-orchestrator)
+const ORCH_PROTOCOL_INLINE = `## Operating protocol (inlined fallback; skill-ref is now the default — see ~/.claude/skills/master-orchestrator/SKILL.md)
 
 You are this project's senior generalist. Five unbreakable rules:
 
