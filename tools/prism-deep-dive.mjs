@@ -15,9 +15,10 @@
 // All subcommands accept --root <path> (default cwd) and refuse to run
 // without .git/ unless --no-git-guard.
 
-import {existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {basename, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
+import {spawnSync} from 'node:child_process';
 
 import {nowIso, readState, writeStateAtomic} from './lib/prism-state.mjs';
 
@@ -50,6 +51,7 @@ function usage(code = 0) {
 Commands:
   slug-derive [--source <auto|claude-md|basename|prompt|state>]
   agent-write --slug <s> [--orchestrator-protocol <inline|skill-ref>] [--force]
+  agent-diff --slug <s> [--orchestrator-protocol <inline|skill-ref>]
   memory-seed --slug <s> --profile <json-file-or-inline>
   settings-write --slug <s>
 `);
@@ -232,6 +234,34 @@ function writeMasterAgent({root, slug, protocol, force}) {
   return path;
 }
 
+function diffMasterAgent({root, slug, protocol}) {
+  const agentPath = join(root, '.claude', 'agents', `master-${slug}.md`);
+  if (!existsSync(agentPath)) {
+    die(`refusing: agent file not found at ${agentPath}. ` +
+        `Run /prism-deep-dive first (no --upgrade) to seed it.`, 6);
+  }
+  // Render what we WOULD write, into a temp path, then diff against on-disk.
+  const newBody = renderMasterAgent({slug, protocol});
+  // Write to a sibling .tmp file so git diff --no-index can compare.
+  const tmpPath = agentPath + '.diff-preview';
+  writeFileSync(tmpPath, newBody, 'utf8');
+  try {
+    const r = spawnSync('git', ['diff', '--no-index', '--no-color', agentPath, tmpPath], {
+      encoding: 'utf8',
+    });
+    // git diff --no-index: exit 0 = no diff, exit 1 = diff present
+    if (r.status === 0) {
+      return {hasDiff: false, diff: ''};
+    } else if (r.status === 1) {
+      return {hasDiff: true, diff: r.stdout || ''};
+    } else {
+      die(`git diff --no-index failed (status ${r.status}): ${r.stderr || '(no stderr)'}`, 9);
+    }
+  } finally {
+    try { rmSync(tmpPath, {force: true}); } catch {}
+  }
+}
+
 // ------------------------------ memory-seed ------------------------------
 
 const MEMORY_MD_HARD_CAP_BYTES = 25 * 1024;  // D004 §5: hard validator at 25 KB.
@@ -352,6 +382,20 @@ try {
         force: opts.force,
       });
       stdout.write(`wrote ${path}\n`);
+      break;
+    }
+    case 'agent-diff': {
+      if (!named.slug) die('agent-diff requires --slug <s>', 5);
+      const protocol = named.protocol || 'skill-ref';
+      if (!['inline', 'skill-ref'].includes(protocol)) {
+        die(`--orchestrator-protocol must be inline or skill-ref, got ${protocol}`, 5);
+      }
+      const r = diffMasterAgent({root: opts.root, slug: named.slug, protocol});
+      if (r.hasDiff) {
+        stdout.write(r.diff);
+        exit(1);
+      }
+      // No diff: exit 0, silent.
       break;
     }
     case 'memory-seed': {

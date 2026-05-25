@@ -196,6 +196,39 @@ test('agent-write default (no --orchestrator-protocol flag): skill-ref body (Pha
   }
 });
 
+test('agent-diff: exit 0 when generated body equals on-disk body', () => {
+  const root = makeTestbed('agent-diff-same');
+  try {
+    const writeR = run(root, 'agent-write', '--slug', 'foo');
+    assertEq(writeR.status, 0, writeR.stderr);
+    const diffR = run(root, 'agent-diff', '--slug', 'foo');
+    assertEq(diffR.status, 0, `expected exit 0 (no diff); stderr=${diffR.stderr}`);
+    assertEq(diffR.stdout, '', 'stdout should be empty on no-diff');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-diff: exit 1 with diff content when protocol mode differs', () => {
+  const root = makeTestbed('agent-diff-changed');
+  try {
+    // Write inline-mode body, then ask for diff vs skill-ref mode
+    const writeR = run(root, 'agent-write', '--slug', 'foo', '--orchestrator-protocol', 'inline');
+    assertEq(writeR.status, 0, writeR.stderr);
+    const diffR = run(root, 'agent-diff', '--slug', 'foo', '--orchestrator-protocol', 'skill-ref');
+    assertEq(diffR.status, 1, `expected exit 1 (diff present); stderr=${diffR.stderr}`);
+    assert(/Load skill: master-orchestrator/.test(diffR.stdout), 'diff should reference skill-ref body');
+    assert(/Five unbreakable rules/.test(diffR.stdout), 'diff should reference inlined body being removed');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-diff: exit 6 when on-disk agent file does not exist', () => {
+  const root = makeTestbed('agent-diff-nofile');
+  try {
+    const r = run(root, 'agent-diff', '--slug', 'ghost');
+    assertEq(r.status, 6, `expected exit 6 (missing file); stderr=${r.stderr}`);
+    assert(/master-ghost\.md/.test(r.stderr), 'stderr should name the missing file');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('memory-seed: writes MEMORY.md with router sections from profile JSON', () => {
   const root = makeTestbed('memseed');
   try {
