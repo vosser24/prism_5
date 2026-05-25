@@ -37,6 +37,14 @@ function runHook(stdinJson, env = {}) {
   return {stdout: r.stdout, stderr: r.stderr, status: r.status};
 }
 
+function runHookRaw(stdinStr, env = {}) {
+  const fullEnv = {...process.env, ...env};
+  if (!('PRISM_DISABLE_CLEAR_NUDGE' in env)) delete fullEnv.PRISM_DISABLE_CLEAR_NUDGE;
+  if (!('PRISM_DISABLE_PRECOMPACT_NUDGE' in env)) delete fullEnv.PRISM_DISABLE_PRECOMPACT_NUDGE;
+  const r = spawnSync(process.execPath, [HOOK], {input: stdinStr, encoding: 'utf8', env: fullEnv});
+  return {stdout: r.stdout, stderr: r.stderr, status: r.status};
+}
+
 function parseStdout(stdout) {
   if (!stdout.trim()) return null;
   try { return JSON.parse(stdout); }
@@ -75,6 +83,7 @@ test('PreCompact: emits nudge in hookSpecificOutput.additionalContext', () => {
   assert(out, 'stdout should be JSON, was empty');
   assertEq(out.hookSpecificOutput.hookEventName, 'PreCompact');
   assert(/prism-clean/.test(out.hookSpecificOutput.additionalContext), 'nudge text must mention /prism-clean');
+  assert(/archive|panel|decision|deviation/i.test(out.hookSpecificOutput.additionalContext), 'nudge text must explain WHY (panel decisions / deviations / archive)');
 });
 
 test('PreCompact with PRISM_DISABLE_PRECOMPACT_NUDGE=1: silent exit, no stdout', () => {
@@ -87,19 +96,13 @@ test('PreCompact with PRISM_DISABLE_PRECOMPACT_NUDGE=1: silent exit, no stdout',
 });
 
 test('Malformed stdin: silent exit 0 (never crash, never block)', () => {
-  const r = spawnSync(process.execPath, [HOOK], {
-    input: 'this is not json',
-    encoding: 'utf8',
-  });
+  const r = runHookRaw('this is not json');
   assertEq(r.status, 0, 'must exit 0 even on bad input');
   assertEq(r.stdout.trim(), '', 'no stdout on malformed input');
 });
 
 test('Empty stdin: silent exit 0', () => {
-  const r = spawnSync(process.execPath, [HOOK], {
-    input: '',
-    encoding: 'utf8',
-  });
+  const r = runHookRaw('');
   assertEq(r.status, 0, 'must exit 0 even on empty stdin');
   assertEq(r.stdout.trim(), '', 'no stdout on empty stdin');
 });
