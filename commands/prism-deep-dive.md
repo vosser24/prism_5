@@ -158,6 +158,7 @@ Next session in this project, the main thread will load as master-<slug>.
 This requires a Claude Code restart (/exit + claude) — /clear is not enough.
 
 To re-run with an updated profile:  /prism-deep-dive --refresh
+To upgrade the agent body (diff+confirm):  /prism-deep-dive --upgrade <slug>
 To roll back:                       /prism-doctor --rollback project-master
 ```
 
@@ -176,6 +177,73 @@ When the slash command is invoked with `--refresh`:
    `last_refreshed_at` field added by a follow-up `complete-phase --meta
    '{"last_refreshed_at": "<now>"}'`).
 
+> See `--upgrade <slug>` below for the manual re-synth flow that wraps `agent-diff` + `agent-write --force` with a confirmation gate.
+
+## --upgrade <slug> mode
+
+Re-synthesizes an existing project-master agent with a diff preview and
+explicit user approval before any write. This is the manual re-synth rhythm
+locked in D004 §5 ("per-quarter: manual only in v4.0").
+
+### Workflow
+
+1. **Verify the agent exists.** Read `.claude/agents/master-<slug>.md`. If
+   missing, instruct the user: *"No `master-<slug>` agent found. Run
+   `/prism-deep-dive` (no --upgrade) to create one first."*
+
+2. **Generate the diff.** Run:
+
+   ```bash
+   node tools/prism-deep-dive.mjs agent-diff --slug <slug>
+   ```
+
+   Capture stdout (the unified diff) and the exit code.
+
+3. **Branch on exit code:**
+   - **Exit 0** (no diff): report *"`master-<slug>` is already up to date — no upgrade needed."* and stop.
+   - **Exit 1** (diff present): proceed to step 4.
+   - **Exit 5** (bad args — slug missing or invalid protocol value): surface the stderr and stop. This most likely means the slug was not passed or was malformed.
+   - **Exit 6** (missing file): same as step 1 — instruct the user to run base `/prism-deep-dive` first.
+   - **Exit 9** (git spawn / runtime error): surface the stderr and stop. The most common cause is a missing or corrupt git installation; ask the user to check `git diff` works in the project root.
+   - **Any other exit**: surface the stderr and stop.
+
+4. **Present the diff to the user via AskUserQuestion.** Use a single-question form:
+
+   - **Header:** "Master upgrade"
+   - **Question:** "Apply this upgrade to `master-<slug>`?"
+   - **Options:**
+     - *Apply (Recommended)* — "Write the new body to disk via `agent-write --force`."
+     - *Skip* — "Discard the proposed changes; leave the existing agent file as-is."
+
+   Include the diff inline in the question prose (use a code fence) so the
+   user can read it before deciding.
+
+5. **On Apply:**
+
+   ```bash
+   node tools/prism-deep-dive.mjs agent-write --slug <slug> --force
+   ```
+
+   Report the path written and remind the user that the upgrade takes effect
+   on the next session that opens in this project (the agent is loaded at
+   session start — a `/exit` + `claude` restart is required; `/clear` is not
+   enough).
+
+6. **On Skip:** acknowledge and stop. Do not write anything.
+
+### When to use
+
+- After a `/prism-deep-dive` helper change (e.g., a new section added to
+  `renderMasterAgent`) that the user wants their existing project-masters to
+  pick up.
+- After manually hand-editing the seeded master and wanting to see what the
+  freshly-generated body would look like by comparison. Note: `agent-diff`
+  shows what the generator *would* produce, not a diff of the user's edits
+  against the original — so "what did I change?" is a separate question.
+- Per the v4.1 telemetry roadmap, this command will eventually be
+  auto-invoked on a per-quarter schedule. For v4.0 it remains user-initiated
+  only.
+
 ## Idempotency
 
 Running `/prism-deep-dive` twice in a row on an already-completed project:
@@ -193,11 +261,16 @@ Running `/prism-deep-dive` twice in a row on an already-completed project:
 | `agent-write` exit 7 (collision) | Ask user; only retry with --force after confirmation |
 | `memory-seed` exit 8 (>25 KB) | Trim profile, retry; if still over → escalate to user |
 | `settings-write` exit 9 (bad JSON) | STOP, tell user to fix manually (offer /prism-doctor) |
+| `agent-diff` exit 5 (bad args) | Surface stderr; most likely slug was omitted or malformed |
+| `agent-diff` exit 6 (missing file) | Instruct user to run `/prism-deep-dive` (no --upgrade) first |
+| `agent-diff` exit 9 (git spawn error) | Surface stderr; ask user to verify `git diff` works locally |
 
 ## Related commands
 
 - `/prism-bootstrap --with-deep-dive` — runs `/prism-deep-dive` automatically
   during the project-master phase
+- `/prism-deep-dive --upgrade <slug>` — re-synthesize an existing
+  project-master with diff preview + explicit approval (D004 §5 manual rhythm)
 - `/prism-clean` — appends per-decision pointers into the master's MEMORY.md
   (Phase H, post-this)
 - `@agent-factory --master-<slug>` — alternate entry: factory can also
