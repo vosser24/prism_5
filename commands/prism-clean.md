@@ -147,6 +147,33 @@ For each approved item, write the file with the locked header from
 - Lessons: `YYYY-MM-DD-session.md`. If a file with today's date already exists, APPEND to it under a new `## <session-time>` section instead of clobbering.
 - Smoke: `smoke-<topic>.md` (topic = kebab-cased). If the file exists, ask the user whether to append or rename.
 
+**After each D### adjudication file is written**, append a pointer line to the project-master MEMORY.md so the master agent's "Recent decisions" router reflects the new adjudication:
+
+```bash
+node tools/prism-clean.mjs append-decision \
+  --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
+  --d-number <NNN> \
+  --title "<short title verbatim from the D### file heading>"
+```
+
+Exit-code handling:
+- Exit 6 (`MEMORY.md not found`): the project hasn't been through `/prism-deep-dive` yet — note this in the session summary and skip the pointer step.
+- Exit 7 (`anchor not found`): the MEMORY.md exists but lacks a `## Recent decisions` anchor — note this and skip.
+- Exit 8 (`>25 KB cap`): suggest `/prism-deep-dive --upgrade <slug>` to re-synthesize the router.
+- Exit 5 (`bad args`): the state file is missing or `project_slug` is null — note this and skip.
+- Exit 0: success; the master agent will surface the pointer on its next subagent dispatch.
+
+**After each session-lessons entry is appended** to `docs/prism/lessons/YYYY-MM-DD-session.md` (L2–L4 items), mirror the lesson title to the project-master MEMORY.md:
+
+```bash
+node tools/prism-clean.mjs append-lesson \
+  --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
+  --date "$(date -u +%Y-%m-%d)" \
+  --title "<one-line lesson title>"
+```
+
+Same exit-code handling as `append-decision` above. Run once per distinct lesson title (not once per file write if multiple lessons land in the same session file).
+
 **Atomic writes:** use the Write tool for each file. Refuse to overwrite an
 existing file unless the user explicitly confirmed a rename.
 
@@ -212,4 +239,4 @@ session lessons is `docs/prism/lessons/YYYY-MM-DD-session.md`.
 
 - `/prism-bye` wrapper (= `/prism-clean` + confirm + `/exit`). Deferred — user-driven.
 - Auto-fire on `SessionEnd[matcher=clear]` and `PreCompact` — deferred to v4.0 per D004 §6.
-- Per-decision MEMORY.md pointer-append (project-master integration) — deferred to v4.0 per D004 §H.
+- Per-decision and per-session MEMORY.md pointer-append — shipped in v4.0 Phase H (Step 4 above).
