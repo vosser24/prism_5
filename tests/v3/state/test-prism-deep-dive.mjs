@@ -303,5 +303,18 @@ test('settings-write: exits 9 when existing settings.json is invalid JSON', () =
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('settings-write: exits 9 when existing settings.json is valid JSON but not an object', () => {
+  const root = makeTestbed('settings-nonobj');
+  try {
+    const dir = join(root, '.claude');
+    mkdirSync(dir, {recursive: true});
+    writeFileSync(join(dir, 'settings.json'), 'null');
+    const r = run(root, 'settings-write', '--slug', 'foo');
+    assertEq(r.status, 9, r.stderr);
+    assert(/not an object/.test(r.stderr), r.stderr);
+    assertEq(readFileSync(join(dir, 'settings.json'), 'utf8'), 'null', 'original preserved');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
