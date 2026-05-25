@@ -151,6 +151,8 @@ const KNOWN_LEGACY_HOOKS = [
   'prism-task-tier-advisor',
   // v3.11.0 (Phase A.3) — agent-write registrar
   'prism-agent-write-register',
+  // v4.0 (Phase F) — clean-nudge hook
+  'prism-clean-nudge',
   // Pre-2.4 ATLAS-era hooks (renamed to prism-* in v2.4.0)
   'atlas-hook',
   'atlas-session-start',
