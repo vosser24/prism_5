@@ -194,7 +194,7 @@ locked in D004 §5 ("per-quarter: manual only in v4.0").
 2. **Generate the diff.** Run:
 
    ```bash
-   node tools/prism-deep-dive.mjs agent-diff --slug <slug>
+   node ~/.claude/tools/prism-deep-dive.mjs agent-diff --slug <slug>
    ```
 
    Capture stdout (the unified diff) and the exit code.
@@ -216,12 +216,16 @@ locked in D004 §5 ("per-quarter: manual only in v4.0").
      - *Skip* — "Discard the proposed changes; leave the existing agent file as-is."
 
    Include the diff inline in the question prose (use a code fence) so the
-   user can read it before deciding.
+   user can read it before deciding. **Compose the question body in this
+   order: the diff code fence first, then the question text "Apply this
+   upgrade to `master-<slug>`?"** — putting the diff before the prompt keeps
+   the user's decision visible above the wall of code rather than buried
+   beneath it.
 
 5. **On Apply:**
 
    ```bash
-   node tools/prism-deep-dive.mjs agent-write --slug <slug> --force
+   node ~/.claude/tools/prism-deep-dive.mjs agent-write --slug <slug> --force
    ```
 
    Report the path written and remind the user that the upgrade takes effect

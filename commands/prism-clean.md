@@ -150,7 +150,7 @@ For each approved item, write the file with the locked header from
 **After each D### adjudication file is written**, append a pointer line to the project-master MEMORY.md so the master agent's "Recent decisions" router reflects the new adjudication:
 
 ```bash
-node tools/prism-clean.mjs append-decision \
+node ~/.claude/tools/prism-clean.mjs append-decision \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
   --d-number <NNN> \
   --title "<short title verbatim from the D### file heading>"
@@ -166,7 +166,7 @@ Exit-code handling:
 **After each session-lessons entry is appended** to `docs/prism/lessons/YYYY-MM-DD-session.md` (L2–L4 items), mirror the lesson title to the project-master MEMORY.md:
 
 ```bash
-node tools/prism-clean.mjs append-lesson \
+node ~/.claude/tools/prism-clean.mjs append-lesson \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
   --date "$(node -e "process.stdout.write(new Date().toISOString().slice(0,10))")" \
   --title "<one-line lesson title>"
