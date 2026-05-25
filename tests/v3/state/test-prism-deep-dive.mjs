@@ -183,5 +183,69 @@ test('agent-write --orchestrator-protocol skill-ref: thin body that defers to sk
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('memory-seed: writes MEMORY.md with router sections from profile JSON', () => {
+  const root = makeTestbed('memseed');
+  try {
+    mkdirSync(join(root, '.claude', 'agents'), {recursive: true});
+    const profile = JSON.stringify({
+      stack: 'Node 18, Postgres 15',
+      datasources: ['db.main', 'redis.cache'],
+      active_workstreams: ['v4.0 Phase D', 'docs migration'],
+      specialists: ['greek-retail-expert', 'postgres-perf-tuner'],
+    });
+    const r = run(root, 'memory-seed', '--slug', 'foo', '--profile', profile);
+    assertEq(r.status, 0, r.stderr);
+    const path = join(root, '.claude', 'agents', 'MEMORY.md');
+    assert(existsSync(path), 'MEMORY.md written');
+    const body = readFileSync(path, 'utf8');
+    assert(/## Project profile/.test(body), 'profile section');
+    assert(/Node 18, Postgres 15/.test(body), 'stack value');
+    assert(/## Recent decisions/.test(body), 'decisions section');
+    assert(/## Recent lessons/.test(body), 'lessons section');
+    assert(/## Active specialists/.test(body), 'specialists section');
+    assert(/greek-retail-expert/.test(body), 'specialist value');
+    assert(/## Available plugin tools/.test(body), 'plugin tools section');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('memory-seed: exits 8 when generated MEMORY.md exceeds 25 KB', () => {
+  const root = makeTestbed('memseed-big');
+  try {
+    mkdirSync(join(root, '.claude', 'agents'), {recursive: true});
+    // Inflate active_workstreams to push past 25 KB. Pass via file (not inline
+    // JSON arg) because Windows spawn arg-length cap (~32 KB) trips ENAMETOOLONG
+    // before we'd even reach the helper. File-mode --profile is spec-supported.
+    const bigArr = Array.from({length: 1000}, (_, i) => `Workstream-${i}: ` + 'x'.repeat(50));
+    const profilePath = join(root, 'big-profile.json');
+    writeFileSync(profilePath, JSON.stringify({
+      stack: 'Node',
+      datasources: [],
+      active_workstreams: bigArr,
+      specialists: [],
+    }));
+    const r = run(root, 'memory-seed', '--slug', 'foo', '--profile', profilePath);
+    assertEq(r.status, 8, r.stderr);
+    assert(/25 KB/.test(r.stderr), r.stderr);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('memory-seed: accepts --profile as a file path', () => {
+  const root = makeTestbed('memseed-file');
+  try {
+    mkdirSync(join(root, '.claude', 'agents'), {recursive: true});
+    const profilePath = join(root, 'profile.json');
+    writeFileSync(profilePath, JSON.stringify({
+      stack: 'Python',
+      datasources: ['s3.bucket'],
+      active_workstreams: [],
+      specialists: [],
+    }));
+    const r = run(root, 'memory-seed', '--slug', 'foo', '--profile', profilePath);
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'MEMORY.md'), 'utf8');
+    assert(/Python/.test(body), 'stack from file: ' + body.slice(0, 300));
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

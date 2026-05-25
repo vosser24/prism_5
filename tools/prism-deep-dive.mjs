@@ -230,6 +230,75 @@ function writeMasterAgent({root, slug, protocol, force}) {
   return path;
 }
 
+// ------------------------------ memory-seed ------------------------------
+
+const MEMORY_MD_HARD_CAP_BYTES = 25 * 1024;  // D004 §5: hard validator at 25 KB.
+
+function loadProfile(profileArg) {
+  // Heuristic: if it parses as JSON, it's inline; otherwise treat as file path.
+  try { return JSON.parse(profileArg); }
+  catch {
+    if (!existsSync(profileArg)) die(`--profile is neither valid JSON nor an existing file: ${profileArg}`, 5);
+    const body = readFileSync(profileArg, 'utf8');
+    try { return JSON.parse(body); }
+    catch (e) { die(`--profile file contains invalid JSON: ${e.message}`, 5); }
+  }
+}
+
+function renderMemoryMd({slug, profile}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = [];
+  lines.push(`# MEMORY.md — master-${slug} router`);
+  lines.push('');
+  lines.push(`<!-- Auto-injected at subagent start (first 200 lines or 25 KB per`);
+  lines.push(`     https://code.claude.com/docs/en/sub-agents § Enable persistent memory).`);
+  lines.push(`     This file is a ROUTER. Knowledge lives in linked files, not here.`);
+  lines.push(`     Seeded by /prism-deep-dive on ${today}. -->`);
+  lines.push('');
+  lines.push('## Project profile');
+  lines.push('');
+  lines.push(`- **Stack**: ${profile.stack || '(not set — fill in via /prism-deep-dive --refresh)'}`);
+  lines.push(`- **Datasources**: ${(profile.datasources || []).join(', ') || '(none indexed)'}`);
+  lines.push(`- **Active workstreams**:`);
+  for (const w of (profile.active_workstreams || [])) lines.push(`  - ${w}`);
+  if ((profile.active_workstreams || []).length === 0) lines.push(`  - (none captured yet)`);
+  lines.push('');
+  lines.push('## Recent decisions (last 10, pointer-only)');
+  lines.push('');
+  lines.push('<!-- /prism-clean appends `[[D###]]` lines here per Phase H. -->');
+  lines.push('');
+  lines.push('## Recent lessons (last 10, pointer-only)');
+  lines.push('');
+  lines.push('<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->');
+  lines.push('');
+  lines.push('## Active specialists');
+  lines.push('');
+  for (const s of (profile.specialists || [])) lines.push(`- @${s}`);
+  if ((profile.specialists || []).length === 0) lines.push('- (none hired yet — call @agent-factory to add)');
+  lines.push('');
+  lines.push('## Available plugin tools');
+  lines.push('');
+  lines.push('<!-- /prism-validate-plugins refreshes this section. -->');
+  lines.push('- (run /prism-validate-plugins to populate)');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function writeMemoryMd({root, slug, profile}) {
+  const dir = join(root, '.claude', 'agents');
+  mkdirSync(dir, {recursive: true});
+  const body = renderMemoryMd({slug, profile});
+  if (Buffer.byteLength(body, 'utf8') > MEMORY_MD_HARD_CAP_BYTES) {
+    die(`generated MEMORY.md is ${Buffer.byteLength(body, 'utf8')} bytes (> 25 KB cap). ` +
+        `Trim the profile (fewer workstreams/specialists) or split into satellite files.`, 8);
+  }
+  const path = join(dir, 'MEMORY.md');
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, body, 'utf8');
+  renameSync(tmp, path);
+  return path;
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -252,6 +321,14 @@ try {
         protocol,
         force: opts.force,
       });
+      stdout.write(`wrote ${path}\n`);
+      break;
+    }
+    case 'memory-seed': {
+      if (!named.slug) die('memory-seed requires --slug <s>', 5);
+      if (!named.profile) die('memory-seed requires --profile <json-file-or-inline>', 5);
+      const profile = loadProfile(named.profile);
+      const path = writeMemoryMd({root: opts.root, slug: named.slug, profile});
       stdout.write(`wrote ${path}\n`);
       break;
     }
