@@ -168,11 +168,13 @@ Exit-code handling:
 ```bash
 node tools/prism-clean.mjs append-lesson \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
-  --date "$(date -u +%Y-%m-%d)" \
+  --date "$(node -e "process.stdout.write(new Date().toISOString().slice(0,10))")" \
   --title "<one-line lesson title>"
 ```
 
 Same exit-code handling as `append-decision` above. Run once per distinct lesson title (not once per file write if multiple lessons land in the same session file).
+
+**Deviation files** (`docs/prism/deviations/`) do not have a MEMORY.md pointer step in v4.0 — D004 §H locked the per-decision + per-session rhythms only. A `append-deviation` subcommand is deferred to a future phase.
 
 **Atomic writes:** use the Write tool for each file. Refuse to overwrite an
 existing file unless the user explicitly confirmed a rename.
