@@ -34,7 +34,8 @@ function assertEq(a, b, msg) {
 
 function parseBody(raw) {
   // Frontmatter is delimited by --- on its own line.
-  const lines = raw.split('\n');
+  const normalised = raw.replace(/\r\n/g, '\n');
+  const lines = normalised.split('\n');
   assert(lines[0] === '---', 'agent file must start with --- frontmatter delimiter');
   let endIdx = -1;
   for (let i = 1; i < lines.length; i++) {
@@ -67,6 +68,7 @@ test('no protocol-body leakage: STARTUP / PHASE 0 / PHASE 1 sections must NOT ap
   assert(!/^## PHASE 0\b/m.test(raw), 'PHASE 0 leaked back into agent file');
   assert(!/^## PHASE 1\b/m.test(raw), 'PHASE 1 leaked back into agent file');
   assert(!/^## PHASE 1\.5\b/m.test(raw), 'PHASE 1.5 leaked back into agent file');
+  assert(!/^## PHASE 2\b/m.test(raw), 'PHASE 2 leaked back into agent file');
 });
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
