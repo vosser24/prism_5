@@ -18,12 +18,12 @@
 //   append-decision --slug <s> --d-number <NNN> --title <text>
 //       Append a "- [[D###]] <title>" line to the "Recent decisions" section
 //       of <root>/.claude/agents/MEMORY.md. Trims to last 10 pointers.
-//       Refuses on missing MEMORY.md (exit 6) or >25 KB cap (exit 8).
+//       Refuses on missing MEMORY.md (exit 6), missing anchor (exit 7), or >25 KB cap (exit 8).
 //
 //   append-lesson --slug <s> --date <YYYY-MM-DD> --title <text>
 //       Append a "- [[lessons-tactical#<date>]] <title>" line to the
 //       "Recent lessons" section of <root>/.claude/agents/MEMORY.md.
-//       Same trim + cap behavior as append-decision.
+//       Same trim + cap + anchor behavior as append-decision (exits 6/7/8).
 //
 // Locked design: docs/prism/adjudications/D002-v3.10-hooks-drift-scope.md §6
 //
@@ -100,8 +100,9 @@ function readMemoryMd(root) {
 }
 
 function writeMemoryMdAtomic(path, body) {
-  if (Buffer.byteLength(body, 'utf8') > MEMORY_MD_HARD_CAP_BYTES) {
-    die(`refusing: MEMORY.md would be ${Buffer.byteLength(body, 'utf8')} bytes (> 25 KB cap). ` +
+  const bytes = Buffer.byteLength(body, 'utf8');
+  if (bytes > MEMORY_MD_HARD_CAP_BYTES) {
+    die(`refusing: MEMORY.md would be ${bytes} bytes (> 25 KB cap). ` +
         `Run /prism-deep-dive --upgrade <slug> to re-synthesize the router.`, 8);
   }
   const tmp = path + '.tmp';
@@ -110,7 +111,8 @@ function writeMemoryMdAtomic(path, body) {
 }
 
 function appendUnderAnchor({body, anchor, newLine, pointerRe}) {
-  const lines = body.split('\n');
+  // Normalize CRLF → LF so Windows-saved files don't produce mixed-ending output.
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
   const anchorIdx = lines.findIndex((l) => l.trim() === anchor.trim());
   if (anchorIdx < 0) {
     die(`refusing: MEMORY.md is missing the expected anchor comment:\n  ${anchor}\n` +
@@ -198,6 +200,7 @@ function appendDecision({root, slug, dNumber, title}) {
   if (!slug) die('append-decision requires --slug <s>', 5);
   if (!/^\d{3,}$/.test(dNumber || '')) die('append-decision requires --d-number <NNN> (digits only)', 5);
   if (!title) die('append-decision requires --title <text>', 5);
+  if (/[\n\r]/.test(title)) die('append-decision: --title must not contain newlines', 5);
   const {path, body} = readMemoryMd(root);
   const newLine = `- [[D${dNumber}]] ${title}`;
   const updated = appendUnderAnchor({
@@ -216,6 +219,7 @@ function appendLesson({root, slug, date, title}) {
     die('append-lesson requires --date <YYYY-MM-DD>', 5);
   }
   if (!title) die('append-lesson requires --title <text>', 5);
+  if (/[\n\r]/.test(title)) die('append-lesson: --title must not contain newlines', 5);
   const {path, body} = readMemoryMd(root);
   const newLine = `- [[lessons-tactical#${date}]] ${title}`;
   const updated = appendUnderAnchor({
