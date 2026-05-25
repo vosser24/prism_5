@@ -79,6 +79,78 @@ re-doing the research.
   factory-created (`source: "agent-factory"`) and reconcile-created
   (`source: "reconcile"`).
 
+## Mode: --master-<slug>  (v4.0 Phase D)
+
+Generates a per-project master agent. **This mode is the ONLY factory mode
+that writes to a project-local path.** All other modes write to
+`~/.claude/agents/` per the global-only rule. This mode writes to
+`<project-root>/.claude/agents/master-<slug>.md` because the master is
+project-scoped by definition (D004 §1).
+
+### When to use
+
+- The user ran `/prism-deep-dive` and the slash command delegated agent
+  generation here. (Most users will go through `/prism-deep-dive`, not call
+  this mode directly.)
+- The user explicitly wants the factory to (re-)generate the master agent,
+  e.g., for a project that pre-dates v4.0 and wants to add the master
+  surface without running the full deep-dive flow.
+
+### Steps
+
+1. **Resolve project root and slug.** If the user invoked
+   `@agent-factory --master-<slug>` with a slug arg: use it. Otherwise call
+   `node ~/.claude/tools/prism-deep-dive.mjs slug-derive --source auto` and
+   handle exit 6 by asking the user to pick.
+
+2. **Run discovery if the project profile is empty.** Check
+   `<project>/.claude/references/`. If empty → invoke the `prism-discover`
+   skill. If indexes exist → read them.
+
+3. **Delegate the WRITE to the helper, not factory's own templating.** Run:
+
+   ```
+   node ~/.claude/tools/prism-deep-dive.mjs agent-write --slug <slug>
+   node ~/.claude/tools/prism-deep-dive.mjs memory-seed --slug <slug> --profile <json>
+   node ~/.claude/tools/prism-deep-dive.mjs settings-write --slug <slug>
+   ```
+
+   The factory does NOT roll its own agent template here. The deterministic
+   helper owns the templates so they stay in sync with D004 §3 (frontmatter
+   schema) without prose-rot.
+
+4. **Register in roster.** The auto-fire agent-write hook
+   (`hooks/prism-agent-write-register.mjs`, shipped in v3.11.0 Phase A.3)
+   detects the new file and writes a project-local roster entry. The factory
+   does NOT need to update roster.json manually — the hook handles it.
+
+5. **No NotebookLM research for master agents.** The master is a generalist,
+   not a domain specialist. Skip TIER 1/2/3 research entirely for this mode.
+   The master's expertise comes from `prism-discover` indexes (codebase,
+   schema, APIs) loaded via MEMORY.md, not from a curated research notebook.
+
+6. **No `--from-notebook` style override.** This mode does not support
+   `--from-notebook` — masters are bespoke per project.
+
+### Constraints
+
+- **Project-local write is the rule for THIS mode only.** Do not confuse
+  this with the global-only rule for all other factory modes.
+- **No skill-creator dispatch.** This mode does not spawn skill-creator;
+  the master loads the existing `skills:[master-orchestrator]` (Phase E
+  ships the skill itself; pre-Phase-E the helper inlines a fallback body).
+- **Restart prompt.** After completion, tell the user: *"Restart Claude
+  Code (/exit + claude) for the new agent to become the session-thread
+  identity. /clear alone is NOT enough — the agent registry only scans on
+  process start."*
+
+### Failure modes
+
+- `agent-write` exit 7 (file exists): surface; ask user; only retry with
+  `--force` after confirmation.
+- `memory-seed` exit 8 (>25 KB): the profile is too large; trim and retry.
+- `settings-write` exit 9 (bad existing JSON): STOP; tell user to fix manually.
+
 ## RULES
 - NEVER create a generic agent — research the exact domain first
 - NEVER overwrite existing knowledge — always APPEND
