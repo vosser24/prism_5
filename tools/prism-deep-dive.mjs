@@ -304,6 +304,29 @@ function writeMemoryMd({root, slug, profile}) {
   return path;
 }
 
+// ------------------------------ settings-write ------------------------------
+
+function writeSettingsAgent({root, slug}) {
+  const dir = join(root, '.claude');
+  mkdirSync(dir, {recursive: true});
+  const path = join(dir, 'settings.json');
+  let settings = {};
+  if (existsSync(path)) {
+    const raw = readFileSync(path, 'utf8');
+    try { settings = JSON.parse(raw); }
+    catch (e) { die(`refusing: existing settings.json is invalid JSON: ${e.message}`, 9); }
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      die('refusing: existing settings.json is not an object', 9);
+    }
+  }
+  settings.agent = `master-${slug}`;
+  const body = JSON.stringify(settings, null, 2) + '\n';
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, body, 'utf8');
+  renameSync(tmp, path);
+  return path;
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -334,6 +357,12 @@ try {
       if (!named.profile) die('memory-seed requires --profile <json-file-or-inline>', 5);
       const profile = loadProfile(named.profile);
       const path = writeMemoryMd({root: opts.root, slug: named.slug, profile});
+      stdout.write(`wrote ${path}\n`);
+      break;
+    }
+    case 'settings-write': {
+      if (!named.slug) die('settings-write requires --slug <s>', 5);
+      const path = writeSettingsAgent({root: opts.root, slug: named.slug});
       stdout.write(`wrote ${path}\n`);
       break;
     }

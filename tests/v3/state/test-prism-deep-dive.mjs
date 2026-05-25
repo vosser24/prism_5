@@ -257,5 +257,51 @@ test('memory-seed: exits 5 when --profile is valid JSON but not an object', () =
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('settings-write: creates fresh settings.json with agent field when none exists', () => {
+  const root = makeTestbed('settings-fresh');
+  try {
+    const r = run(root, 'settings-write', '--slug', 'foo');
+    assertEq(r.status, 0, r.stderr);
+    const path = join(root, '.claude', 'settings.json');
+    assert(existsSync(path));
+    const json = JSON.parse(readFileSync(path, 'utf8'));
+    assertEq(json.agent, 'master-foo');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('settings-write: merges into existing settings.json (preserves other keys)', () => {
+  const root = makeTestbed('settings-merge');
+  try {
+    const dir = join(root, '.claude');
+    mkdirSync(dir, {recursive: true});
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({
+      env: {FOO: 'bar'},
+      hooks: {SessionStart: []},
+      agent: 'old-master',
+    }, null, 2));
+    const r = run(root, 'settings-write', '--slug', 'new-master');
+    assertEq(r.status, 0, r.stderr);
+    const json = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+    assertEq(json.agent, 'master-new-master', 'agent field replaced');
+    assertEq(json.env.FOO, 'bar', 'env preserved');
+    assert(Array.isArray(json.hooks.SessionStart), 'hooks preserved');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('settings-write: exits 9 when existing settings.json is invalid JSON', () => {
+  const root = makeTestbed('settings-bad');
+  try {
+    const dir = join(root, '.claude');
+    mkdirSync(dir, {recursive: true});
+    writeFileSync(join(dir, 'settings.json'), '{not json');
+    const r = run(root, 'settings-write', '--slug', 'foo');
+    assertEq(r.status, 9, r.stderr);
+    assert(/invalid JSON/.test(r.stderr), r.stderr);
+    // Bad file MUST be preserved (no destructive overwrite on parse failure)
+    const after = readFileSync(join(dir, 'settings.json'), 'utf8');
+    assertEq(after, '{not json', 'original bad file preserved');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
