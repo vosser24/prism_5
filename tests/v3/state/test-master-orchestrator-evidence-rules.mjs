@@ -68,6 +68,12 @@ test('PHASE 1.5 escalation rule: bounce ONCE then ship as KNOWN LIMITATION', () 
          'expected "Bounce ... ONCE" (uppercase ONCE token) rule in PHASE 1.5');
   assert(/KNOWN LIMITATION/.test(raw),
          'expected "KNOWN LIMITATION" (uppercase singular token) in PHASE 1.5');
+  // Also pin the normative bullet in ### Per-claim verdict — the bold "**Bounce
+  // back ONCE**" phrase may wrap across lines, so use \s+ here rather than the
+  // single-line [^.\n] used above. A targeted lowercase revert of just that
+  // bullet would otherwise slip past the single-line assertion.
+  assert(/\*\*Bounce\s+back ONCE\*\*/.test(raw),
+         'expected "**Bounce back ONCE**" (bold uppercase token) in Per-claim verdict bullet');
 });
 
 test('Visible output requires a rejected-claims line in the user-facing Senior Review', () => {
