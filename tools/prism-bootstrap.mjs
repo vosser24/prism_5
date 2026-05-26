@@ -22,15 +22,15 @@
 //       Pretty-print current phase status table. Exit 0.
 //
 //   prism-bootstrap phase-structure [--dry-run]
-//       Phase 3: create the .claude/{references,rules,agents,hooks}/,
+//       Phase 2: create the .claude/{references,rules,agents,hooks}/,
 //       docs/prism/{adjudications,deviations,smoke}/, tasks/ tree.
 //       Idempotent. Marks phase=structure complete on success.
 //
 //   prism-bootstrap phase-conventions [--dry-run]
-//       Phase 4: write .claude/rules/capture-conventions.md if absent.
-//       Marks phase=conventions complete on success. (Conventions live
-//       under the structure phase's metadata since the locked schema has
-//       only five phases — see notes below.)
+//       Sub-step of Phase 2 (structure): write .claude/rules/capture-conventions.md
+//       if absent. Conventions live under the structure phase's metadata
+//       rather than as their own phase — the locked 7-phase schema treats
+//       capture-conventions as part of scaffold creation (see notes below).
 //
 //   prism-bootstrap start-phase <name>
 //       Set last_command="<name>" in state for crash-resume tracking.
@@ -49,15 +49,17 @@
 // All subcommands accept --root <path> (default cwd) and refuse to run
 // in a directory without .git/ unless --no-git-guard is passed.
 //
-// Schema note: D001/D002 lock five phases — identity, structure,
-// discovery, roster, health. The "conventions" step from D001's table
-// (phase 4) is part of the structure phase: this helper records it
-// under phases.structure.conventions_written = true.
+// Schema note: D004 §B locks seven phases — identity, structure,
+// plugin-validate, discovery, roster, project-master, health. (D001/D002
+// originally locked five; the schema v1→v2 migration in Phase B added
+// plugin-validate and project-master.) The "conventions" step from
+// D001's original table is part of the structure phase: this helper
+// records it under phases.structure.conventions_written = true.
 
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
-import {argv, exit, stderr, stdout} from 'node:process';
+import {argv, env, exit, stderr, stdout} from 'node:process';
 import {fileURLToPath} from 'node:url';
 
 import {
@@ -97,7 +99,9 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--skip-discover') opts.skipDiscover = true;
   else if (a === '--with-deep-dive') opts.withDeepDive = true;
   else if (a === '--no-git-guard') opts.noGitGuard = true;
+  else if (a === '--no-telemetry') opts.noTelemetry = true;
   else if (a === '--meta') named.meta = args[++i];
+  else if (a === '--home') named.home = args[++i];
   else if (a === '-h' || a === '--help' || a === 'help') usage();
   else positional.push(a);
 }
@@ -119,16 +123,29 @@ Commands:
   complete-phase <name> [--meta '<json>']
   fail-phase <name> "<error>"
   init-state-if-missing <project-name>
+  detect-statusline [--home <path>]
+  install-statusline [--home <path>] [--dry-run] [--force]
+  detect-telemetry-consent [--home <path>]
+  set-telemetry-consent <on|off> [--home <path>]
 
 Phases (v2 schema): ${PHASES.join(' | ')}
 project-master is opt-in: planner skips it unless --with-deep-dive is set.
+Statusline + telemetry-consent commands bypass the .git/ guard (they
+operate on $HOME/.claude/, not a project root). The --no-telemetry flag
+flips set-telemetry-consent's default during the bootstrap health phase.
 `);
   exit(code);
 }
 
 // ------------------------------ guards ------------------------------
 
-if (!opts.noGitGuard && !existsSync(join(opts.root, '.git'))) {
+// statusline commands touch $HOME/.claude/settings.json, not a project root,
+// so they bypass the git guard. All other commands require .git/ unless
+// --no-git-guard is set.
+const STATUSLINE_COMMANDS = new Set(['detect-statusline', 'install-statusline']);
+const TELEMETRY_CONSENT_COMMANDS = new Set(['detect-telemetry-consent', 'set-telemetry-consent']);
+const HOME_ONLY_COMMANDS = new Set([...STATUSLINE_COMMANDS, ...TELEMETRY_CONSENT_COMMANDS]);
+if (!opts.noGitGuard && !HOME_ONLY_COMMANDS.has(cmd) && !existsSync(join(opts.root, '.git'))) {
   die(`refusing to run: ${opts.root} has no .git/. Pass --no-git-guard to override.`, 2);
 }
 
@@ -380,6 +397,156 @@ function persistOrPrint(next, label) {
   writeStateAtomic(opts.root, next);
 }
 
+// ------------------------------ statusline helpers ------------------------------
+// Statusline install is a GLOBAL config change (writes to ~/.claude/settings.json),
+// not a project-local one. See scripts/install-statusline-only.sh for the canonical
+// pattern this matches — same JSON shape, same atomic-write discipline.
+
+function resolveStatuslineHome() {
+  // --home override exists primarily for tests (sandbox to a temp dir).
+  // Production: $HOME (Unix) or $USERPROFILE (Windows Git-Bash).
+  if (named.home) return resolve(named.home);
+  const home = env.HOME || env.USERPROFILE;
+  if (!home) die('cannot determine home directory (HOME and USERPROFILE both unset)', 9);
+  return home;
+}
+
+function detectStatusline(home) {
+  const settingsPath = join(home, '.claude', 'settings.json');
+  const sourceScript = join(home, '.claude', 'statusline-command.sh');
+  const result = {
+    settings_path: settingsPath,
+    settings_exists: existsSync(settingsPath),
+    settings_parse_error: null,
+    installed: false,
+    source_script_path: sourceScript,
+    source_script_exists: existsSync(sourceScript),
+  };
+  if (result.settings_exists) {
+    try {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+      result.installed =
+        settings && typeof settings === 'object' && !Array.isArray(settings) &&
+        Object.prototype.hasOwnProperty.call(settings, 'statusLine');
+    } catch (e) {
+      result.settings_parse_error = e.message;
+    }
+  }
+  return result;
+}
+
+function installStatusline({home, dryRun, force}) {
+  const detect = detectStatusline(home);
+  if (detect.settings_parse_error) {
+    die(`refusing: ${detect.settings_path} is not valid JSON (${detect.settings_parse_error}). Fix it or remove it before installing the statusline.`, 9);
+  }
+  if (detect.installed && !force) {
+    die(`statusLine key already present in ${detect.settings_path}. Pass --force to overwrite (the existing value will be replaced).`, 11);
+  }
+  if (!detect.source_script_exists) {
+    die(`refusing: ${detect.source_script_path} not found. Either do a full PRISM install (so the statusline script is copied) or run scripts/install-statusline-only.sh first.`, 12);
+  }
+  let settings = {};
+  if (detect.settings_exists) {
+    settings = JSON.parse(readFileSync(detect.settings_path, 'utf8'));
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      die(`refusing: existing ${detect.settings_path} is not a JSON object`, 9);
+    }
+  }
+  settings.statusLine = {
+    type: 'command',
+    command: `bash ${detect.source_script_path}`,
+    padding: 0,
+  };
+  if (dryRun) return detect.settings_path;
+  mkdirSync(dirname(detect.settings_path), {recursive: true});
+  const body = JSON.stringify(settings, null, 2) + '\n';
+  const tmp = detect.settings_path + '.tmp';
+  writeFileSync(tmp, body, 'utf8');
+  renameSync(tmp, detect.settings_path);
+  return detect.settings_path;
+}
+
+// ─────────── v4.1 Phase C: telemetry consent (prism-policy.json) ───────────
+//
+// Canonical opt-in state lives at ~/.claude/prism-policy.json under
+// `telemetry.opt_in`. The existing /prism-telemetry --opt-in / --opt-out
+// slash command reads + writes the same file (commands/prism-telemetry.md).
+// We're adding deterministic detect + set subcommands so /prism-bootstrap's
+// health phase can prompt + persist the user's choice in one CLI call.
+//
+// detect-telemetry-consent returns:
+//   { policy_path, policy_exists, opt_in: true|false|null,
+//     asked_at: ISO|null, parse_error: string|null }
+// opt_in: null  →  policy file absent OR telemetry block absent: user has
+//                  not been asked yet. Health phase should prompt.
+// opt_in: true  →  user opted in.
+// opt_in: false →  user opted out.
+//
+// set-telemetry-consent writes the policy file atomically. Preserves any
+// other top-level keys the user (or future tools) added. Stamps asked_at
+// to the current ISO time.
+
+function telemetryPolicyPath(home) {
+  return join(home, '.claude', 'prism-policy.json');
+}
+
+function detectTelemetryConsent(home) {
+  const path = telemetryPolicyPath(home);
+  const result = {
+    policy_path: path,
+    policy_exists: existsSync(path),
+    opt_in: null,
+    asked_at: null,
+    parse_error: null,
+  };
+  if (!result.policy_exists) return result;
+  let policy;
+  try {
+    policy = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    result.parse_error = e.message;
+    return result;
+  }
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    result.parse_error = 'policy file is not a JSON object';
+    return result;
+  }
+  const t = policy.telemetry;
+  if (t && typeof t === 'object' && typeof t.opt_in === 'boolean') {
+    result.opt_in = t.opt_in;
+    result.asked_at = typeof t.asked_at === 'string' ? t.asked_at : null;
+  }
+  return result;
+}
+
+function setTelemetryConsent(home, optIn) {
+  const path = telemetryPolicyPath(home);
+  let policy = {};
+  if (existsSync(path)) {
+    try {
+      policy = JSON.parse(readFileSync(path, 'utf8'));
+      if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+        die(`refusing: ${path} is not a JSON object — fix or remove it`, 9);
+      }
+    } catch (e) {
+      die(`refusing: ${path} is not valid JSON (${e.message})`, 9);
+    }
+  }
+  if (!policy.schema_version) policy.schema_version = '3.1.0';
+  policy.telemetry = {
+    ...(policy.telemetry || {}),
+    opt_in: optIn,
+    asked_at: new Date().toISOString(),
+  };
+  mkdirSync(dirname(path), {recursive: true});
+  const body = JSON.stringify(policy, null, 2) + '\n';
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, body, 'utf8');
+  try { renameSync(tmp, path); } catch { writeFileSync(path, body, 'utf8'); }
+  return {policy_path: path, opt_in: optIn, asked_at: policy.telemetry.asked_at};
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -597,6 +764,63 @@ try {
       const next = markPhaseFailed(state, name, errMsg);
       persistOrPrint(next, `fail-phase ${name}`);
       stdout.write(`recorded failure for phase ${name}: ${errMsg}\n`);
+      break;
+    }
+
+    case 'detect-statusline': {
+      const home = resolveStatuslineHome();
+      stdout.write(JSON.stringify(detectStatusline(home), null, 2) + '\n');
+      break;
+    }
+
+    case 'install-statusline': {
+      const home = resolveStatuslineHome();
+      const path = installStatusline({home, dryRun: opts.dryRun, force: opts.force});
+      stdout.write(opts.dryRun
+        ? `DRY-RUN: would write statusLine block to ${path}\n`
+        : `statusLine block written to ${path}\n`);
+      break;
+    }
+
+    case 'detect-telemetry-consent': {
+      const home = resolveStatuslineHome();
+      const result = detectTelemetryConsent(home);
+      // Industry-standard opt-out env vars override file state. We return
+      // the file state untouched so callers can see what was persisted,
+      // PLUS a forced_off_by_env field naming the env var responsible.
+      // bootstrap's Step 7b branches on this to skip the prompt.
+      const envVar = process.env.DISABLE_TELEMETRY === '1' ? 'DISABLE_TELEMETRY'
+                   : process.env.DO_NOT_TRACK === '1' ? 'DO_NOT_TRACK'
+                   : null;
+      if (envVar) {
+        result.forced_off_by_env = envVar;
+        result.effective_opt_in = false;
+      }
+      stdout.write(JSON.stringify(result, null, 2) + '\n');
+      break;
+    }
+
+    case 'set-telemetry-consent': {
+      const value = positional.shift();
+      if (value !== 'on' && value !== 'off') {
+        die(`set-telemetry-consent requires 'on' or 'off' (got ${JSON.stringify(value)})`, 22);
+      }
+      const home = resolveStatuslineHome();
+      let effectiveOptIn = value === 'on';
+      const envVar = process.env.DISABLE_TELEMETRY === '1' ? 'DISABLE_TELEMETRY'
+                   : process.env.DO_NOT_TRACK === '1' ? 'DO_NOT_TRACK'
+                   : null;
+      if (envVar && effectiveOptIn) {
+        stderr.write(
+          `PRISM telemetry: ${envVar}=1 in environment — ` +
+          `forcing opt_in:false regardless of CLI arg '${value}' ` +
+          `(industry-standard opt-out honored).\n`,
+        );
+        effectiveOptIn = false;
+      }
+      const result = setTelemetryConsent(home, effectiveOptIn);
+      if (envVar) result.forced_off_by_env = envVar;
+      stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
 

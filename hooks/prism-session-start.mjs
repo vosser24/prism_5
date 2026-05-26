@@ -38,6 +38,7 @@
 import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync} from 'fs';
 import {join} from 'path';
 import {spawnSync} from 'child_process';
+import {pathToFileURL} from 'url';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LAST_FILE = join(H, '.claude', '.prism-context-audit.last');
@@ -198,6 +199,46 @@ try {
       'See CHANGELOG.md §v2.9.1 breaking-contract note for details.'
     );
     atomicWrite(MIGRATION_FLAG, new Date().toISOString());
+  }
+
+  // ── v4.1 Phase A: flag-file pickup (D005 Phase F bundle + git-clean) ──
+  // SessionEnd / PreCompact hooks write side-effect flags (they can't
+  // emit additionalContext per D005's verified hook decision-control
+  // matrix). We read + clear them here and emit the actual nudges.
+  // Fail-open: any error skips this block entirely.
+  try {
+    const flagHelper = await import(pathToFileURL(join(H, '.claude', 'tools', 'lib', 'prism-flag-file.mjs')).href).catch(() => null);
+    if (flagHelper) {
+      const cwd = process.cwd();
+      const cleanNudge = flagHelper.readAndClearFlag('clean-nudge', cwd);
+      if (cleanNudge) {
+        const trigger = cleanNudge.reason === 'precompact' ? 'context compaction' : '/clear';
+        notices.push(`PRISM NUDGE: previous session ended via ${trigger}. Run /prism-clean to capture lessons before they're lost. (Set PRISM_DISABLE_CLEAR_NUDGE=1 or PRISM_DISABLE_PRECOMPACT_NUDGE=1 to suppress.)`);
+      }
+      const gitDirty = flagHelper.readAndClearFlag('git-dirty', cwd);
+      if (gitDirty && gitDirty.count) {
+        const sample = (gitDirty.sample || []).slice(0, 3).join(', ');
+        const more = gitDirty.count > 3 ? ` (+${gitDirty.count - 3} more)` : '';
+        notices.push(`PRISM NUDGE: previous session left ${gitDirty.count} uncommitted change${gitDirty.count === 1 ? '' : 's'} in the working tree: ${sample}${more}. Review with \`git status\`; commit or stash before risky operations. (Set PRISM_DISABLE_GIT_CLEAN_NUDGE=1 to suppress.)`);
+      }
+    }
+  } catch {}
+
+  // ── v4.1 Phase B: daily freshness sweep ──
+  // One throttled (24h) pass closes 6 audit questions (plugin drift,
+  // stale agents, update-log age, CLAUDE.md mtime, tools-registry
+  // rotations). Off-switch: PRISM_DISABLE_FRESHNESS_SWEEP=1.
+  // Fail-open: any error skips silently.
+  if (String(process.env.PRISM_DISABLE_FRESHNESS_SWEEP || '') !== '1') {
+    try {
+      const sweep = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-freshness-sweep.mjs')).href).catch(() => null);
+      if (sweep && typeof sweep.runFreshnessSweep === 'function') {
+        const r = sweep.runFreshnessSweep({home: H});
+        if (r && Array.isArray(r.notices)) {
+          for (const n of r.notices) notices.push(n);
+        }
+      }
+    } catch {}
   }
 
   if (notices.length) process.stdout.write(notices.join('\n'));

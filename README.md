@@ -1,6 +1,6 @@
 # PRISM — Cognitive-tier orchestration for Claude Code
 
-> **30-second pitch**: PRISM makes Claude Code self-aware about task complexity, automatically routing work to the cheapest viable model tier (Haiku/Sonnet/Opus) and enforcing dispatch discipline through 16 hooks. Closes the gap between "Claude Code as smart assistant" and "Claude Code as a cost-disciplined orchestration framework".
+> **30-second pitch**: PRISM makes Claude Code self-aware about task complexity, automatically routing work to the cheapest viable model tier (Haiku/Sonnet/Opus) and enforcing dispatch discipline through 17 hooks. Closes the gap between "Claude Code as smart assistant" and "Claude Code as a cost-disciplined orchestration framework".
 
 ## What it solves
 
@@ -31,6 +31,8 @@ PRISM ships as a first-class Claude Code plugin (v3.5.0+). Two install paths —
 
 Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are namespaced under the plugin (e.g. `/prism:prism-plan`) and registered automatically — no `settings.fragment.json` merge, no manual file copy. To update later: `/plugin update prism@PRISM`. To remove: `/plugin uninstall prism@PRISM`.
 
+> **Uninstalling?** Run `/prism-uninstall-cleanup` **before** `/plugin uninstall prism@PRISM` to remove agents the factory created while PRISM was installed as a plugin. Manually-created agents (and legacy entries from before v4.3.0) are never touched.
+
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
 
 ### Alternative: clone + install script
@@ -41,50 +43,74 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 
 (Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
 
-## Status — works / half-works / known-gaps (v3.1.0)
+## Status — works / half-works / known-gaps (v4.0.0)
 
 | Journey | State | Notes |
 |---|---|---|
 | Install / upgrade | ✅ Works | Idempotent, backup-first |
-| Tier classification | ✅ Works | Keyword-floor regex + conversation-model self-override (v3.2.0) |
+| Tier classification | ✅ Works | Keyword-floor regex + conversation-model self-override |
 | Mutation guard | ✅ Works | Hard-block on parent-context writes |
 | Parent-dispatch guard | ✅ Works | Hard-block on novel-tier turns |
-| Parallel-dispatch guard (v3.1) | ✅ Works | Closes T10.3 gap |
-| Panel-hallucination guard (v3.1) | ✅ Works | Closes DOCTRINE-DRIFT-001 |
-| Skill-trigger guard (v3.1) | ✅ Works (advisory) | Closes T13.4 gap |
+| Parallel-dispatch guard | ✅ Works | Closes T10.3 gap |
+| Panel-hallucination guard | ✅ Works | Closes DOCTRINE-DRIFT-001 |
+| Skill-trigger guard | ✅ Works (advisory) | Closes T13.4 gap |
 | Resource-index | ✅ Works | Run `/prism-index` to populate |
-| Centrally-managed policy (v3.1) | ✅ Works | `~/.claude/prism-policy.json` |
-| Team roster (v3.1) | ✅ Works (file-based) | `--team` filter on /prism-roster |
-| Telemetry (v3.1) | ⚠ Local-only | No SaaS yet; export-to-JSON |
-| User hook customization preservation | ❌ Not yet | v3.2 target |
-| Schema-version reader checks | ❌ Not yet | v3.2 target |
+| Centrally-managed policy | ✅ Works | `~/.claude/prism-policy.json` |
+| Team roster | ✅ Works (file-based) | `--team` filter on `/prism-roster` |
+| Telemetry | ⚠ Local-only | No SaaS yet; export-to-JSON |
+| `/prism-bootstrap` 7-phase state machine (v3.11.0) | ✅ Works | Idempotent; detect-and-adopt back-fills v3.8.9 installs |
+| `/prism-sync` conservative drift (v3.11.0) | ✅ Works | Always re-scans; `--smart-drift` stub until v3.12.0 |
+| `/prism-clean` 5-level importance classifier (v3.11.0) | ✅ Works | Wired to `append-decision` + `append-lesson` in v4.0 |
+| `/prism-validate-plugins` (v3.11.0) | ✅ Works (report-only) | `--fix` deferred to v3.12.0 |
+| `/prism-deep-dive` + `master-<slug>` (v4.0) | ✅ Works | Opt-in via `/prism-bootstrap --with-deep-dive` or direct |
+| `master-orchestrator` as skill (v4.0) | ✅ Works | Skill body at `~/.claude/skills/master-orchestrator/`; agent file is thin wrapper |
+| PHASE 1.5 tightened evidence rules (v4.0) | ✅ Works | EVIDENCED/UN-CITED/REJECTED verdicts + bounce-ONCE + factory-upgrade at ≥3 UN-CITED |
+| `SessionEnd[clear]` + `PreCompact` nudge hooks | ✅ Shipped (v4.1 Phase A) | Flag-file + SessionStart pickup per D005's resolution; 4 off-switches |
+| Git-hygiene + pre-push review nudge (v4.1) | ✅ Shipped (v4.1 Phase A) | SessionEnd writes git-dirty flag; PreToolUse asks before `git push` |
+| SessionStart daily freshness sweep (v4.1) | ✅ Shipped (v4.1 Phase B) | Once-per-24h: plugin drift, stale agents, update-log, CLAUDE.md, tools-registry rotations |
+| Telemetry opt-in prompt (v4.1) | ✅ Shipped (v4.1 Phase C, default-off in v4.2) | `/prism-bootstrap` health phase prompts once; default off; honors `DISABLE_TELEMETRY=1` + `DO_NOT_TRACK=1`; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
+| User hook customization preservation | ❌ Not yet | v4.1+ |
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 
-See `tests/v3/plan.md` for the comprehensive 62-test journey grid.
+See `tests/v3/plan.md` for the comprehensive user-journey test grid and
+`docs/prism/MIGRATION.md` for the v3.x → v4.0 upgrade recipe.
 
 ## Architecture at a glance
 
-- 16 hooks in `~/.claude/hooks/`: classifier router, 7 enforcement guards, lifecycle (session-start/end, subagent-stop), 4 advisory hooks
-- 8 PRISM-owned skills in `~/.claude/skills/`: prism-plan, blueprint-prompt, workflow-orchestration, prism-discover, prism-chat, claude-code-expert, notebooklm, video-production
-- 3 core agents: `@master-orchestrator`, `@agent-factory`, `@prism-updater`
-- 13 slash commands: `/prism-plan`, `/prism-index`, `/prism-doctor`, `/prism-roster`, `/prism-update`, `/prism-health`, `/prism-audit`, `/prism-recommend`, `/prism-recall`, `/prism-app-expert`, `/prism-archive`, `/prism-retire`, `/prism-deps`, `/prism-telemetry`
+- 17 hooks in `~/.claude/hooks/`: classifier router, 7 enforcement guards, lifecycle (session-start/end, subagent-stop), 4 advisory hooks, agent-write auto-fire registrar (v3.11.0)
+- PRISM-owned skills in `~/.claude/skills/`: `prism-plan`, `blueprint-prompt`, `prism-discover`, `prism-chat`, `prism-clean`, `prism-validate-plugins`, `master-orchestrator` (Phase E migration target — skill body for orchestration protocol)
+- Core agents: `@master-orchestrator` (thin wrapper that loads the skill), `@agent-factory`, `@prism-updater`. v4.0 adds per-project `master-<slug>` agents generated by `/prism-deep-dive`.
+- 20 slash commands. Entry points by workflow:
+  - **Daily:** `/prism-bootstrap`, `/prism-sync`, `/prism-clean`, `/prism-recall`
+  - **Project-master (v4.0):** `/prism-deep-dive`
+  - **Agent management:** `/prism-app-expert`, `/prism-roster`, `/prism-retire`, `/prism-recommend`
+  - **Validation:** `/prism-validate-plugins`, `/prism-audit`, `/prism-audit-full`, `/prism-doctor`, `/prism-deps`
+  - **Knowledge:** `/prism-archive`, `/prism-index`, `/prism-telemetry`
+  - **Lifecycle:** `/prism-update`, `/prism-help` (curated index)
+  - Subsumed by `/prism-bootstrap` (still callable): `/prism-init`, `/prism-discover`, `/prism-roster --reconcile`, `/prism-health`
 - Single source of truth: `~/.claude/skills/prism-plan/references/roster.json` (4 sibling blocks: agents/skills/tools/mcps + index_meta)
+- Project state: `<project>/.claude/.prism-state.json` (schema v2; 7 phases; sentinels). Migrates transparently from v1.
 
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.0.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.0 upgrade recipe with rollback
+- `/prism-help` (in Claude Code) — curated v4.0 slash-command index
+- [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
 
 ## What you get
 
-- **Hooks** that make Claude Code self-aware: session start/stop, tool-use safety guards, agent model guards, context-tax audits, subagent tracking.
-- **Tools** for KB indexing, routing, classification, notebook sync, test harness, monitor, migrations.
-- **Agents** — master orchestrator, agent factory, updater.
-- **Skills** — `prism-plan`, `prism-discover`, `blueprint-prompt`, `claude-code-expert`, and more.
-- **Statusline** — multi-line status bar with model, git, cost, context bar, rate limits, subagent breakdown.
-- **Commands** — `/prism-plan`, `/prism-discover`, `/prism-audit`, `/prism-health`, `/prism-roster`, `/prism-update`, `/prism-recommend`, `/prism-retire`, `/prism-app-expert`, `/prism-archive`, `/prism-recall`, `/prism-init`.
+- **Hooks** that make Claude Code self-aware: session start/stop, tool-use safety guards, agent model guards, context-tax audits, subagent tracking, agent-write auto-registrar (v3.11.0).
+- **Tools** for KB indexing, routing, classification, notebook sync, test harness, monitor, migrations, bootstrap state machine, sync, clean, plugin audit, deep-dive scaffolding.
+- **Agents** — `@master-orchestrator` (skill-loading thin wrapper), `@agent-factory`, `@prism-updater`, and per-project `master-<slug>` agents (v4.0).
+
+  > **Global vs project-local (Q7 clarification).** `@agent-factory` always writes new domain specialists to `~/.claude/agents/<name>.md` — that's the global path, reusable across every project. The ONE exception is the `--master-<slug>` mode (v4.0 Phase D), which writes to `<project>/.claude/agents/master-<slug>.md` because the master agent is project-scoped by definition. Every other factory mode (`--from-notebook`, `--skill-research`, standard create) is global-write. If you want a domain specialist that only lives in one project, that's a manual `.md` write, not a factory invocation — and the orchestrator will only see it if `/prism-index` runs in that project.
+- **Skills** — `prism-plan`, `prism-chat`, `blueprint-prompt`, `prism-discover`, `prism-clean`, `prism-validate-plugins`, `master-orchestrator` (Phase E — multi-step orchestration protocol body), and more.
+- **Statusline** — multi-line status bar with model, git, cost, context bar, rate limits, subagent breakdown. Opt-in install via `/prism-bootstrap` (v4.0).
+- **Commands** — see `/prism-help` (v4.0) for the curated by-workflow index. Run `/prism-bootstrap` first on any new project; everything else is reachable from there.
 
 ## Manual install
 

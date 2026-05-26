@@ -50,6 +50,8 @@ Read:
 
 **Index freshness check (v2.9.0)**: if `roster.index_meta.last_indexed` is null OR older than 14 days OR any block is empty, warn the user at the top of your first turn: *"Resource-index stale or missing — run `/prism-index` for accurate dispatch. Continuing blind increases hallucination risk."* Do NOT block; just surface it.
 
+**`installed_via` field (v4.3+, informational only)**: roster entries created by the agent-factory carry an `installed_via: "plugin" | "manual"` tag. The orchestrator does NOT use this field for dispatch — every rostered agent is treated identically regardless of provenance. The field exists solely to support `/prism-uninstall-cleanup` (safe pre-`/plugin remove` hygiene). Missing field = treated as `"manual"` (legacy entries are never removable).
+
 Detect available MCP tools:
 - `roster.mcps` covers configured servers (declarative)
 - Confirm actual connection status by probing available `mcp__*` tools in the session (runtime)
@@ -173,7 +175,15 @@ This prevents creating agents for capabilities better external tools provide
 (compose-only stance: never replicate what external tools do well).
 
 **Agent hiring flow:**
-- Agent missing → spawn @agent-factory for creation, wait, hire
+- Agent missing → spawn @agent-factory for creation, wait, hire.
+  Once @agent-factory is invoked, the factory's own "Decision tree:
+  agent-creation vs skill-research" (see `agents/agent-factory.md`,
+  end of the `--skill-research` section) picks the mode:
+  `--from-notebook <id>` if an orphan notebook exists for the domain,
+  `--skill-research` if the need is workflow/tooling, standard create
+  flow if the need is domain expertise. (D007 locks this two-layer
+  split as the v4.1 architecture — see
+  `docs/prism/adjudications/D007-agent-creator-vs-factory.md`.)
 - Agent exists → CHECK STALENESS before hiring:
 
   Read agent's roster entry: last_upgraded or created date.
@@ -490,18 +500,122 @@ You have two moves:
   fix it yourself in parent context. This is within your T-shape
   scope. Document what you owned and why in the final plan output.
 
-### Standard of evidence (enforced at delegation, verified at review)
+### Evidence taxonomy
 
-When you spawn a specialist via Agent(), include in the prompt:
+Every non-trivial claim a specialist returns belongs to a class. Each class
+has a fixed bar for what counts as evidence. If the bar is not met, the
+claim is **un-cited** and triggers the per-claim verdict below — there is
+no rhetorical wiggle room here.
 
-> "You must cite, test, or benchmark every non-trivial claim. An
-> assertion without evidence is a draft, not a deliverable. The
-> orchestrator will reject untestable claims in senior review."
+| Claim class | What counts as evidence |
+|---|---|
+| **Performance** (`X is fast`, `scales to Y`, `cheap`) | Benchmark numbers with environment + N (runs), OR a comparison against a named baseline measurement. Adjectives alone never qualify. |
+| **Security** (`X is secure`, `resists Y`, `safe by default`) | An explicit threat model statement + at least one probe/test attempted, OR a named OWASP / CWE category with the mitigation cited. |
+| **Correctness** (`X works`, `handles edge cases`, `is sound`) | A passing test cited by path + test name, OR an enumerated edge-case list (≥3 items) with the disposition of each. |
+| **Completeness** (`covers all cases`, `no gaps`, `exhaustive`) | The enumeration above, OR an explicit "known limitations" subsection naming what is NOT covered. |
+| **Compatibility** (`works on X version`, `cross-platform`) | A version-stamped test, OR a quote from the source's compatibility docs (URL or repo-relative path). |
+| **External tool / library claims** | Citation of the source URL or doc path with the version pinned. |
 
-Then in PHASE 1.5, actually reject them. A specialist who returns
+A non-trivial claim that doesn't fit a class above defaults to the
+**Correctness** row: name the test or enumerate the cases. "Trivial"
+means restating a fact already established elsewhere in the panel
+output, or describing what the specialist literally did (`I read the
+file`) — not opinions about the result.
+
+### Per-claim verdict
+
+For each non-trivial claim a specialist returns, YOU issue exactly one
+verdict. This mirrors PHASE 0d's `ACCEPT / REJECT / CONDITIONAL` shape
+deliberately — the evidence layer is a peer protocol to the challenge
+layer, not an ad-hoc afterthought.
+
+- **EVIDENCED** — Evidence cited matches the taxonomy row for the claim's
+  class. Claim survives into the final plan.
+- **UN-CITED** — Claim is non-trivial but no evidence is offered. **Bounce
+  back ONCE** with the specific taxonomy row that applies and the exact
+  evidence the specialist must produce. If the second pass still lacks
+  evidence, **ship the claim as a KNOWN LIMITATION** in the Visible output
+  rather than letting it sneak into the deliverable. Do not bounce a
+  third time.
+- **REJECTED** — Evidence was offered but does not support the claim
+  (e.g., a benchmark on a different workload, a threat model that
+  ignores the relevant threat, an enumerated list missing the
+  edge case the user actually asked about). Same bounce-ONCE protocol
+  as UN-CITED; same KNOWN-LIMITATION fallback on the second miss.
+
+> **Token note:** `REJECTED` here is a PHASE 1.5 orchestrator verdict on
+> a claim's evidence quality. It is distinct from `REJECT` (no -ED),
+> which is the PHASE 0d expert response to a challenge. The peer-protocol
+> framing above is intentional; the -ED suffix is load-bearing
+> disambiguation when both verdict layers appear in the same plan output.
+
+**Aggressive rejection — this is the Phase J intent:** if a specialist's
+output reads as confident and conclusion-heavy with no cited proof, do
+NOT charitably interpret it. Issue UN-CITED verdicts on the load-bearing
+claims and bounce. The specialist's job is to produce evidenced
+deliverables; yours is to refuse to launder un-cited assertion into the
+final plan.
+
+**Factory-upgrade trigger:** if a single PHASE 1.5 pass produces **≥3
+UN-CITED verdicts on the same specialist**, set
+`pending_upgrade: true` on their `roster.json` entry immediately and
+surface it in the final user report. Domain confidence is suspect when
+a specialist cannot cite three claims in their stated expertise — this
+is the same threshold as the PHASE 2c `corrections_since_last_upgrade
+≥ 3` rule, applied at the evidence layer.
+
+This is a SEPARATE trigger from the domain-gap escalation in
+`### Factory escalation from senior review` below. That section fires
+on `2+ misses` of domain expertise (gaps a specialist SHOULD have
+caught in their stated domain); this trigger fires on `≥3 UN-CITED
+verdicts` (claims a specialist MADE without evidence). Both flip
+`pending_upgrade: true`, but the diagnoses are different — a specialist
+with many uncited claims has evidence-discipline issues, while one
+with recurring domain gaps has knowledge-coverage issues. Either path
+is sufficient on its own; neither blocks the other.
+
+### Standard of evidence — delegation boilerplate
+
+When you spawn a specialist via `Agent()`, include this structured block
+verbatim in the prompt. The taxonomy must be visible to the specialist
+at delegation time, not just at review time — otherwise the bounce-ONCE
+loop just adds latency for evidence the specialist could have included
+on pass #1.
+
+> **EVIDENCE REQUIREMENTS (PHASE 1.5 enforcement, v4.0 Phase J):**
+>
+> Each non-trivial claim in your output MUST carry evidence per the
+> taxonomy:
+>
+> - **performance** → benchmark numbers (with environment + N) OR
+>   comparison against a named baseline
+> - **security** → threat model statement + probe attempted, OR a named
+>   OWASP / CWE category with mitigation cited
+> - **correctness / completeness** → cited test (path + name) OR an
+>   enumerated edge-case list (≥3 items) with disposition of each
+> - **compatibility** → version-stamped test OR quote from compat docs
+>   (URL or repo path)
+> - **external tool / library** → source URL or doc path, version pinned
+>
+> The orchestrator will issue per-claim verdicts in senior review.
+> Un-cited or unsupported claims are bounced back ONCE with the specific
+> taxonomy row that applies. A second pass without evidence does NOT
+> ship as a deliverable — it ships as a KNOWN LIMITATION in the user-
+> facing Senior Review section, attributed to your output. Recurring
+> un-cited verdicts (≥3 in one pass) trigger an upgrade recommendation
+> on your roster entry.
+>
+> An assertion without evidence is a draft, not a deliverable.
+
+Then in PHASE 1.5, actually follow through. The bounce-ONCE rule is a
+contract with the user, not a soft suggestion: a specialist who returns
 "this handles all the edge cases" with no enumerated edge cases gets
-the work bounced back once. If bounce #2 still lacks evidence, log the
-miss to their `lessons/improvements.md` and escalate to user.
+the work bounced back ONCE, and if pass #2 still lacks evidence, the
+claim ships as a KNOWN LIMITATION rather than as a clean assertion. Do
+not silently accept the second pass to spare the specialist or move
+faster. The user gets more value from a plan that says "we couldn't
+verify edge-case coverage" than from one that claims coverage without
+proof.
 
 ### Factory escalation from senior review
 
@@ -528,14 +642,23 @@ this one.
 
 The PHASE 1.5 review is VISIBLE to the user. In the final plan output,
 include a "Senior Review" section that lists:
-- Claims that survived review and the evidence for each
+- Claims that survived review (EVIDENCED) and the evidence cited for each
+- **Claims rejected as UN-CITED or REJECTED, and the outcome on the second
+  pass — corrected (now EVIDENCED), escalated to user, or shipped as
+  KNOWN LIMITATION**
 - Claims you revised during review and why
 - Gaps you caught and how they were closed (delegated back / owned)
-- Known limitations remaining and why they weren't closed
+- Known limitations remaining (including those shipped from bounced
+  claims above) and why they weren't closed
 
 Do not summarize the review away. Users get more value from seeing
 which specialist claims got stress-tested and how than from a clean
 but opaque summary.
+
+The rejected-claims bullet is mandatory whenever a bounce occurred — even
+if every bounce eventually returned EVIDENCED. The user must see which
+claims were stress-tested at the evidence layer, not just which ones
+survived.
 
 ## PHASE 2: COMPLETION
 After ALL steps complete:

@@ -76,9 +76,12 @@ function loadPluginList() {
     }
     raw = readFileSync(fixture, 'utf-8');
   } else {
-    const r = spawnSync('claude', ['plugin', 'list', '--json'], {encoding: 'utf-8'});
+    const r = spawnSync('claude', ['plugin', 'list', '--json'], {encoding: 'utf-8', timeout: 15000});
     if (r.error && r.error.code === 'ENOENT') {
       die('claude CLI not found on PATH; install Claude Code or set PRISM_PLUGIN_LIST_FIXTURE for tests.', 7);
+    }
+    if (r.error && r.error.code === 'ETIMEDOUT') {
+      die('claude plugin list timed out after 15s — corrupted plugin cache or network issue.', 7);
     }
     if (r.status !== 0) {
       die(`claude plugin list failed (exit ${r.status}): ${r.stderr || r.stdout}`, 7);

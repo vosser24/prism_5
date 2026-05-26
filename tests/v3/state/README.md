@@ -21,7 +21,8 @@ bash scripts/install.sh
 
 # 4. Inside Claude Code, run:
 #       /prism-bootstrap
-#    Expected behaviour: identity → structure → discovery → roster → health
+#    Expected behaviour: identity → structure → plugin-validate → discovery →
+#    roster → project-master (opt-in, skipped by default) → health
 #    phases run in order, each updating .claude/.prism-state.json.
 #    Re-running /prism-bootstrap on the same project = safe no-op.
 #
@@ -42,8 +43,9 @@ After `/prism-bootstrap` completes (scaffold scope locked by D003):
 - `.gitignore` carries the `# --- PRISM ---` block
 - `.claude/rules/capture-conventions.md` was written
 - `CLAUDE.md` exists (created or audited)
-- `node ~/.claude/tools/prism-bootstrap.mjs status` shows all 5 phases
-  with non-null `completed_at`
+- `node ~/.claude/tools/prism-bootstrap.mjs status` shows all 7 phases
+  with non-null `completed_at` (project-master will show `null` unless
+  `--with-deep-dive` was passed, since it is opt-in per D004 §8)
 - Re-running `/prism-bootstrap` reports "no changes needed"
 
 ## How to test by hand (5-minute review path)
@@ -193,7 +195,7 @@ defense-in-depth against accidentally pointing it at a real project.
 
 ## What the tests cover
 
-- Schema validation (positive integer `schema_version`, ISO-8601 dates, all five
+- Schema validation (positive integer `schema_version`, ISO-8601 dates, all seven
   required phases, `phase_failures` cap)
 - Checksum: deterministic, key-order-invariant, ignores its own field, detects
   tampering

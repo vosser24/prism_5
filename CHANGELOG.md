@@ -4,6 +4,307 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.3.0] - 2026-05-26
+
+The **plugin-vs-manual provenance** release. Enables safe pre-uninstall hygiene for PRISM-as-plugin installs without risking manually-created agents.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.2.0 → v4.3.0".
+
+### Added
+- **`/prism-uninstall-cleanup` slash command** (`commands/prism-uninstall-cleanup.md`) + worker tool (`tools/prism-uninstall-cleanup.mjs`, ~135 LOC). Removes agents created while PRISM was installed as a plugin — agent directory, flat `.md` file, and roster entry — in one atomic pass. Lists by default; destructive only when explicitly invoked with `--mode=remove-all`.
+- **`installed_via` field on roster entries** (`"plugin"` | `"manual"`). Set by the agent-factory based on whether `$CLAUDE_PLUGIN_ROOT` is in the environment when the factory runs. Project-local master-`<slug>` agents are excluded (they were never global).
+
+### Changed
+- `agents/agent-factory.md` — CREATE PROTOCOL step 4 and `--from-notebook` mode step 5 now teach the factory to set `installed_via` on every new roster entry. Master-`<slug>` mode carries an explicit exception note.
+- `skills/master-orchestrator/SKILL.md` STARTUP block — notes that `installed_via` is informational only (dispatch ignores it).
+
+### Migration
+- Legacy roster entries (missing `installed_via`) treated as `"manual"` — never removable by the new command. No migration step needed; existing agents are safe.
+- See `docs/prism/MIGRATION.md` §"v4.2.0 → v4.3.0" for the full upgrade path including non-interactive flags.
+
+### Tests
+- New suite `tests/v3/state/test-prism-uninstall-cleanup.mjs` — 6 cases (backfill safety, plugin-only filter, zero-state idempotency, removal correctness, atomic-write exit state, env-detection smoke with graceful skip when bash unavailable). Full suite: 224 / 224 across 13 files.
+
+## [4.2.0] - 2026-05-26
+
+The **packaging + privacy hardening** release. No new behavior — closes
+the 6 packaging gaps surfaced by the post-v4.1 audit at
+`docs/prism/lessons/2026-05-26-packaging-fix-handoff.md`.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.1.0 → v4.2.0".
+
+### Added
+- **Phase 0 — plugin.json sync + drift-guard test.**
+  - `.claude-plugin/plugin.json` bumped 3.8.9 → 4.2.0 with full hooks block
+    matching `settings.fragment.json` — adds `SessionEnd[matcher=clear]`,
+    `SessionEnd` catch-all, `PreToolUse[Bash]` prepush-review,
+    `PostToolUse` agent-write-register, swaps stale `PreCompact`
+    session-start for precompact-nudge-flag. Marketplace install path now
+    delivers v4.0 + v4.1 features to clean installs.
+  - `tests/v3/state/test-plugin-manifest-drift.mjs` — 3-assertion
+    drift-guard: version matches CHANGELOG top entry, hook event keys
+    match, (matcher | handler-basename) multisets match. Skips
+    gracefully if either truth-source is missing.
+- **Phase A — packaging polish + telemetry privacy hardening.**
+  - `DISABLE_TELEMETRY=1` and `DO_NOT_TRACK=1` env vars honored across
+    `tools/prism-telemetry-aggregate.mjs` (exit 13 silently when set) and
+    `tools/prism-bootstrap.mjs` `set-telemetry-consent` (force opt_in:false
+    regardless of CLI arg) + `detect-telemetry-consent` (returns
+    `forced_off_by_env: <VAR>`). Industry-standard signal honored
+    authoritatively; file state preserved for inspection.
+  - `.claude-plugin/plugin.json` discoverability keys: `category`,
+    `documentation`, `example_prompts`.
+
+### Changed
+- **Telemetry default flipped from prompt-recommended-on to off-by-default**
+  in `commands/prism-bootstrap.md` Step 7b. AskUserQuestion now offers
+  "Keep telemetry off (default)" as the first / recommended option.
+  Existing opt-in consent is preserved on upgrade — only the first-install
+  default for new machines flipped. `README.md` table entry retitled
+  "Telemetry opt-in prompt (v4.1)" (was "Telemetry auto-opt-in").
+
+## [4.1.0] - 2026-05-26
+
+The **observability + hygiene** release. Layered on top of v4.0's
+project-master surface, v4.1 closes 11 audit questions surfaced in the
+post-v4.0 governance review by adding a git-hygiene hook bundle, a
+once-per-24h SessionStart freshness sweep, and the telemetry opt-in
+loop with a deterministic aggregator that the `prism-updater` agent
+consumes for guard-tuning candidates.
+
+Roadmap: `docs/prism/lessons/2026-05-26-v4.1-roadmap.md`.
+Adjudication: `docs/prism/adjudications/D007-agent-creator-vs-factory.md`.
+Migration guide: `docs/prism/MIGRATION.md` §"v4.0.0 → v4.1.0".
+
+### Added
+- **Phase 0 — D007 lock** (commit `f038031`).
+  - `docs/prism/adjudications/D007-agent-creator-vs-factory.md` locks
+    the agent-creation surface architecture: status quo, no
+    `agent-creator` skill ships in v4.1. Master-orchestrator owns the
+    inline decision tree; factory remains the sole creation surface.
+  - Cross-link added to `skills/master-orchestrator/SKILL.md` Team
+    Assembly section pointing readers at the factory's own decision
+    tree (D007 Lock item 2).
+  - Audit's deferred `agents/agent-factory.md:31-33 git add -A`
+    finding RESOLVED as stale — current code has no `git add`
+    anywhere in agent-factory.md.
+- **Phase A — git-hygiene hook bundle + D005 Phase F** (commit `8057342`).
+  - `tools/lib/prism-flag-file.mjs` — shared per-project flag helper
+    (SHA-256 keyed paths, atomic writes, readAndClear / listPending).
+  - `hooks/prism-clean-nudge-flag.mjs` — SessionEnd[matcher=clear]
+    side-effect writer (D005 Phase F bundle).
+  - `hooks/prism-precompact-nudge-flag.mjs` — PreCompact side-effect
+    writer (D005 Phase F bundle).
+  - `hooks/prism-git-clean-nudge.mjs` — SessionEnd catch-all that
+    writes a flag if working tree dirty.
+  - `hooks/prism-prepush-review.mjs` — PreToolUse[Bash] filter that
+    returns `permissionDecision: "ask"` + nudge when `git push` is
+    about to run. Optional hard-gate via per-branch `review-done`
+    flag-file.
+  - `hooks/prism-session-start.mjs` extended with flag-file pickup
+    that emits the actual nudge text via additionalContext (the
+    SessionStart event supports it; SessionEnd + PreCompact don't —
+    D005's verified matrix).
+  - Off-switches (4 independent env vars):
+    `PRISM_DISABLE_CLEAR_NUDGE`, `PRISM_DISABLE_PRECOMPACT_NUDGE`,
+    `PRISM_DISABLE_GIT_CLEAN_NUDGE`, `PRISM_DISABLE_PREPUSH_NUDGE`.
+  - `tests/v3/state/test-prism-git-hygiene.mjs` — 23 tests.
+- **Phase B — SessionStart freshness sweep** (commit `db60c85`).
+  - `hooks/lib/prism-freshness-sweep.mjs` — once-per-24h throttled
+    sweep that closes 6 audit questions in one pass: plugin drift
+    (Q1), stale agents (Q5, ≥90d), update-log age (Q6a, >15d),
+    CLAUDE.md mtime (Q6b, >60d), tools-registry rotations (Q11).
+    Snapshot at `~/.claude/.prism-freshness-last.json` (atomic).
+    Off-switch: `PRISM_DISABLE_FRESHNESS_SWEEP=1`.
+  - `skills/prism-plan/references/roster.json` — schema bump to add
+    derived `domain_groups` top-level block + `_schema_example_domain_group`.
+    Closes Q9 (domain grouping).
+  - `commands/prism-index.md` Step 5.5 — derives + writes
+    `domain_groups` from agent.core_domains + skill.domains.
+  - `commands/prism-roster.md` — new `--by-domain` view consuming
+    `domain_groups` (read-only coverage table).
+  - `README.md` + `commands/prism-help.md` — 3-line clarification on
+    factory's global-write rule vs the `--master-<slug>` exception
+    (closes Q7).
+  - `tests/v3/state/test-prism-freshness-sweep.mjs` — 14 tests.
+- **Phase C — telemetry auto-opt-in** (commit `2531e12`).
+  - `tools/prism-bootstrap.mjs` — new `detect-telemetry-consent` +
+    `set-telemetry-consent on|off` subcommands; `--no-telemetry`
+    flag pre-declines without prompting. Both bypass the `.git/`
+    guard.
+  - `tools/prism-telemetry-aggregate.mjs` — deterministic rollup
+    helper. Honours consent gate (exit 13 if no opt-in); reads
+    `~/.claude/.prism-routing.jsonl`; writes
+    `~/.claude/.prism-telemetry-rollup.json`. Surfaces tuning
+    candidates (guards ≥25% of denies AND ≥3 denies).
+  - `commands/prism-bootstrap.md` Phase 7 split into 7a (wiring) +
+    7b (consent prompt) + 7c (complete). One-shot prompt; never
+    re-asks.
+  - `agents/prism-updater.md` step 3 extended with telemetry-
+    informed gap analysis — reads rollup, surfaces tuning candidates
+    in the migration plan, approval-gated like every other item.
+  - `docs/prism/MIGRATION.md` — Phase C section with consent flow +
+    helper subcommand table.
+  - `tests/v3/state/test-prism-telemetry-consent.mjs` — 12 tests.
+
+### Changed
+- `skills/prism-plan/references/roster.json` — `schema_notes` extended
+  with a v4.1 entry documenting `domain_groups` semantics; `agents` /
+  `skills` / `tools` / `mcps` blocks unchanged.
+- `commands/prism-help.md` — version line bumped to "v4.0 + v4.1
+  (git-hygiene + freshness sweep + telemetry opt-in)"; new "Hooks"
+  section enumerates v4.1 hooks with their off-switches.
+- `docs/prism/MIGRATION.md` — D005-Phase-F row in the known-limitations
+  table flipped to "shipped"; new "v4.0.0 → v4.1.0" section.
+
+### Test baseline
+- 95 tests across 6 suites green:
+  - test-master-orchestrator-thin-wrapper: 3/3 (unchanged)
+  - test-master-orchestrator-evidence-rules: 9/9 (unchanged)
+  - test-prism-bootstrap: 34/34 (unchanged)
+  - test-prism-git-hygiene: 23/23 (NEW)
+  - test-prism-freshness-sweep: 14/14 (NEW)
+  - test-prism-telemetry-consent: 12/12 (NEW)
+
+### Known limitations carried into v4.1
+- Cross-project telemetry rollup deferred to v4.2 — routing log writers
+  don't carry a `project` field; adding one touches every guard hook
+  (architectural change beyond Phase C scope).
+- Pre-push hard-gate auto-writer (PostToolUse[Skill] on /code-review
+  completion) deferred to v4.2 — Phase A ships the manual writer +
+  the consumer side; the auto-write side is opt-in plumbing.
+
+## [4.0.0] - 2026-05-26
+
+The **project-master surface** release. Each project can now grow its own
+`master-<slug>` agent with a project-local `MEMORY.md`; the master loads
+the shared `master-orchestrator` skill (which carries the multi-step
+orchestration protocol) and hires specialists from the global roster.
+
+Locked design: `docs/prism/adjudications/D004-v4-product-vision.md`.
+Migration guide: `docs/prism/MIGRATION.md`.
+
+### Added
+- **Phase D — `/prism-deep-dive`** (commits `37c6f34..1011af0`, `5a9a254..8d8e27c`).
+  - `commands/prism-deep-dive.md` slash command — discovery + ≤5 clarifying
+    questions + writes `<project>/.claude/agents/master-<slug>.md`,
+    seeded `MEMORY.md`, and `settings.json` `agent: master-<slug>` field.
+  - `tools/prism-deep-dive.mjs` helper with subcommands: `slug-derive`,
+    `agent-write`, `memory-seed`, `settings-write`, `agent-diff`.
+  - `agent-factory --master-<slug>` mode for project-local master generation.
+  - State schema v2: `project_slug` field + `setProjectSlug` mutator.
+  - `/prism-bootstrap phase-project-master` wired to `/prism-deep-dive`
+    (opt-in only via `--with-deep-dive`).
+- **Phase E — master-orchestrator skill migration** (commits `054986e..07952d5`).
+  - `~/.claude/skills/master-orchestrator/SKILL.md` carries the orchestration
+    protocol body (PHASE 0–9, adversarial review, Phase 1.5 senior review).
+  - `~/.claude/agents/master-orchestrator.md` reduced to thin skill-loading
+    wrapper.
+  - CI drift-guard `tests/v3/state/test-master-orchestrator-thin-wrapper.mjs`
+    asserts the wrapper stays minimal and the skill carries the body.
+  - `@master-orchestrator` mentions and `master-<slug>` agents both load the
+    skill correctly.
+- **Phase H — knowledge evolution rhythms** (commits `14e1067..79d339b`).
+  - `append-decision` + `append-lesson` subcommands of `prism-deep-dive`.
+  - `/prism-clean` wired to call `append-decision` + `append-lesson` per
+    classifier level (D-level → adjudication; lesson-level → MEMORY.md
+    pointer with 25 KB cap enforcement).
+  - `prism-deep-dive agent-diff` subcommand for `/prism-deep-dive --upgrade <slug>`
+    diff-then-confirm flow.
+- **Phase J — tightened PHASE 1.5 evidence rules** (commits `efbeac8..dfda420`).
+  - `master-orchestrator` skill PHASE 1.5 gains three new subsections:
+    *Evidence taxonomy* (6-row claim-class table), *Per-claim verdict*
+    (`EVIDENCED / UN-CITED / REJECTED` with bounce-ONCE protocol +
+    KNOWN-LIMITATION fallback + factory-upgrade trigger at ≥3 UN-CITED),
+    and *Standard of evidence — delegation boilerplate*.
+  - `### Visible output` gains mandatory bullet listing claims rejected
+    as UN-CITED or REJECTED and their second-pass outcome.
+  - Drift-guard `tests/v3/state/test-master-orchestrator-evidence-rules.mjs`
+    pins uppercase verdict tokens case-sensitively (9 tests / 12 assertions).
+- **Phase K — docs + release prep** (commits `8bfde8e..` this release).
+  - `commands/prism-help.md` — curated v4.0 slash-command index by workflow.
+  - `commands/prism-bootstrap.md` — rebuilt phase table for 7 phases; new
+    Phase 3 (plugin-validate) section; renumbered + reordered for v2 schema.
+  - `docs/prism/MIGRATION.md` — standalone v3.10 → v3.11 → v4.0 migration
+    recipe with rollback section.
+  - `README.md` refreshed to surface v4.0 capability matrix.
+  - Statusline install fold into `/prism-bootstrap` (opt-in only, no auto-write).
+
+### Changed
+- **`/prism-bootstrap`** schema migrated from 5 phases (v1) to 7 phases (v2)
+  during Phase B; v4.0 doc finally catches up via Phase K's prose sweep.
+- **`master-orchestrator`** protocol body relocated from agent file to skill
+  file. Behavior preserved across `@master-orchestrator` mention and the new
+  `master-<slug>` project-agent dispatch path.
+- **`MEMORY.md` 25 KB cap** is now hard-enforced on every write by
+  `tools/prism-clean.mjs` (`append-decision` / `append-lesson`) and
+  `tools/prism-deep-dive.mjs` (`memory-seed`) — Phase D / D004 §risk #2.
+
+### Deferred
+- **Phase F — SessionEnd[clear] + PreCompact nudge hooks** — deferred to v4.1
+  per `docs/prism/adjudications/D005-phase-f-hook-api-incompatibility.md`.
+  The hook API does not support the side-effect-only output combination D004 §6
+  assumed. v4.1 will retry with the flag-file + SessionStart pickup pattern.
+
+## [3.11.0] - 2026-05-25
+
+The **foundation hardening** release. Three sub-phases (A, B, C) shipped
+together per the D004 phase plan; gates v4.0.
+
+Locked design: `docs/prism/adjudications/D001-bootstrap-unification.md`,
+`D002-v3.10-hooks-drift-scope.md`, `D003-bootstrap-scaffold-scope.md`,
+`D004-v4-product-vision.md`.
+
+### Added
+- **Phase A.1 — `/prism-sync`** (commits `5745062..72781f7`).
+  - `tools/prism-sync.mjs` with `plan [--smart-drift]` and `complete [--meta '<json>']`
+    subcommands. Conservative drift = always re-scan; `--smart-drift` is a
+    stderr-warning stub until v3.12.0 (D002 §5).
+  - `commands/prism-sync.md` slash command orchestrating the LLM-judged phases.
+  - 11 tests: git guard, conservative pending list, identity refresh conditional
+    on `CLAUDE.md` mtime, sync stamps, atomic crash safety, idempotency.
+- **Phase A.2 — `/prism-clean`** (commits `699e2c0`, `665c239`).
+  - `tools/prism-clean.mjs` with `next-d-number` (scans
+    `docs/prism/adjudications/D###-*.md`) and `git-stats --since <iso>`
+    (commits + diff shortstat) subcommands.
+  - `commands/prism-clean.md` slash command — applies a 5-level importance
+    classifier (D-level decision → adjudication; lesson-level → MEMORY.md
+    pointer; below → drop), surfaces candidates as a checklist, and writes
+    approved artifacts with locked headers.
+- **Phase A.3 — agent-write auto-fire hook** (commits `7636f41`, `0415a7d`).
+  - `hooks/agent-write-register.ps1` — registers a new global agent within
+    100ms of `Write` to `~/.claude/agents/*.md`.
+  - Hook wired into `install.ps1` / `install.sh` for both fresh installs and
+    upgrades (D002 §4).
+- **Phase B — Bootstrap 7-phase + schema v2 + sentinels** (commit `525d84e`).
+  - State schema v2: 7 phases (`identity`, `structure`, `plugin-validate`,
+    `discovery`, `roster`, `project-master`, `health`) with per-phase
+    sentinels `{started_at, completed_at, status, artifact_hashes}`.
+  - `tools/lib/prism-state.mjs` carries `PHASES` constant + `migrateV1ToV2`
+    transparently on `readState`.
+  - Crash-resume semantics: `in_progress` phase without `completed_at` is the
+    first pending entry on next plan.
+  - `phase-plugin-validate` stub helper (advances planner; full validator
+    lives in `/prism-validate-plugins`).
+  - `phase-project-master --with-deep-dive` helper — opt-in only;
+    `/prism-bootstrap` never auto-prompts.
+- **Phase C — `/prism-validate-plugins`** (commit `b8f02f5`).
+  - `tools/prism-validate-plugins.mjs` — shells out to `claude plugin list --json`,
+    reports broken hooks, missing manifests, skill-name conflicts, MCP reachability.
+  - Report-only in v3.11.0; `--fix` deferred to v3.12.0 (D004 risk #5 —
+    false-positive risk on legitimate plugins).
+  - `commands/prism-validate-plugins.md` slash command.
+
+### Changed
+- **`/prism-bootstrap`** is now the canonical first-run entry point. The
+  legacy commands `/prism-init`, `/prism-discover`, `/prism-roster --reconcile`,
+  `/prism-health` remain callable but are hidden from `/prism-help` per
+  D002 §3 line 30.
+
+### Tests
+- 107/107 tests pass at v3.11.0 ship across `tests/v3/state/test-*.mjs` +
+  `tests/v3/hooks/test-*.mjs`.
+
 ## [3.8.9] - 2026-04-26
 ### Improved
 - **install.ps1 / install.sh** auto-detect branch from script's own git repo when `-Branch` / `--branch` is not explicitly passed. Prevents the common "step 4 failed: install-merge.mjs missing" trap when the local clone is on a non-main branch but install defaults to main. Falls back to `main` if not running from a git repo. Logs branch source (explicit / auto-detected / default).

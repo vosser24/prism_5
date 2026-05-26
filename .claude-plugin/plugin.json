@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "3.8.9",
+  "version": "4.3.0",
   "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 16 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
   "author": {
     "name": "vosser24",
@@ -8,7 +8,9 @@
   },
   "homepage": "https://github.com/vosser24/prism_master",
   "repository": "https://github.com/vosser24/prism_master",
+  "documentation": "https://github.com/vosser24/prism_master/blob/main/README.md",
   "license": "MIT",
+  "category": "orchestration",
   "keywords": [
     "claude-code",
     "orchestration",
@@ -22,6 +24,12 @@
     "skills",
     "parallel-dispatch",
     "panel-review"
+  ],
+  "example_prompts": [
+    "plan a multi-step refactor across this codebase",
+    "review the pending changes for correctness and security",
+    "summon the panel for an adversarial review of this approach",
+    "update prism"
   ],
   "hooks": {
     "SessionStart": [
@@ -83,6 +91,15 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-prepush-review.mjs\""
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -137,6 +154,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-kb-autosync.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-agent-write-register.mjs\""
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -182,7 +208,26 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-session-start.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-precompact-nudge-flag.mjs\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-clean-nudge-flag.mjs\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-git-clean-nudge.mjs\""
           }
         ]
       }

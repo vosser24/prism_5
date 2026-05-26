@@ -3,9 +3,21 @@
 //
 // Writes: ~/.claude/.prism-sessions/<session_id>.md
 
-import {readFileSync as r, writeFileSync as w, existsSync as e, mkdirSync as mk, statSync, openSync, readSync, closeSync} from 'fs';
+import {readFileSync as r, writeFileSync as w, existsSync as e, mkdirSync as mk, statSync, openSync, readSync, closeSync, renameSync} from 'fs';
 import {join as j} from 'path';
 import {pathToFileURL} from 'url';
+
+// ATOMIC-WRITE-001: tempfile + renameSync with direct-write fallback.
+// Matches hooks/prism-session-start.mjs:121-136 canonical pattern.
+function atomicWriteSync(path, content) {
+  try {
+    const tmp = path + '.tmp';
+    w(tmp, content);
+    renameSync(tmp, path);
+  } catch {
+    try { w(path, content); } catch {}
+  }
+}
 
 try {
   const input = JSON.parse(r(0, 'utf-8'));
@@ -192,7 +204,7 @@ try {
   const outDir = j(H, '.claude', '.prism-sessions');
   mk(outDir, {recursive: true});
   const mdPath = j(outDir, `${sessionId}.md`);
-  w(mdPath, md.join('\n'));
+  atomicWriteSync(mdPath, md.join('\n'));
 
   // Phase 5.3: write lesson rows to ~/.claude/.prism-lessons.jsonl (append-only).
   try {

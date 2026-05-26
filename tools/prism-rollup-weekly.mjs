@@ -14,8 +14,23 @@
 // Scheduling (cron):
 //   0 2 * * 0 node ~/.claude/tools/prism-rollup-weekly.mjs --quiet
 
-import {writeFileSync, readFileSync, mkdirSync, existsSync} from 'fs';
+import {writeFileSync, readFileSync, mkdirSync, existsSync, renameSync} from 'fs';
 import {join} from 'path';
+
+// ATOMIC-WRITE-001: tempfile + renameSync with direct-write fallback.
+// Matches the canonical pattern in hooks/prism-session-start.mjs:121-136.
+// Prevents truncated state JSON / markdown from crashes mid-write
+// (disk-full, antivirus, process kill). Readers downstream either see
+// the previous valid file or the new one — never a partial.
+function atomicWrite(path, content) {
+  try {
+    const tmp = path + '.tmp';
+    writeFileSync(tmp, content);
+    renameSync(tmp, path);
+  } catch {
+    try { writeFileSync(path, content); } catch {}
+  }
+}
 import {openDb, close} from './prism-db.mjs';
 import {COST_MULTIPLIER} from './lib/prism-tier-classify.mjs';
 
@@ -269,7 +284,7 @@ function main() {
   }
 
   const outPath = join(OUT_DIR, `${week}.md`);
-  writeFileSync(outPath, md.join('\n'));
+  atomicWrite(outPath, md.join('\n'));
   log(`wrote ${outPath}`);
   log(`spend_rows=${totals.n} total_cost=${fmtUsd(totals.cost)} sessions=${sessionStats.n}`);
 }
@@ -357,7 +372,7 @@ function appendToUpdateLog(calibration, week) {
     if (data.calibration_history.length > 26) {
       data.calibration_history = data.calibration_history.slice(-26);
     }
-    writeFileSync(logPath, JSON.stringify(data, null, 2));
+    atomicWrite(logPath, JSON.stringify(data, null, 2));
   } catch {}
 }
 

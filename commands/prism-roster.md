@@ -6,6 +6,7 @@ description: Display and manage the PRISM agent talent pool
 Usage:
   /prism-roster                → display mode (default — all agents)
   /prism-roster --team <id>    → display only agents with matching team_id (v3.1+)
+  /prism-roster --by-domain    → group agents + skills by domain tag (v4.1+, reads roster.domain_groups)
   /prism-roster --reconcile    → scan ~/.claude/agents/ and register any orphan agent files in roster.json
   /prism-roster --reconcile-cloud  → ALSO scans NotebookLM cloud for orphan notebooks (v3.7+); offers to wire up unlinked notebooks as new agents via agent-factory --from-notebook
 
@@ -16,6 +17,29 @@ Read `~/.claude/skills/prism-plan/references/roster.json`.
 Display table: Agent | Version | Domains | Tasks | Corrections | Status | Last Used | Team
 
 (Team column added v3.1+. Shows `team_id` field if set, blank otherwise.)
+
+## --by-domain mode (v4.1+)
+
+When `--by-domain` is passed, read `roster.domain_groups` (populated by `/prism-index` — see [`/prism-index` Step 5.5](prism-index.md#step-55--derive-domain_groups-v41-phase-b--q9)) and render a coverage table:
+
+```
+Domain                Agents                          Skills                       Total
+─────────────────────────────────────────────────────────────────────────────────────
+seo                   @greek-ecommerce-seo (1)        ui-ux-pro-max (1)              2
+data-engineering      @data-engineer (1)              (0)                            1
+frontend-ui           (0)                             frontend-design (1)            1
+```
+
+Sort by total descending; ties break alphabetically by domain name. Show "(0)" when one side is empty rather than blank — makes the asymmetry visible at a glance.
+
+If `roster.domain_groups` is empty or missing, print:
+
+```
+PRISM: domain_groups not yet indexed. Run /prism-index to derive (or re-run after
+adding agents/skills).
+```
+
+This mode is read-only — does not modify roster.json. Useful for spotting domain over-coverage (multiple agents declaring the same domain → candidate for `/prism-retire` or de-duplication) and under-coverage (a domain with skills but no agent → candidate for `@agent-factory` invocation).
 
 ## --team `<id>` filter (v3.1+)
 

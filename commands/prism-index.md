@@ -103,6 +103,21 @@ Merge enriched output into the entry (enriched keywords/phrases replace fast-ext
 
 If the user wants to refresh agent keywords based on updated frontmatter, use `/prism-roster --reconcile` or re-run `agent-factory` upgrades. Not this command.
 
+### Step 5.5 — Derive `domain_groups` (v4.1 Phase B / Q9)
+
+Build (or rebuild) the `roster.domain_groups` block from the now-current `agents` + `skills` blocks.
+
+For every entry in `roster.agents` and `roster.skills`:
+
+1. Collect domain tags from the entry's `core_domains` (agents) or `domains` (skills) array. Tags are normalized to lowercase, hyphen-separated (e.g., `"Data Eng"` → `"data-eng"`).
+2. For each tag, ensure `roster.domain_groups[<tag>]` exists with `{agents: [], skills: [], agent_count: 0, skill_count: 0, last_indexed: "<ISO-now>"}`.
+3. Append the entry name to the appropriate array (`agents[]` or `skills[]`). Skip duplicates.
+4. After processing every entry, recompute `agent_count` + `skill_count` per group, dedupe arrays, and sort alphabetically for stable diffs.
+
+Empty groups (zero agents + zero skills after dedup) are pruned. Underscore-prefixed schema-example keys are skipped.
+
+`domain_groups` is fully derived — overwrite the previous block rather than merging. The schema example lives at `roster._schema_example_domain_group`.
+
 ### Step 6 — Write roster.json
 
 Update `roster.index_meta`:
@@ -127,6 +142,7 @@ PRISM Index — 2026-04-24
 Skills     : N indexed (P PRISM-owned, U user, X plugin)
 Tools      : N indexed (I installed, A available)
 MCPs       : N indexed (C connected, F configured)
+Domain     : N groups derived ({top-3 by total count, e.g. "frontend (4), data (3), seo (2)"})
 
 Agents preserved: N (use /prism-roster --reconcile to refresh agent entries)
 
