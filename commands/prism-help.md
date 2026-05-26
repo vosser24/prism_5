@@ -8,9 +8,7 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 This is the user-facing index for PRISM as of v4.0. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.0** + v4.1 git-hygiene + freshness sweep + telemetry
-opt-in (project-master surface). For migration from v3.x or v4.0 →
-v4.1, see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v4.4** — OOB PHASE 1.5 reviewer + master-orchestrator refactor + evidence-discipline ratchet. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -62,6 +60,17 @@ The `master-orchestrator` skill (Phase E) is loaded automatically by every
 | `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. Run to make the orchestrator and `blueprint-prompt` aware of resources not created via `agent-factory`. |
 | `/prism-telemetry` | Local-only telemetry aggregation. Aggregates `~/.claude/.prism-routing.jsonl` into a structured rollup. **No network** — export-to-JSON for manual sharing only. |
 
+### v4.4 OOB PHASE 1.5 tools
+
+These are CLI tools (not slash commands). Run directly from the terminal or via `/prism-clean` (ratchet is auto-invoked):
+
+- `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs` — query verdict log; flags `--agent <name>`, `--since <YYYY-MM-DD>`, `--json`, `--uncited-rate`.
+- `node ~/.claude/tools/prism-roster.mjs --apply-ratchet` — apply evidence-discipline ratchet from verdict log. Auto-invoked by `/prism-clean`.
+- `node ~/.claude/tools/prism-roster.mjs --tag-1-5 @<agent>` — opt agent into OOB PHASE 1.5 review.
+- `node ~/.claude/tools/prism-roster.mjs --untag-1-5 @<agent>` — remove OOB PHASE 1.5 review from agent.
+- `node ~/.claude/tools/prism-roster.mjs --reset-model @<agent>` — manual deescalation reset (clears `default_model` + counters).
+- `node ~/.claude/tools/prism-telemetry-aggregate.mjs --phase-1-5-agreement` — per-agent reviewer agreement signal (requires telemetry opt-in).
+
 ## Lifecycle
 
 | Command | What it does |
@@ -101,6 +110,7 @@ switches let you suppress individual nudges via env vars.
 | PreCompact | `prism-precompact-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean`. | `PRISM_DISABLE_PRECOMPACT_NUDGE=1` |
 | PreToolUse[Bash] | `prism-prepush-review.mjs` (v4.1 Phase A) | Detects `git push *` and asks for confirmation + nudges `/code-review` + `/security-review`. Bypass via per-branch `review-done` flag-file. | `PRISM_DISABLE_PREPUSH_NUDGE=1` |
 | PreToolUse[Bash] | `prism-safety.mjs` | Blocks `rm -rf`, `DROP TABLE`, `git push --force`, etc. Warns on push-to-main. | n/a — safety gate |
+| SubagentStop | `prism-phase-1-5-oob.mjs` (v4.4) | When specialist has `requires_phase_1_5: true` in roster, invokes independent reviewer via Anthropic SDK. Async by default; block-mode if `requires_phase_1_5_block: true`. | `PRISM_DISABLE_OOB_REVIEW=1` |
 
 ---
 
