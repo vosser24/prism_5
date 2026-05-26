@@ -47,7 +47,7 @@ Examples:
   .\install.ps1                                            # Standard install
   .\install.ps1 -DryRun                                    # Preview only
   .\install.ps1 -Prefix C:\Tools\PRISM                     # Custom location
-  .\install.ps1 -Branch claude/audit-pending-pushes-Rg1p8  # Specific branch
+  .\install.ps1 -Branch claude/feature-x                   # Specific branch
 '@ | Write-Host
 }
 
@@ -94,11 +94,11 @@ function Sync-Repo {
             & git -C $Prefix pull
         }
     } else {
-        Write-InstallLog "  cloning https://github.com/vosser24/PRISM to $Prefix (branch=$Branch)"
+        Write-InstallLog "  cloning https://github.com/vosser24/prism_master to $Prefix (branch=$Branch)"
         if ($DryRun) {
-            Write-InstallLog "  DRY-RUN: git clone --branch `"$Branch`" `"https://github.com/vosser24/PRISM`" `"$Prefix`""
+            Write-InstallLog "  DRY-RUN: git clone --branch `"$Branch`" `"https://github.com/vosser24/prism_master`" `"$Prefix`""
         } else {
-            & git clone --branch $Branch 'https://github.com/vosser24/PRISM' $Prefix
+            & git clone --branch $Branch 'https://github.com/vosser24/prism_master' $Prefix
         }
     }
 }

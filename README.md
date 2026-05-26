@@ -25,7 +25,7 @@ PRISM ships as a first-class Claude Code plugin (v3.5.0+). Two install paths —
 ### Recommended: plugin install (one-liner inside Claude Code)
 
 ```text
-/plugin marketplace add vosser24/PRISM
+/plugin marketplace add vosser24/prism_master
 /plugin install prism@PRISM
 ```
 
@@ -36,7 +36,7 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 ### Alternative: clone + install script
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/vosser24/PRISM/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install.sh | bash
 ```
 
 (Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
@@ -92,7 +92,7 @@ See `tests/v3/plan.md` for the comprehensive 62-test journey grid.
 
 In Claude Code, open any project and say:
 
-> Clone https://github.com/vosser24/PRISM into a temp folder, read INSTALL.md, and follow it exactly.
+> Clone https://github.com/vosser24/prism_master into a temp folder, read INSTALL.md, and follow it exactly.
 
 Claude will clone the repo, back up your existing `~/.claude/`, copy files per `manifest.json`, merge `settings.fragment.json` into your `settings.json`, build the KB index, and verify. All steps are idempotent — safe to re-run.
 
@@ -105,7 +105,7 @@ Same prompt. Claude will `git pull`, re-run the procedure — unchanged files ar
 If you'd rather run it yourself:
 
 ```bash
-git clone https://github.com/vosser24/PRISM.git
+git clone https://github.com/vosser24/prism_master.git
 cd PRISM
 # Read INSTALL.md and follow steps 0-8 manually.
 ```
@@ -156,18 +156,18 @@ See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient state → f
 
 ## Contributing
 
-Issues and PRs welcome at https://github.com/vosser24/PRISM. Before submitting, run `tests/v3/run-static.sh` and ensure all assertions pass (76/76 as of v3.3.0).
+Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run `tests/v3/run-static.sh` and ensure all assertions pass (76/76 as of v3.3.0).
 
 ## Standalone statusLine (no full PRISM install)
 
 Single-line install on Linux/Mac/Git-Bash:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vosser24/PRISM/claude/audit-pending-pushes-Rg1p8/scripts/install-statusline-only.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.sh | bash
 ```
 
 Single-line install on Windows PowerShell:
 ```powershell
-iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/PRISM/claude/audit-pending-pushes-Rg1p8/scripts/install-statusline-only.ps1 | iex
+iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.ps1 | iex
 ```
 
 Requires: node + curl (bash) / Invoke-WebRequest (PS, built-in).

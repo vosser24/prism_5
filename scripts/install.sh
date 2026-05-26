@@ -15,7 +15,7 @@ PREFIX="${HOME}/PRISM"
 BRANCH="${BRANCH:-}"
 DRY_RUN=0
 NO_BACKUP=0
-REPO_URL="https://github.com/vosser24/PRISM"
+REPO_URL="https://github.com/vosser24/prism_master"
 CURRENT_STEP="startup"
 
 # --- helpers ---------------------------------------------------------------
