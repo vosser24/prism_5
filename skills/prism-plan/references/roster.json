@@ -1,7 +1,7 @@
 {
   "version": "3.1.0",
   "last_updated": "2026-04-25",
-  "schema_version": "3.1.0",
+  "schema_version": "4.4.0",
   "schema_notes": [
     "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
     "default_model=null means 'let orchestrator dynamic selection decide'.",
@@ -9,7 +9,8 @@
     "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade).",
     "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks.",
     "v3.1.0 adds optional team_id field per agent. null = global/no team. String = arbitrary team identifier (e.g., 'platform-team', 'eng-uk'). /prism-roster --team <id> filters display to matching agents. Tier 3 visibility lever — surgical, no auth model implied. Admin convention: keep team_ids consistent across team's installs.",
-    "v4.1 adds the optional domain_groups block (top-level sibling to agents/skills/tools/mcps). Populated by /prism-index from agent.core_domains + skill.domains arrays — groups resources by shared domain so /prism-roster --by-domain can render a coverage view. domain_groups is DERIVED data: re-run /prism-index after agent/skill changes to refresh. Schema example at _schema_example_domain_group."
+    "v4.1 adds the optional domain_groups block (top-level sibling to agents/skills/tools/mcps). Populated by /prism-index from agent.core_domains + skill.domains arrays — groups resources by shared domain so /prism-roster --by-domain can render a coverage view. domain_groups is DERIVED data: re-run /prism-index after agent/skill changes to refresh. Schema example at _schema_example_domain_group.",
+    "v4.4 adds optional per-agent flags requires_phase_1_5 (boolean, default false) and requires_phase_1_5_block (boolean, default false). When requires_phase_1_5 is true, the SubagentStop hook hooks/prism-phase-1-5-oob.mjs invokes an out-of-band reviewer via direct Anthropic SDK call to produce an independent PHASE 1.5 verdict. requires_phase_1_5_block: true makes the hook synchronous (master pauses until verdict completes). Legacy agents (missing fields) are treated as both false. See docs/prism/plans/2026-05-26-v4.4-implementation-plan.md."
   ],
   "agents": {},
   "skills": {},
@@ -43,6 +44,8 @@
     "default_model": null,
     "pending_upgrade": false,
     "status": "available",
+    "requires_phase_1_5": false,
+    "requires_phase_1_5_block": false,
     "notebooklm_notebook_id": null,
     "team_id": null,
     "file_path": "~/.claude/agents/<name>/agent.md"
