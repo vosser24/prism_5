@@ -4,6 +4,117 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.1.0] - 2026-05-26
+
+The **observability + hygiene** release. Layered on top of v4.0's
+project-master surface, v4.1 closes 11 audit questions surfaced in the
+post-v4.0 governance review by adding a git-hygiene hook bundle, a
+once-per-24h SessionStart freshness sweep, and the telemetry opt-in
+loop with a deterministic aggregator that the `prism-updater` agent
+consumes for guard-tuning candidates.
+
+Roadmap: `docs/prism/lessons/2026-05-26-v4.1-roadmap.md`.
+Adjudication: `docs/prism/adjudications/D007-agent-creator-vs-factory.md`.
+Migration guide: `docs/prism/MIGRATION.md` §"v4.0.0 → v4.1.0".
+
+### Added
+- **Phase 0 — D007 lock** (commit `f038031`).
+  - `docs/prism/adjudications/D007-agent-creator-vs-factory.md` locks
+    the agent-creation surface architecture: status quo, no
+    `agent-creator` skill ships in v4.1. Master-orchestrator owns the
+    inline decision tree; factory remains the sole creation surface.
+  - Cross-link added to `skills/master-orchestrator/SKILL.md` Team
+    Assembly section pointing readers at the factory's own decision
+    tree (D007 Lock item 2).
+  - Audit's deferred `agents/agent-factory.md:31-33 git add -A`
+    finding RESOLVED as stale — current code has no `git add`
+    anywhere in agent-factory.md.
+- **Phase A — git-hygiene hook bundle + D005 Phase F** (commit `8057342`).
+  - `tools/lib/prism-flag-file.mjs` — shared per-project flag helper
+    (SHA-256 keyed paths, atomic writes, readAndClear / listPending).
+  - `hooks/prism-clean-nudge-flag.mjs` — SessionEnd[matcher=clear]
+    side-effect writer (D005 Phase F bundle).
+  - `hooks/prism-precompact-nudge-flag.mjs` — PreCompact side-effect
+    writer (D005 Phase F bundle).
+  - `hooks/prism-git-clean-nudge.mjs` — SessionEnd catch-all that
+    writes a flag if working tree dirty.
+  - `hooks/prism-prepush-review.mjs` — PreToolUse[Bash] filter that
+    returns `permissionDecision: "ask"` + nudge when `git push` is
+    about to run. Optional hard-gate via per-branch `review-done`
+    flag-file.
+  - `hooks/prism-session-start.mjs` extended with flag-file pickup
+    that emits the actual nudge text via additionalContext (the
+    SessionStart event supports it; SessionEnd + PreCompact don't —
+    D005's verified matrix).
+  - Off-switches (4 independent env vars):
+    `PRISM_DISABLE_CLEAR_NUDGE`, `PRISM_DISABLE_PRECOMPACT_NUDGE`,
+    `PRISM_DISABLE_GIT_CLEAN_NUDGE`, `PRISM_DISABLE_PREPUSH_NUDGE`.
+  - `tests/v3/state/test-prism-git-hygiene.mjs` — 23 tests.
+- **Phase B — SessionStart freshness sweep** (commit `db60c85`).
+  - `hooks/lib/prism-freshness-sweep.mjs` — once-per-24h throttled
+    sweep that closes 6 audit questions in one pass: plugin drift
+    (Q1), stale agents (Q5, ≥90d), update-log age (Q6a, >15d),
+    CLAUDE.md mtime (Q6b, >60d), tools-registry rotations (Q11).
+    Snapshot at `~/.claude/.prism-freshness-last.json` (atomic).
+    Off-switch: `PRISM_DISABLE_FRESHNESS_SWEEP=1`.
+  - `skills/prism-plan/references/roster.json` — schema bump to add
+    derived `domain_groups` top-level block + `_schema_example_domain_group`.
+    Closes Q9 (domain grouping).
+  - `commands/prism-index.md` Step 5.5 — derives + writes
+    `domain_groups` from agent.core_domains + skill.domains.
+  - `commands/prism-roster.md` — new `--by-domain` view consuming
+    `domain_groups` (read-only coverage table).
+  - `README.md` + `commands/prism-help.md` — 3-line clarification on
+    factory's global-write rule vs the `--master-<slug>` exception
+    (closes Q7).
+  - `tests/v3/state/test-prism-freshness-sweep.mjs` — 14 tests.
+- **Phase C — telemetry auto-opt-in** (commit `2531e12`).
+  - `tools/prism-bootstrap.mjs` — new `detect-telemetry-consent` +
+    `set-telemetry-consent on|off` subcommands; `--no-telemetry`
+    flag pre-declines without prompting. Both bypass the `.git/`
+    guard.
+  - `tools/prism-telemetry-aggregate.mjs` — deterministic rollup
+    helper. Honours consent gate (exit 13 if no opt-in); reads
+    `~/.claude/.prism-routing.jsonl`; writes
+    `~/.claude/.prism-telemetry-rollup.json`. Surfaces tuning
+    candidates (guards ≥25% of denies AND ≥3 denies).
+  - `commands/prism-bootstrap.md` Phase 7 split into 7a (wiring) +
+    7b (consent prompt) + 7c (complete). One-shot prompt; never
+    re-asks.
+  - `agents/prism-updater.md` step 3 extended with telemetry-
+    informed gap analysis — reads rollup, surfaces tuning candidates
+    in the migration plan, approval-gated like every other item.
+  - `docs/prism/MIGRATION.md` — Phase C section with consent flow +
+    helper subcommand table.
+  - `tests/v3/state/test-prism-telemetry-consent.mjs` — 12 tests.
+
+### Changed
+- `skills/prism-plan/references/roster.json` — `schema_notes` extended
+  with a v4.1 entry documenting `domain_groups` semantics; `agents` /
+  `skills` / `tools` / `mcps` blocks unchanged.
+- `commands/prism-help.md` — version line bumped to "v4.0 + v4.1
+  (git-hygiene + freshness sweep + telemetry opt-in)"; new "Hooks"
+  section enumerates v4.1 hooks with their off-switches.
+- `docs/prism/MIGRATION.md` — D005-Phase-F row in the known-limitations
+  table flipped to "shipped"; new "v4.0.0 → v4.1.0" section.
+
+### Test baseline
+- 95 tests across 6 suites green:
+  - test-master-orchestrator-thin-wrapper: 3/3 (unchanged)
+  - test-master-orchestrator-evidence-rules: 9/9 (unchanged)
+  - test-prism-bootstrap: 34/34 (unchanged)
+  - test-prism-git-hygiene: 23/23 (NEW)
+  - test-prism-freshness-sweep: 14/14 (NEW)
+  - test-prism-telemetry-consent: 12/12 (NEW)
+
+### Known limitations carried into v4.1
+- Cross-project telemetry rollup deferred to v4.2 — routing log writers
+  don't carry a `project` field; adding one touches every guard hook
+  (architectural change beyond Phase C scope).
+- Pre-push hard-gate auto-writer (PostToolUse[Skill] on /code-review
+  completion) deferred to v4.2 — Phase A ships the manual writer +
+  the consumer side; the auto-write side is opt-in plumbing.
+
 ## [4.0.0] - 2026-05-26
 
 The **project-master surface** release. Each project can now grow its own

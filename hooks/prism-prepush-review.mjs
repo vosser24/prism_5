@@ -45,6 +45,12 @@ try {
   // We deliberately MISS unusual forms like aliases; Phase A goal is
   // catch the 99% case, not the 100% case.
   if (!/(^|\s|;|&&|\|\|)git\s+(-\S+\s+)*push(\s|$)/i.test(cmd)) process.exit(0);
+  // Exclude --dry-run: a preview push doesn't need a code-review gate.
+  // Same for --help (e.g., `git push --help` is doc-lookup, not a push).
+  // \b doesn't anchor before "--" (dash is non-word and so is space), so use
+  // an explicit boundary class.
+  if (/(?:^|\s)--dry-run(?:\s|$)/.test(cmd)) process.exit(0);
+  if (/(?:^|\s)--help(?:\s|$)/.test(cmd)) process.exit(0);
 
   const cwd = input.cwd || process.cwd();
 
@@ -71,13 +77,16 @@ try {
     : `PRISM: about to push. Run /code-review and /security-review first; approve here to proceed.`;
   const nudge = `PRISM pre-push nudge: any push to a shared remote benefits from /code-review + /security-review against the diff. To bypass this nudge in trusted contexts: set PRISM_DISABLE_PREPUSH_NUDGE=1, or write ~/.claude/.prism-flags/review-done__<key>.json with {branch:'${branch || '<branch>'}'}.`;
 
+  // PreToolUse decision-control: both permissionDecision and additionalContext
+  // live inside hookSpecificOutput (matches every other PreToolUse hook in
+  // this codebase — see prism-memory-save-nudge / prism-prompt-tier-router).
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'ask',
       permissionDecisionReason: reason,
+      additionalContext: nudge,
     },
-    additionalContext: nudge,
   }));
 } catch {}
 process.exit(0);

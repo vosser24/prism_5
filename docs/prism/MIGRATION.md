@@ -227,10 +227,11 @@ The v4.1 release adds three things on top of v4.0:
 
 5. **Opt-in or opt-out of telemetry.** During the next `/prism-bootstrap` run, the health phase (Step 7b) will prompt for telemetry consent. The prompt fires ONCE per machine — your choice is written to `~/.claude/prism-policy.json` under `telemetry.opt_in` and never re-asked. To skip the prompt entirely from the start, invoke bootstrap with `--no-telemetry`:
 
-   ```bash
-   # Bootstrap with telemetry pre-declined (no prompt)
-   node ~/.claude/tools/prism-bootstrap.mjs ...   # --no-telemetry not yet wired into the slash command's planner; see Phase C note in CHANGELOG
+   ```text
+   /prism-bootstrap --no-telemetry
    ```
+
+   This records `opt_in: false` durably (so subsequent bootstraps don't re-prompt) without showing the prompt. The flag is honored by the slash command protocol (commands/prism-bootstrap.md Step 7b) and the deterministic helper (`tools/prism-bootstrap.mjs --no-telemetry`).
 
    To flip the choice later, use the existing slash commands:
 
@@ -238,6 +239,13 @@ The v4.1 release adds three things on top of v4.0:
    /prism-telemetry --opt-in    # enable
    /prism-telemetry --opt-out   # disable; existing rollup preserved
    /prism-telemetry --status    # check current state
+   ```
+
+   Or directly via the helper:
+
+   ```bash
+   node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent on
+   node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent off
    ```
 
    The opt-in is local-only. No network calls, no shipping. Rollup lives at `~/.claude/.prism-telemetry-rollup.json` and is plain JSON.

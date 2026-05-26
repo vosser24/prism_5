@@ -63,7 +63,10 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 | `/prism-deep-dive` + `master-<slug>` (v4.0) | ✅ Works | Opt-in via `/prism-bootstrap --with-deep-dive` or direct |
 | `master-orchestrator` as skill (v4.0) | ✅ Works | Skill body at `~/.claude/skills/master-orchestrator/`; agent file is thin wrapper |
 | PHASE 1.5 tightened evidence rules (v4.0) | ✅ Works | EVIDENCED/UN-CITED/REJECTED verdicts + bounce-ONCE + factory-upgrade at ≥3 UN-CITED |
-| `SessionEnd[clear]` + `PreCompact` nudge hooks | ⏸ Deferred to v4.1 | Hook API incompatibility (D005); flag-file + SessionStart pattern in v4.1 |
+| `SessionEnd[clear]` + `PreCompact` nudge hooks | ✅ Shipped (v4.1 Phase A) | Flag-file + SessionStart pickup per D005's resolution; 4 off-switches |
+| Git-hygiene + pre-push review nudge (v4.1) | ✅ Shipped (v4.1 Phase A) | SessionEnd writes git-dirty flag; PreToolUse asks before `git push` |
+| SessionStart daily freshness sweep (v4.1) | ✅ Shipped (v4.1 Phase B) | Once-per-24h: plugin drift, stale agents, update-log, CLAUDE.md, tools-registry rotations |
+| Telemetry auto-opt-in (v4.1) | ✅ Shipped (v4.1 Phase C) | `/prism-bootstrap` health phase prompts once; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
 | User hook customization preservation | ❌ Not yet | v4.1+ |
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 

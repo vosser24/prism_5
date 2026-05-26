@@ -78,14 +78,17 @@ export function writeFlag(flagName, cwd, payload) {
 }
 
 export function readAndClearFlag(flagName, cwd) {
+  // Read-then-delete pattern, no TOCTOU guard: under multi-window Claude
+  // Code (two sessions opening the same project simultaneously), two
+  // readers can pass an existsSync check and both emit the nudge. Drop
+  // the guard — readFileSync throwing is the natural absence signal.
   const key = projectKey(cwd);
   const path = flagPath(flagName, key);
-  if (!existsSync(path)) return null;
   let payload = null;
   try {
     payload = JSON.parse(readFileSync(path, 'utf-8'));
   } catch {
-    payload = null;
+    return null;
   }
   try { unlinkSync(path); } catch {}
   return payload;

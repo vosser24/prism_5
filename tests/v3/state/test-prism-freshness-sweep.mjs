@@ -99,9 +99,9 @@ test('sweep: empty tree yields no notices, writes initial snapshot', async () =>
   const home = makeHome();
   try {
     const {runFreshnessSweep} = await importSweep(home);
-    const r = runFreshnessSweep({home: join(home, '.claude').replace(/[/\\]\.claude$/, '')});
     // The helper joins HOME + '.claude/...' internally, so we pass the
-    // parent of .claude. makeHome() returned exactly that path.
+    // path that makeHome() returned (the parent of .claude).
+    const r = runFreshnessSweep({home});
     assertEq(r.skipped, false);
     assertEq(r.notices.length, 0);
     const snap = JSON.parse(readFileSync(join(home, '.claude', '.prism-freshness-last.json'), 'utf-8'));

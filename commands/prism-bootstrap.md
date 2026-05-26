@@ -245,9 +245,15 @@ Invoke the existing `/prism-health` checks. Report status to the user.
 
 #### Step 7b — telemetry consent prompt (v4.1 Phase C / Q10)
 
-Skip this step entirely if the bootstrap was invoked with `--no-telemetry` (records `opt_in: false` without prompting and proceeds).
+If the bootstrap was invoked with `--no-telemetry`, run the durable opt-out FIRST and then skip the prompt:
 
-Otherwise:
+```bash
+node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent off
+```
+
+This writes `opt_in: false` + `asked_at: <ISO>` to `~/.claude/prism-policy.json` so subsequent bootstraps see the value as set and don't re-prompt. Proceed to Step 7c without prompting; the meta `telemetry_opt_in` value will be `false`.
+
+Otherwise (no `--no-telemetry` flag):
 
 ```bash
 node ~/.claude/tools/prism-bootstrap.mjs detect-telemetry-consent

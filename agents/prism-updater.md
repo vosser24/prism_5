@@ -51,7 +51,10 @@ You are the PRISM Updater. Keep the system current.
         *"Guard `<guard>` denies <share>% of recent guard events
         (<count> denies). Recommendation: <recommendation text>.
         Migration-plan candidate: review the regex/pattern in
-        `hooks/<guard>-guard.mjs` for false-positive rate."*
+        `hooks/prism-<guard>-guard.mjs` (or the closest matching
+        hook — e.g., `safety` → `hooks/prism-safety.mjs`,
+        `tier_advisor` → `hooks/prism-task-tier-advisor.mjs`) for
+        false-positive rate."*
      d. These are CANDIDATES, not auto-applied changes. They flow into
         step 4's approval gate like every other migration item.
      If the rollup is absent, or consent is `false`/`null`, skip this

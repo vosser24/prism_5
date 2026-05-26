@@ -95,7 +95,7 @@ switches let you suppress individual nudges via env vars.
 
 | Event | Hook | What it does | Off-switch |
 |---|---|---|---|
-| SessionStart | `prism-session-start.mjs` | Resets project turn counter, runs once-per-day context-tax audit, picks up + emits pending flag-file nudges (v4.1 Phase A), runs daily freshness sweep (v4.1 Phase B). | n/a — core |
+| SessionStart | `prism-session-start.mjs` | Resets project turn counter, runs once-per-day context-tax audit, picks up + emits pending flag-file nudges (v4.1 Phase A), runs daily freshness sweep (v4.1 Phase B). | `PRISM_DISABLE_FRESHNESS_SWEEP=1` (sweep only — core SessionStart logic always runs) |
 | SessionEnd[matcher=clear] | `prism-clean-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean` if session ended via `/clear`. | `PRISM_DISABLE_CLEAR_NUDGE=1` |
 | SessionEnd (catch-all) | `prism-git-clean-nudge.mjs` (v4.1 Phase A) | Writes flag if git working tree dirty → next session nudges to commit/stash. Skipped in non-git projects. | `PRISM_DISABLE_GIT_CLEAN_NUDGE=1` |
 | PreCompact | `prism-precompact-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean`. | `PRISM_DISABLE_PRECOMPACT_NUDGE=1` |

@@ -335,7 +335,7 @@ test('git-clean-nudge: off-switch respected', () => {
 
 // ───────────────────── prism-prepush-review tests ───────────────────────────
 
-test('prepush-review: emits ask + additionalContext on git push', () => {
+test('prepush-review: emits ask + additionalContext on git push (both inside hookSpecificOutput)', () => {
   const home = makeHome();
   const cwd = makeGitDir('pp-1');
   try {
@@ -349,7 +349,44 @@ test('prepush-review: emits ask + additionalContext on git push', () => {
     assertEq(obj.hookSpecificOutput.hookEventName, 'PreToolUse');
     assertEq(obj.hookSpecificOutput.permissionDecision, 'ask');
     assert(/code-review/.test(obj.hookSpecificOutput.permissionDecisionReason), 'reason mentions code-review');
-    assert(/code-review/.test(obj.additionalContext), 'context mentions code-review');
+    // additionalContext MUST be inside hookSpecificOutput per Claude Code's
+    // PreToolUse output schema (matches every other PreToolUse hook in
+    // this codebase). Top-level additionalContext is discarded.
+    assert(obj.hookSpecificOutput.additionalContext, 'additionalContext must be inside hookSpecificOutput');
+    assert(/code-review/.test(obj.hookSpecificOutput.additionalContext), 'nested context mentions code-review');
+    assert(!('additionalContext' in obj), 'no top-level additionalContext (would be discarded)');
+  } finally {
+    rmSync(home, {recursive: true, force: true});
+    rmSync(cwd, {recursive: true, force: true});
+  }
+});
+
+test('prepush-review: silent on git push --dry-run (no ask for preview-only pushes)', () => {
+  const home = makeHome();
+  const cwd = makeGitDir('pp-1b');
+  try {
+    const r = runHook(HOOK_PREPUSH, {
+      home, cwd,
+      input: {tool_input: {command: 'git push --dry-run origin main'}, cwd},
+    });
+    assertEq(r.status, 0, r.stderr);
+    assertEq(r.stdout, '', 'no nudge for --dry-run');
+  } finally {
+    rmSync(home, {recursive: true, force: true});
+    rmSync(cwd, {recursive: true, force: true});
+  }
+});
+
+test('prepush-review: silent on git push --help (doc lookup, not a push)', () => {
+  const home = makeHome();
+  const cwd = makeGitDir('pp-1c');
+  try {
+    const r = runHook(HOOK_PREPUSH, {
+      home, cwd,
+      input: {tool_input: {command: 'git push --help'}, cwd},
+    });
+    assertEq(r.status, 0, r.stderr);
+    assertEq(r.stdout, '');
   } finally {
     rmSync(home, {recursive: true, force: true});
     rmSync(cwd, {recursive: true, force: true});
