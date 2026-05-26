@@ -31,15 +31,16 @@ import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'fs
 import {join, dirname} from 'path';
 
 const args = process.argv.slice(2);
-let opts = {dryRun: false, tuning: false, force: false, home: null};
+let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false};
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--dry-run') opts.dryRun = true;
   else if (a === '--tuning') opts.tuning = true;
   else if (a === '--force') opts.force = true;
   else if (a === '--home') opts.home = args[++i];
+  else if (a === '--phase-1-5-agreement') opts.phase15Agreement = true;
   else if (a === '-h' || a === '--help') {
-    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--home <path>]\n`);
+    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--phase-1-5-agreement] [--home <path>]\n`);
     process.exit(0);
   }
 }
@@ -88,6 +89,53 @@ if (!checkConsent()) {
     );
   }
   process.exit(13);
+}
+
+// ── v4.4: --phase-1-5-agreement subcommand ────────────────────────────
+if (opts.phase15Agreement) {
+  const verdictLogPath = join(HOME, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  if (!existsSync(verdictLogPath)) {
+    process.stdout.write('No OOB verdict log yet — agreement-rate signal not available.\n');
+    process.exit(0);
+  }
+  let verdictEntries = [];
+  try {
+    verdictEntries = readFileSync(verdictLogPath, 'utf-8').trim().split('\n').filter(Boolean).map(l => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter(Boolean);
+  } catch (e) {
+    process.stderr.write(`error reading verdict log: ${e.message}\n`);
+    process.exit(14);
+  }
+  // Cross-reference with routing log for phase_1_5_oob events
+  let routing = [];
+  if (existsSync(LOG)) {
+    try {
+      routing = readFileSync(LOG, 'utf-8').trim().split('\n').filter(Boolean).map(l => {
+        try { return JSON.parse(l); } catch { return null; }
+      }).filter(e => e && e.event === 'phase_1_5_oob');
+    } catch {}
+  }
+  const perAgent = {};
+  for (const e of verdictEntries) {
+    const a = e.specialist_name;
+    if (!a) continue;
+    if (!perAgent[a]) perAgent[a] = {dispatches: 0, total_claims: 0, reviewer_un_cited: 0};
+    perAgent[a].dispatches++;
+    perAgent[a].total_claims += (e.summary && e.summary.total) || 0;
+    perAgent[a].reviewer_un_cited += ((e.summary && e.summary.un_cited) || 0) + ((e.summary && e.summary.rejected) || 0);
+  }
+  const rows = Object.entries(perAgent).map(([a, s]) => ({
+    agent: a,
+    dispatches: s.dispatches,
+    reviewer_un_cited_rate: s.total_claims > 0 ? (s.reviewer_un_cited / s.total_claims) : 0,
+  })).sort((a, b) => b.reviewer_un_cited_rate - a.reviewer_un_cited_rate);
+  process.stdout.write(`OOB reviewer agreement signal (per agent, all-time):\n`);
+  for (const r of rows) {
+    process.stdout.write(`  ${r.agent.padEnd(40)} ${r.dispatches} dispatches  ${(r.reviewer_un_cited_rate * 100).toFixed(1)}% UN-CITED/REJECTED by reviewer\n`);
+  }
+  process.stdout.write(`\nNote: full master↔reviewer agreement rate requires master-side verdict_pre logging (planned v4.5).\n`);
+  process.exit(0);
 }
 
 // ── read log ─────────────────────────────────────────────────────────
