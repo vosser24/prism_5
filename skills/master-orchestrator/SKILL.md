@@ -50,6 +50,8 @@ Read:
 
 **Index freshness check (v2.9.0)**: if `roster.index_meta.last_indexed` is null OR older than 14 days OR any block is empty, warn the user at the top of your first turn: *"Resource-index stale or missing — run `/prism-index` for accurate dispatch. Continuing blind increases hallucination risk."* Do NOT block; just surface it.
 
+**`installed_via` field (v4.3+, informational only)**: roster entries created by the agent-factory carry an `installed_via: "plugin" | "manual"` tag. The orchestrator does NOT use this field for dispatch — every rostered agent is treated identically regardless of provenance. The field exists solely to support `/prism-uninstall-cleanup` (safe pre-`/plugin remove` hygiene). Missing field = treated as `"manual"` (legacy entries are never removable).
+
 Detect available MCP tools:
 - `roster.mcps` covers configured servers (declarative)
 - Confirm actual connection status by probing available `mcp__*` tools in the session (runtime)

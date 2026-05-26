@@ -356,6 +356,35 @@ Both are independent of the PRISM-specific `telemetry.opt_in` policy. The env-va
 
 ---
 
+## v4.2.0 → v4.3.0 (plugin-vs-manual provenance)
+
+**What changed.** The agent-factory now tags each roster entry it creates with `installed_via: "plugin"` or `"manual"`, depending on whether `$CLAUDE_PLUGIN_ROOT` was set when the factory ran. This enables `/prism-uninstall-cleanup` — a new slash command that removes plugin-created agents before you `/plugin remove prism`.
+
+**Backfill rule.** Existing roster entries (created before v4.3.0) lack the field. The cleanup tool treats missing-field entries as `"manual"` and **never removes them**. No migration step needed; your existing agents are safe.
+
+**New slash command — `/prism-uninstall-cleanup`:**
+
+- Lists plugin-tagged agents with creation dates.
+- Offers `Remove all` / `Keep all`.
+- Removes the agent directory (`~/.claude/agents/<name>/`), the flat file (`~/.claude/agents/<name>.md`), and the roster entry — atomically (tmp + rename on `roster.json`).
+- Run this **before** `/plugin remove prism`. Once the plugin is removed, the slash command is also gone (unless you also have a manual install of PRISM in `~/.claude/`).
+
+**Non-interactive flags** (for scripts and tests):
+
+| Flag | Behavior |
+|---|---|
+| `--dry-run` | Lists plugin-tagged agents and exits 0. No writes. |
+| `--mode=remove-all` | Non-interactive removal of every plugin-tagged agent. |
+| `--mode=keep-all` | Non-interactive no-op. Exits 0. |
+
+See `commands/prism-uninstall-cleanup.md` for the full UX flow.
+
+**Master-`<slug>` exception.** Project-local master agents (under `<project>/.claude/agents/`) are NOT tagged with `installed_via` and are NOT touched by `/prism-uninstall-cleanup`. They were never global, so they were never part of the plugin-vs-manual question.
+
+**No breaking changes.** Anyone upgrading from v4.2.0 keeps every agent and roster entry. The new field only appears on agents the factory creates *after* upgrading.
+
+---
+
 ## Rollback
 
 Each release ships with an uninstall path that preserves user data, per

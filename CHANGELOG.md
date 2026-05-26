@@ -4,6 +4,27 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.3.0] - 2026-05-26
+
+The **plugin-vs-manual provenance** release. Enables safe pre-uninstall hygiene for PRISM-as-plugin installs without risking manually-created agents.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.2.0 → v4.3.0".
+
+### Added
+- **`/prism-uninstall-cleanup` slash command** (`commands/prism-uninstall-cleanup.md`) + worker tool (`tools/prism-uninstall-cleanup.mjs`, ~135 LOC). Removes agents created while PRISM was installed as a plugin — agent directory, flat `.md` file, and roster entry — in one atomic pass. Lists by default; destructive only when explicitly invoked with `--mode=remove-all`.
+- **`installed_via` field on roster entries** (`"plugin"` | `"manual"`). Set by the agent-factory based on whether `$CLAUDE_PLUGIN_ROOT` is in the environment when the factory runs. Project-local master-`<slug>` agents are excluded (they were never global).
+
+### Changed
+- `agents/agent-factory.md` — CREATE PROTOCOL step 4 and `--from-notebook` mode step 5 now teach the factory to set `installed_via` on every new roster entry. Master-`<slug>` mode carries an explicit exception note.
+- `skills/master-orchestrator/SKILL.md` STARTUP block — notes that `installed_via` is informational only (dispatch ignores it).
+
+### Migration
+- Legacy roster entries (missing `installed_via`) treated as `"manual"` — never removable by the new command. No migration step needed; existing agents are safe.
+- See `docs/prism/MIGRATION.md` §"v4.2.0 → v4.3.0" for the full upgrade path including non-interactive flags.
+
+### Tests
+- New suite `tests/v3/state/test-prism-uninstall-cleanup.mjs` — 6 cases (backfill safety, plugin-only filter, zero-state idempotency, removal correctness, atomic-write exit state, env-detection smoke with graceful skip when bash unavailable). Full suite: 224 / 224 across 13 files.
+
 ## [4.2.0] - 2026-05-26
 
 The **packaging + privacy hardening** release. No new behavior — closes

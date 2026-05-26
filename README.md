@@ -31,6 +31,8 @@ PRISM ships as a first-class Claude Code plugin (v3.5.0+). Two install paths —
 
 Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are namespaced under the plugin (e.g. `/prism:prism-plan`) and registered automatically — no `settings.fragment.json` merge, no manual file copy. To update later: `/plugin update prism@PRISM`. To remove: `/plugin uninstall prism@PRISM`.
 
+> **Uninstalling?** Run `/prism-uninstall-cleanup` **before** `/plugin uninstall prism@PRISM` to remove agents the factory created while PRISM was installed as a plugin. Manually-created agents (and legacy entries from before v4.3.0) are never touched.
+
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
 
 ### Alternative: clone + install script
