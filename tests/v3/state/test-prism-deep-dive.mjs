@@ -162,6 +162,38 @@ test('agent-write --force: overwrites existing file', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('agent-write --force: preserves on-disk created: date (Phase H symmetry with agent-diff)', () => {
+  // Regression for the dog-food finding: agent-diff preserves the on-disk
+  // created date (commit 9cb56ed) so the diff shows no calendar drift, but
+  // agent-write --force used to regenerate with today's date — breaking the
+  // invariant that an immediate diff after apply should be empty.
+  const root = makeTestbed('agentwrite-force-preserves-date');
+  try {
+    const dir = join(root, '.claude', 'agents');
+    mkdirSync(dir, {recursive: true});
+    const path = join(dir, 'master-foo.md');
+    // Seed a body whose created: date is far enough in the past that "today"
+    // can never coincidentally match it.
+    const seeded = [
+      '---',
+      'name: master-foo',
+      'description: seed',
+      'created: 2020-01-01',
+      'prism_phase: D',
+      '---',
+      '',
+      '# body',
+      '',
+    ].join('\n');
+    writeFileSync(path, seeded, 'utf8');
+    const r = run(root, 'agent-write', '--slug', 'foo', '--force');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(path, 'utf8');
+    assert(/^created: 2020-01-01$/m.test(body),
+      'on-disk created: 2020-01-01 must be preserved when --force overwrites; got body:\n' + body);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('agent-write --orchestrator-protocol inline: inlines fallback body for pre-Phase-E', () => {
   const root = makeTestbed('agentwrite-inline');
   try {

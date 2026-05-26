@@ -226,7 +226,16 @@ function writeMasterAgent({root, slug, protocol, force}) {
   if (existsSync(path) && !force) {
     die(`refusing: ${path} already exists. Pass --force to overwrite.`, 7);
   }
-  const body = renderMasterAgent({slug, protocol});
+  // Preserve the on-disk created: date when --force overwriting an existing
+  // file, so /prism-deep-dive --upgrade doesn't silently bump the field on
+  // every apply. Mirrors the symmetry promise from commit 9cb56ed (agent-diff).
+  let created;
+  if (existsSync(path)) {
+    const onDisk = readFileSync(path, 'utf8');
+    const m = onDisk.match(/^created:\s*(.+)$/m);
+    if (m) created = m[1].trim();
+  }
+  const body = renderMasterAgent({slug, protocol, created});
   // Atomic write: tempfile + rename, same directory for same-volume rename.
   const tmp = path + '.tmp';
   writeFileSync(tmp, body, 'utf8');
