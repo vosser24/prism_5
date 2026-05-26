@@ -10,19 +10,21 @@
 //
 // Run: node tests/v3/state/test-master-orchestrator-thin-wrapper.mjs
 
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const AGENT_FILE = join(__dirname, '..', '..', '..', 'agents', 'master-orchestrator.md');
+const repoRoot = join(__dirname, '..', '..', '..');
+const AGENT_FILE = join(repoRoot, 'agents', 'master-orchestrator.md');
 
 const CANONICAL_BODY = `Load skill: master-orchestrator
 `;
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, total = 0;
 
 function test(name, fn) {
+  total++;
   try { fn(); pass++; process.stdout.write(`  ok  ${name}\n`); }
   catch (e) { fail++; process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`); }
 }
@@ -71,5 +73,29 @@ test('no protocol-body leakage: STARTUP / PHASE 0 / PHASE 1 sections must NOT ap
   assert(!/^## PHASE 2\b/m.test(raw), 'PHASE 2 leaked back into agent file');
 });
 
-process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
+// v4.4 Layer A — references/ coverage test
+const REQUIRED_REFS = [
+  'phase-0a-inventory.md',
+  'phase-0-team-assembly.md',
+  'phase-0d-adversarial.md',
+  'phase-1-execution.md',
+  'phase-1-5-senior-review.md',
+  'phase-2-completion.md',
+  'evidence-taxonomy.md',
+  'adversarial-review.md',
+  'dispatch-shapes.md',
+  'model-ratchet.md',
+];
+for (const ref of REQUIRED_REFS) {
+  total++;
+  const path = join(repoRoot, 'skills', 'master-orchestrator', 'references', ref);
+  if (existsSync(path) && readFileSync(path, 'utf-8').length > 200) {
+    pass++;
+  } else {
+    fail++;
+    console.log(`FAIL: required reference missing or stub: references/${ref}`);
+  }
+}
+
+process.stdout.write(`\ntests passed: ${pass}/${total}\n`);
 process.exit(fail === 0 ? 0 : 1);
