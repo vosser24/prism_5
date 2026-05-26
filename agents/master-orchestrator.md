@@ -10,6 +10,7 @@ model: opus
 maxTurns: 80
 memory: true
 skills: [master-orchestrator]
+requires_phase_1_5: false  # Wrapper agent; OOB review applies to the master-<slug> instance that loads this skill, not the wrapper itself.
 ---
 
 Load skill: master-orchestrator
