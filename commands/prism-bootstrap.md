@@ -261,16 +261,17 @@ node ~/.claude/tools/prism-bootstrap.mjs detect-telemetry-consent
 
 Branch on the returned JSON:
 
+- `forced_off_by_env: <VAR>` → the environment has `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` set; effective `opt_in` is locked to `false`. Persist as durable opt-out (also writes `prism-policy.json` with `opt_in:false`) and skip the prompt. Tell the user briefly that the env var has been honored.
 - `opt_in: true | false`  → already configured; skip the prompt (re-asking is annoying).
 - `parse_error: <message>` → tell the user `~/.claude/prism-policy.json` is malformed and skip the prompt. Suggest fix-and-rerun.
 - `opt_in: null` (and no `parse_error`) → prompt:
 
-  > **Enable PRISM telemetry?** Local-only — no network, no shipping, no telemetry-as-a-service. PRISM aggregates routing decisions (which guards fire, which classifier path picked the tier) into `~/.claude/.prism-telemetry-rollup.json` for self-tuning. The `prism-updater` agent reads the rollup to surface guard-tuning candidates during `/prism-update` runs. The rollup is plain JSON inspectable with `jq`. You can flip this any time via `/prism-telemetry --opt-in` or `--opt-out`. **(Recommended.)**
+  > **Enable PRISM telemetry?** PRISM writes a local routing log at `~/.claude/.prism-routing.jsonl` (**no network, ever**). Optional: aggregate it into `~/.claude/.prism-telemetry-rollup.json` so the `prism-updater` agent can surface guard-tuning candidates during `/prism-update` runs. **Default: off** — telemetry is opt-in. Honors `DISABLE_TELEMETRY=1` and `DO_NOT_TRACK=1`. The rollup is plain JSON inspectable with `jq`; you can flip this any time via `/prism-telemetry --opt-in` or `--opt-out`.
 
-  Use AskUserQuestion with two options:
+  Use AskUserQuestion with two options (default-off is the first / recommended position):
 
-  - **Enable telemetry (recommended)** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent on`
-  - **Skip for now** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent off`
+  - **Keep telemetry off (default)** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent off`
+  - **Enable local-only telemetry** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent on`
 
   Both branches write to `~/.claude/prism-policy.json` under `telemetry.opt_in`. Either way the bootstrap proceeds — the choice is durable; you ask once per machine, never again.
 

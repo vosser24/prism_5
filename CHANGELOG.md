@@ -4,6 +4,44 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.2.0] - 2026-05-26
+
+The **packaging + privacy hardening** release. No new behavior — closes
+the 6 packaging gaps surfaced by the post-v4.1 audit at
+`docs/prism/lessons/2026-05-26-packaging-fix-handoff.md`.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.1.0 → v4.2.0".
+
+### Added
+- **Phase 0 — plugin.json sync + drift-guard test.**
+  - `.claude-plugin/plugin.json` bumped 3.8.9 → 4.2.0 with full hooks block
+    matching `settings.fragment.json` — adds `SessionEnd[matcher=clear]`,
+    `SessionEnd` catch-all, `PreToolUse[Bash]` prepush-review,
+    `PostToolUse` agent-write-register, swaps stale `PreCompact`
+    session-start for precompact-nudge-flag. Marketplace install path now
+    delivers v4.0 + v4.1 features to clean installs.
+  - `tests/v3/state/test-plugin-manifest-drift.mjs` — 3-assertion
+    drift-guard: version matches CHANGELOG top entry, hook event keys
+    match, (matcher | handler-basename) multisets match. Skips
+    gracefully if either truth-source is missing.
+- **Phase A — packaging polish + telemetry privacy hardening.**
+  - `DISABLE_TELEMETRY=1` and `DO_NOT_TRACK=1` env vars honored across
+    `tools/prism-telemetry-aggregate.mjs` (exit 13 silently when set) and
+    `tools/prism-bootstrap.mjs` `set-telemetry-consent` (force opt_in:false
+    regardless of CLI arg) + `detect-telemetry-consent` (returns
+    `forced_off_by_env: <VAR>`). Industry-standard signal honored
+    authoritatively; file state preserved for inspection.
+  - `.claude-plugin/plugin.json` discoverability keys: `category`,
+    `documentation`, `example_prompts`.
+
+### Changed
+- **Telemetry default flipped from prompt-recommended-on to off-by-default**
+  in `commands/prism-bootstrap.md` Step 7b. AskUserQuestion now offers
+  "Keep telemetry off (default)" as the first / recommended option.
+  Existing opt-in consent is preserved on upgrade — only the first-install
+  default for new machines flipped. `README.md` table entry retitled
+  "Telemetry opt-in prompt (v4.1)" (was "Telemetry auto-opt-in").
+
 ## [4.1.0] - 2026-05-26
 
 The **observability + hygiene** release. Layered on top of v4.0's

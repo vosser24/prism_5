@@ -303,6 +303,59 @@ A future PostToolUse hook on `/code-review` completion will write this automatic
 
 ---
 
+## v4.1.0 → v4.2.0 (telemetry privacy hardening + packaging polish)
+
+The v4.2 release is a packaging-and-privacy follow-up. No new behavior; two
+hardening changes to the v4.1 telemetry surface plus a manifest sync that
+makes the marketplace-install path actually deliver v4.0+v4.1 features.
+
+### What changed
+
+1. **Telemetry default flipped from on-prompt-as-recommended to off-by-default.** The `/prism-bootstrap` Step 7b prompt now presents "Keep telemetry off (default)" as the first option. If you previously opted IN (i.e. `~/.claude/prism-policy.json` already records `telemetry.opt_in: true`), **your existing consent is preserved** — only the first-install default for new machines flipped.
+2. **`DISABLE_TELEMETRY=1` and `DO_NOT_TRACK=1` env vars are now honored.** Either one set in the environment causes:
+    - `prism-telemetry-aggregate` to refuse aggregation with exit 13 and a one-line stderr note naming the env var
+    - `prism-bootstrap set-telemetry-consent on` to force-write `opt_in:false` regardless of the CLI arg (with a stderr explainer)
+    - `prism-bootstrap detect-telemetry-consent` to return a `forced_off_by_env: <VAR>` field; Step 7b skips the prompt and persists opt-out durably
+    - The env signal is **authoritative** and overrides any prior file-state opt-in (no policy mutation happens unless `set-telemetry-consent` is called)
+3. **`.claude-plugin/plugin.json` synced to v4.1.** The marketplace-install path delivered a stale v3.8.9 surface through all of v4.0 and v4.1 (missing `SessionEnd`, `prepush-review`, `agent-write-register`, `precompact-nudge-flag` hooks). The manifest is now in lockstep with `settings.fragment.json` via a new drift-guard test at `tests/v3/state/test-plugin-manifest-drift.mjs`.
+
+### Steps
+
+1. **Pull and re-run the installer.** Same commands as the v4.0 → v4.1 upgrade above.
+
+2. **(Optional) Set `DO_NOT_TRACK=1` globally if you want PRISM to never aggregate telemetry on this machine.** Add to your shell init:
+
+   ```bash
+   # bash / zsh — ~/.bashrc or ~/.zshrc
+   export DO_NOT_TRACK=1
+   ```
+
+   ```powershell
+   # PowerShell — $PROFILE
+   $env:DO_NOT_TRACK = "1"
+   ```
+
+   This is independent of the per-machine `telemetry.opt_in` choice — env wins.
+
+3. **Verify the manifest sync.** Once installed:
+
+   ```bash
+   node -e "const p=require('$(npm config get prefix 2>/dev/null || echo $HOME/.claude)/.claude-plugin/plugin.json'); console.log('plugin version:', p.version);"
+   ```
+
+   Should print `plugin version: 4.1.0`. If still `3.8.9`, the installer didn't pick up the new manifest — `/plugin update prism@PRISM` to fix.
+
+### Off-switches added in v4.2
+
+| Env var | Effect |
+|---|---|
+| `DISABLE_TELEMETRY=1` | Forces telemetry off; refuses aggregation; rewrites consent to `false` |
+| `DO_NOT_TRACK=1` | Same as above (industry-standard alias, consoledonottrack.com) |
+
+Both are independent of the PRISM-specific `telemetry.opt_in` policy. The env-var signal overrides; the file state is preserved for inspection.
+
+---
+
 ## Rollback
 
 Each release ships with an uninstall path that preserves user data, per

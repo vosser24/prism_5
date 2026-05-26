@@ -66,7 +66,7 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 | `SessionEnd[clear]` + `PreCompact` nudge hooks | ✅ Shipped (v4.1 Phase A) | Flag-file + SessionStart pickup per D005's resolution; 4 off-switches |
 | Git-hygiene + pre-push review nudge (v4.1) | ✅ Shipped (v4.1 Phase A) | SessionEnd writes git-dirty flag; PreToolUse asks before `git push` |
 | SessionStart daily freshness sweep (v4.1) | ✅ Shipped (v4.1 Phase B) | Once-per-24h: plugin drift, stale agents, update-log, CLAUDE.md, tools-registry rotations |
-| Telemetry auto-opt-in (v4.1) | ✅ Shipped (v4.1 Phase C) | `/prism-bootstrap` health phase prompts once; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
+| Telemetry opt-in prompt (v4.1) | ✅ Shipped (v4.1 Phase C, default-off in v4.2) | `/prism-bootstrap` health phase prompts once; default off; honors `DISABLE_TELEMETRY=1` + `DO_NOT_TRACK=1`; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
 | User hook customization preservation | ❌ Not yet | v4.1+ |
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 

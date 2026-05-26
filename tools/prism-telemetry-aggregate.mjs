@@ -55,8 +55,18 @@ const LOG = join(HOME, '.claude', '.prism-routing.jsonl');
 const ROLLUP = join(HOME, '.claude', '.prism-telemetry-rollup.json');
 
 // ── consent gate ─────────────────────────────────────────────────────
+// Industry-standard opt-out env vars: DO_NOT_TRACK (consoledonottrack.com)
+// and DISABLE_TELEMETRY (broadly observed). Honor without reading policy —
+// the env signal is authoritative and overrides any prior opt-in.
+function envForcedOff() {
+  if (process.env.DISABLE_TELEMETRY === '1') return 'DISABLE_TELEMETRY';
+  if (process.env.DO_NOT_TRACK === '1') return 'DO_NOT_TRACK';
+  return null;
+}
+
 function checkConsent() {
   if (opts.force) return true;
+  if (envForcedOff()) return false;
   if (!existsSync(POLICY)) return false;
   try {
     const p = JSON.parse(readFileSync(POLICY, 'utf8'));
@@ -65,11 +75,18 @@ function checkConsent() {
 }
 
 if (!checkConsent()) {
-  process.stderr.write(
-    `PRISM telemetry: aggregation refused — opt-in not set in ${POLICY}.\n` +
-    `Set with: node tools/prism-bootstrap.mjs set-telemetry-consent on\n` +
-    `Or via slash command: /prism-telemetry --opt-in\n`
-  );
+  const envVar = envForcedOff();
+  if (envVar) {
+    process.stderr.write(
+      `PRISM telemetry: aggregation refused — ${envVar}=1 in environment (industry-standard opt-out honored).\n`
+    );
+  } else {
+    process.stderr.write(
+      `PRISM telemetry: aggregation refused — opt-in not set in ${POLICY}.\n` +
+      `Set with: node tools/prism-bootstrap.mjs set-telemetry-consent on\n` +
+      `Or via slash command: /prism-telemetry --opt-in\n`
+    );
+  }
   process.exit(13);
 }
 

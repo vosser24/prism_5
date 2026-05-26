@@ -44,20 +44,40 @@ function makeHome() {
   return home;
 }
 
+// Strip v4.2 env-var opt-outs from the test process env so the default-case
+// tests run regardless of whether the developer / CI runner has those set
+// globally. Per-test we explicitly RE-INJECT via the `extraEnv` arg when
+// testing the override path.
+function baseEnv(home, extraEnv = {}) {
+  const env = {...process.env, HOME: home, USERPROFILE: home};
+  delete env.DISABLE_TELEMETRY;
+  delete env.DO_NOT_TRACK;
+  return {...env, ...extraEnv};
+}
+
 function runBootstrap(home, ...args) {
+  // Allow trailing {env: {...}} object to inject env vars for override tests.
+  let extraEnv = {};
+  if (args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] !== null) {
+    extraEnv = args.pop().env || {};
+  }
   const r = spawnSync(process.execPath, [BOOTSTRAP, ...args, '--home', home, '--no-git-guard'], {
     encoding: 'utf-8',
     timeout: 10000,
-    env: {...process.env, HOME: home, USERPROFILE: home},
+    env: baseEnv(home, extraEnv),
   });
   return {stdout: r.stdout, stderr: r.stderr, status: r.status};
 }
 
 function runAggregate(home, ...args) {
+  let extraEnv = {};
+  if (args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] !== null) {
+    extraEnv = args.pop().env || {};
+  }
   const r = spawnSync(process.execPath, [AGGREGATE, '--home', home, ...args], {
     encoding: 'utf-8',
     timeout: 10000,
-    env: {...process.env, HOME: home, USERPROFILE: home},
+    env: baseEnv(home, extraEnv),
   });
   return {stdout: r.stdout, stderr: r.stderr, status: r.status};
 }
@@ -227,6 +247,81 @@ test('aggregate --force: bypasses opt-in gate (test path)', () => {
     writeLog(home, [{event: 'x', ts: '2026-01-01T00:00:00Z'}]);
     const r = runAggregate(home, '--force', '--dry-run');
     assertEq(r.status, 0, r.stderr);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ─── v4.2: env-var opt-out (DISABLE_TELEMETRY / DO_NOT_TRACK) ────────
+
+test('aggregate: DISABLE_TELEMETRY=1 overrides opt_in=true (exit 13, env-reason in stderr)', () => {
+  const home = makeHome();
+  try {
+    runBootstrap(home, 'set-telemetry-consent', 'on');
+    writeLog(home, [{event: 'x', ts: '2026-01-01T00:00:00Z'}]);
+    const r = runAggregate(home, {env: {DISABLE_TELEMETRY: '1'}});
+    assertEq(r.status, 13, r.stderr);
+    assertContains(r.stderr, 'DISABLE_TELEMETRY');
+    assertContains(r.stderr, 'industry-standard');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('aggregate: DO_NOT_TRACK=1 overrides opt_in=true (exit 13)', () => {
+  const home = makeHome();
+  try {
+    runBootstrap(home, 'set-telemetry-consent', 'on');
+    writeLog(home, [{event: 'x', ts: '2026-01-01T00:00:00Z'}]);
+    const r = runAggregate(home, {env: {DO_NOT_TRACK: '1'}});
+    assertEq(r.status, 13, r.stderr);
+    assertContains(r.stderr, 'DO_NOT_TRACK');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('set-telemetry-consent on with DISABLE_TELEMETRY=1: forces opt_in=false + stderr explainer', () => {
+  const home = makeHome();
+  try {
+    const r = runBootstrap(home, 'set-telemetry-consent', 'on', {env: {DISABLE_TELEMETRY: '1'}});
+    assertEq(r.status, 0, r.stderr);
+    assertContains(r.stderr, 'DISABLE_TELEMETRY');
+    assertContains(r.stderr, 'forcing opt_in:false');
+    const policy = JSON.parse(readFileSync(join(home, '.claude', 'prism-policy.json'), 'utf-8'));
+    assertEq(policy.telemetry.opt_in, false, 'env var must force false even when CLI said on');
+    const out = JSON.parse(r.stdout);
+    assertEq(out.forced_off_by_env, 'DISABLE_TELEMETRY');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('set-telemetry-consent on with DO_NOT_TRACK=1: forces opt_in=false', () => {
+  const home = makeHome();
+  try {
+    const r = runBootstrap(home, 'set-telemetry-consent', 'on', {env: {DO_NOT_TRACK: '1'}});
+    assertEq(r.status, 0, r.stderr);
+    const policy = JSON.parse(readFileSync(join(home, '.claude', 'prism-policy.json'), 'utf-8'));
+    assertEq(policy.telemetry.opt_in, false);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.forced_off_by_env, 'DO_NOT_TRACK');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('set-telemetry-consent off with env var set: no stderr explainer (no contradiction)', () => {
+  const home = makeHome();
+  try {
+    const r = runBootstrap(home, 'set-telemetry-consent', 'off', {env: {DISABLE_TELEMETRY: '1'}});
+    assertEq(r.status, 0, r.stderr);
+    assert(!r.stderr.includes('forcing opt_in:false'), 'no explainer when CLI already said off');
+    const out = JSON.parse(r.stdout);
+    assertEq(out.forced_off_by_env, 'DISABLE_TELEMETRY', 'still annotates env var in result for inspectability');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-telemetry-consent with DISABLE_TELEMETRY=1: returns forced_off_by_env + effective_opt_in=false', () => {
+  const home = makeHome();
+  try {
+    runBootstrap(home, 'set-telemetry-consent', 'on');
+    const r = runBootstrap(home, 'detect-telemetry-consent', {env: {DISABLE_TELEMETRY: '1'}});
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.opt_in, true, 'file state preserved (env override is layered separately)');
+    assertEq(out.forced_off_by_env, 'DISABLE_TELEMETRY');
+    assertEq(out.effective_opt_in, false);
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

@@ -784,7 +784,19 @@ try {
 
     case 'detect-telemetry-consent': {
       const home = resolveStatuslineHome();
-      stdout.write(JSON.stringify(detectTelemetryConsent(home), null, 2) + '\n');
+      const result = detectTelemetryConsent(home);
+      // Industry-standard opt-out env vars override file state. We return
+      // the file state untouched so callers can see what was persisted,
+      // PLUS a forced_off_by_env field naming the env var responsible.
+      // bootstrap's Step 7b branches on this to skip the prompt.
+      const envVar = process.env.DISABLE_TELEMETRY === '1' ? 'DISABLE_TELEMETRY'
+                   : process.env.DO_NOT_TRACK === '1' ? 'DO_NOT_TRACK'
+                   : null;
+      if (envVar) {
+        result.forced_off_by_env = envVar;
+        result.effective_opt_in = false;
+      }
+      stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
 
@@ -794,7 +806,20 @@ try {
         die(`set-telemetry-consent requires 'on' or 'off' (got ${JSON.stringify(value)})`, 22);
       }
       const home = resolveStatuslineHome();
-      const result = setTelemetryConsent(home, value === 'on');
+      let effectiveOptIn = value === 'on';
+      const envVar = process.env.DISABLE_TELEMETRY === '1' ? 'DISABLE_TELEMETRY'
+                   : process.env.DO_NOT_TRACK === '1' ? 'DO_NOT_TRACK'
+                   : null;
+      if (envVar && effectiveOptIn) {
+        stderr.write(
+          `PRISM telemetry: ${envVar}=1 in environment — ` +
+          `forcing opt_in:false regardless of CLI arg '${value}' ` +
+          `(industry-standard opt-out honored).\n`,
+        );
+        effectiveOptIn = false;
+      }
+      const result = setTelemetryConsent(home, effectiveOptIn);
+      if (envVar) result.forced_off_by_env = envVar;
       stdout.write(JSON.stringify(result, null, 2) + '\n');
       break;
     }
