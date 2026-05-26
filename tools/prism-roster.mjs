@@ -27,16 +27,22 @@ const MIN_DISPATCHES = 10;
 const args = process.argv.slice(2);
 let mode = null;
 let agentArg = null;
+const seenModes = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--apply-ratchet') mode = 'apply-ratchet';
-  else if (a === '--reset-model') { mode = 'reset-model'; agentArg = args[++i]; }
-  else if (a === '--tag-1-5') { mode = 'tag-1-5'; agentArg = args[++i]; }
-  else if (a === '--untag-1-5') { mode = 'untag-1-5'; agentArg = args[++i]; }
+  if (a === '--apply-ratchet') { mode = 'apply-ratchet'; seenModes.push(a); }
+  else if (a === '--reset-model') { mode = 'reset-model'; agentArg = args[++i]; seenModes.push(a); }
+  else if (a === '--tag-1-5') { mode = 'tag-1-5'; agentArg = args[++i]; seenModes.push(a); }
+  else if (a === '--untag-1-5') { mode = 'untag-1-5'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '-h' || a === '--help') {
     process.stdout.write(`Usage: prism-roster [--apply-ratchet | --reset-model <agent> | --tag-1-5 <agent> | --untag-1-5 <agent>]\n`);
     process.exit(0);
   }
+}
+
+if (seenModes.length > 1) {
+  process.stderr.write(`error: only one subcommand may be passed. Got: ${seenModes.join(', ')}\n`);
+  process.exit(2);
 }
 
 if (!mode) {
@@ -49,8 +55,15 @@ function atomicWrite(path, content) {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
     renameSync(tmp, path);
+    return true;
   } catch {
-    try { writeFileSync(path, content); } catch {}
+    try {
+      writeFileSync(path, content);
+      return true;
+    } catch (e2) {
+      process.stderr.write(`error: failed to write ${path}: ${e2 && e2.message}\n`);
+      return false;
+    }
   }
 }
 
@@ -68,7 +81,11 @@ function readRoster() {
 }
 
 function writeRoster(roster) {
-  atomicWrite(ROSTER, JSON.stringify(roster, null, 2));
+  const ok = atomicWrite(ROSTER, JSON.stringify(roster, null, 2));
+  if (!ok) {
+    process.stderr.write(`error: roster.json write failed; ratchet changes lost.\n`);
+    process.exit(6);
+  }
 }
 
 function logToImprovements(agent, line) {
