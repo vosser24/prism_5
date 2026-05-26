@@ -173,7 +173,15 @@ This prevents creating agents for capabilities better external tools provide
 (compose-only stance: never replicate what external tools do well).
 
 **Agent hiring flow:**
-- Agent missing → spawn @agent-factory for creation, wait, hire
+- Agent missing → spawn @agent-factory for creation, wait, hire.
+  Once @agent-factory is invoked, the factory's own "Decision tree:
+  agent-creation vs skill-research" (see `agents/agent-factory.md`,
+  end of the `--skill-research` section) picks the mode:
+  `--from-notebook <id>` if an orphan notebook exists for the domain,
+  `--skill-research` if the need is workflow/tooling, standard create
+  flow if the need is domain expertise. (D007 locks this two-layer
+  split as the v4.1 architecture — see
+  `docs/prism/adjudications/D007-agent-creator-vs-factory.md`.)
 - Agent exists → CHECK STALENESS before hiring:
 
   Read agent's roster entry: last_upgraded or created date.
