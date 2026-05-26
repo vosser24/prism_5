@@ -533,6 +533,12 @@ layer, not an ad-hoc afterthought.
   edge case the user actually asked about). Same bounce-ONCE protocol
   as UN-CITED; same KNOWN-LIMITATION fallback on the second miss.
 
+> **Token note:** `REJECTED` here is a PHASE 1.5 orchestrator verdict on
+> a claim's evidence quality. It is distinct from `REJECT` (no -ED),
+> which is the PHASE 0d expert response to a challenge. The peer-protocol
+> framing above is intentional; the -ED suffix is load-bearing
+> disambiguation when both verdict layers appear in the same plan output.
+
 **Aggressive rejection — this is the Phase J intent:** if a specialist's
 output reads as confident and conclusion-heavy with no cited proof, do
 NOT charitably interpret it. Issue UN-CITED verdicts on the load-bearing
@@ -547,6 +553,16 @@ surface it in the final user report. Domain confidence is suspect when
 a specialist cannot cite three claims in their stated expertise — this
 is the same threshold as the PHASE 2c `corrections_since_last_upgrade
 ≥ 3` rule, applied at the evidence layer.
+
+This is a SEPARATE trigger from the domain-gap escalation in
+`### Factory escalation from senior review` below. That section fires
+on `2+ misses` of domain expertise (gaps a specialist SHOULD have
+caught in their stated domain); this trigger fires on `≥3 UN-CITED
+verdicts` (claims a specialist MADE without evidence). Both flip
+`pending_upgrade: true`, but the diagnoses are different — a specialist
+with many uncited claims has evidence-discipline issues, while one
+with recurring domain gaps has knowledge-coverage issues. Either path
+is sufficient on its own; neither blocks the other.
 
 ### Standard of evidence — delegation boilerplate
 
@@ -584,7 +600,7 @@ on pass #1.
 Then in PHASE 1.5, actually follow through. The bounce-ONCE rule is a
 contract with the user, not a soft suggestion: a specialist who returns
 "this handles all the edge cases" with no enumerated edge cases gets
-the work bounced back once, and if pass #2 still lacks evidence, the
+the work bounced back ONCE, and if pass #2 still lacks evidence, the
 claim ships as a KNOWN LIMITATION rather than as a clean assertion. Do
 not silently accept the second pass to spare the specialist or move
 faster. The user gets more value from a plan that says "we couldn't
