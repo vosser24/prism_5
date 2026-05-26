@@ -237,11 +237,40 @@ Per D004 §8, this is the opt-in default. Do NOT auto-prompt or auto-run.
 
 ### Phase 7 — health
 
-Goal: verify wiring; produce a green/yellow/red report.
+Goal: verify wiring; produce a green/yellow/red report; offer the v4.1 telemetry opt-in if not yet set.
+
+#### Step 7a — wiring checks
 
 Invoke the existing `/prism-health` checks. Report status to the user.
 
-Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
+#### Step 7b — telemetry consent prompt (v4.1 Phase C / Q10)
+
+Skip this step entirely if the bootstrap was invoked with `--no-telemetry` (records `opt_in: false` without prompting and proceeds).
+
+Otherwise:
+
+```bash
+node ~/.claude/tools/prism-bootstrap.mjs detect-telemetry-consent
+```
+
+Branch on the returned JSON:
+
+- `opt_in: true | false`  → already configured; skip the prompt (re-asking is annoying).
+- `parse_error: <message>` → tell the user `~/.claude/prism-policy.json` is malformed and skip the prompt. Suggest fix-and-rerun.
+- `opt_in: null` (and no `parse_error`) → prompt:
+
+  > **Enable PRISM telemetry?** Local-only — no network, no shipping, no telemetry-as-a-service. PRISM aggregates routing decisions (which guards fire, which classifier path picked the tier) into `~/.claude/.prism-telemetry-rollup.json` for self-tuning. The `prism-updater` agent reads the rollup to surface guard-tuning candidates during `/prism-update` runs. The rollup is plain JSON inspectable with `jq`. You can flip this any time via `/prism-telemetry --opt-in` or `--opt-out`. **(Recommended.)**
+
+  Use AskUserQuestion with two options:
+
+  - **Enable telemetry (recommended)** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent on`
+  - **Skip for now** → `node ~/.claude/tools/prism-bootstrap.mjs set-telemetry-consent off`
+
+  Both branches write to `~/.claude/prism-policy.json` under `telemetry.opt_in`. Either way the bootstrap proceeds — the choice is durable; you ask once per machine, never again.
+
+#### Step 7c — complete
+
+Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N, "telemetry_opt_in": true|false}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
 
 ---
 

@@ -39,6 +39,24 @@ You are the PRISM Updater. Keep the system current.
      reference-claude-code-hook-decision-control memory)
    - skills: new features?
    - MCPs: new servers relevant to user's domains?
+   - **Telemetry-informed gap analysis (v4.1 Phase C / Q10).** If
+     `~/.claude/.prism-telemetry-rollup.json` exists AND the consent
+     gate at `~/.claude/prism-policy.json` shows `telemetry.opt_in: true`:
+     a. Run `node ~/.claude/tools/prism-telemetry-aggregate.mjs --dry-run`
+        to refresh the rollup (fail-open: if it errors, skip this sub-
+        step and continue with the other gap items).
+     b. Read the rollup's `tuning_candidates[]` array. Each entry has
+        `{guard, deny_count, share_of_denies, recommendation}`.
+     c. For each candidate, surface as a gap-analysis line item:
+        *"Guard `<guard>` denies <share>% of recent guard events
+        (<count> denies). Recommendation: <recommendation text>.
+        Migration-plan candidate: review the regex/pattern in
+        `hooks/<guard>-guard.mjs` for false-positive rate."*
+     d. These are CANDIDATES, not auto-applied changes. They flow into
+        step 4's approval gate like every other migration item.
+     If the rollup is absent, or consent is `false`/`null`, skip this
+     sub-step silently — the bootstrap consent prompt already
+     surfaced the choice.
 4. Present report: findings + priorities + migration plan. Cite the exact
    URL fetched for each non-obvious claim (so the user can verify quickly).
 5. WAIT for approval — never auto-apply
