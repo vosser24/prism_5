@@ -260,6 +260,58 @@ Then summarize for the user:
 If new files were written: show `git status --short` and ask the user
 whether to stage and commit. **Do not auto-commit** (D001 phase 9 gate).
 
+### Step N.1 — statusline offer (opt-in, v4.0)
+
+After the status summary, check whether the PRISM statusline is installed:
+
+```bash
+node ~/.claude/tools/prism-bootstrap.mjs detect-statusline
+```
+
+The helper prints a JSON report:
+
+```json
+{
+  "settings_path": "<HOME>/.claude/settings.json",
+  "settings_exists": true|false,
+  "settings_parse_error": null,
+  "installed": true|false,
+  "source_script_path": "<HOME>/.claude/statusline-command.sh",
+  "source_script_exists": true|false
+}
+```
+
+Behaviour by branch:
+
+- **`installed: true`** → say nothing. Already wired.
+- **`installed: false` AND `source_script_exists: true`** → ask the user via
+  `AskUserQuestion`: *"PRISM ships a multi-line statusline (model / git /
+  cost / context bar / rate limits). Install it now?"* — options: *Install*
+  (recommended) / *Skip for now*.
+  - On *Install*: run
+    `node ~/.claude/tools/prism-bootstrap.mjs install-statusline`
+    and report the patched path. (The helper refuses to overwrite an
+    existing `statusLine` value — that's the `exit 11` guard. To overwrite
+    deliberately, pass `--force`.)
+  - On *Skip*: log "statusline skipped — re-run /prism-bootstrap any time
+    to revisit" and continue.
+- **`installed: false` AND `source_script_exists: false`** → log the gap
+  ("statusline script not on disk; run `scripts/install-statusline-only.sh`
+  if you want the standalone install") and do **not** prompt. The
+  `install-statusline` helper would exit 12 in this state.
+- **`settings_parse_error` non-null** → STOP. Surface the parse error to
+  the user; do not attempt the install. They need to fix
+  `~/.claude/settings.json` first.
+
+**Never silently write** the statusline. The whole point of folding this
+into bootstrap is opt-in convenience; auto-write would be a behavioural
+regression vs v3.11.0 and earlier. (D001 phase 9 gate — confirm before
+mutating user config.)
+
+If `--dry-run` was passed to `/prism-bootstrap`: skip the prompt; just
+print the detect-statusline output and a one-line *"would offer install
+if not in dry-run"* note.
+
 ---
 
 ## Crash resume semantics

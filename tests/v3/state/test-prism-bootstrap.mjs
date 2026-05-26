@@ -5,7 +5,7 @@
 // Run: node tests/v3/state/test-prism-bootstrap.mjs
 
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -411,6 +411,161 @@ test('phase-project-master --with-deep-dive: refuses without --with-deep-dive (e
     assertEq(r.status, 6, r.stderr);
     assert(/opt-in/.test(r.stderr), r.stderr);
   } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ------------------------------ Phase K T6: statusline install ------------------------------
+
+function makeHomeSandbox(label) {
+  // Sandboxed $HOME for statusline tests. No .git/ — statusline commands
+  // must bypass the git guard.
+  return mkdtempSync(join(tmpdir(), `prism-statusline-${label}-`));
+}
+
+function readSettings(home) {
+  const p = join(home, '.claude', 'settings.json');
+  if (!existsSync(p)) return null;
+  return JSON.parse(readFileSync(p, 'utf8'));
+}
+
+function seedStatuslineScript(home) {
+  // Tests need the source script to exist so install-statusline doesn't refuse.
+  mkdirSync(join(home, '.claude'), {recursive: true});
+  writeFileSync(join(home, '.claude', 'statusline-command.sh'), '#!/usr/bin/env bash\necho dummy\n');
+}
+
+function runStatusline(cmd, home, ...extra) {
+  const r = spawnSync(process.execPath, [HELPER, cmd, '--home', home, '--no-git-guard', ...extra], {encoding: 'utf8'});
+  return {stdout: r.stdout, stderr: r.stderr, status: r.status};
+}
+
+test('detect-statusline: reports installed=false when settings.json missing', () => {
+  const home = makeHomeSandbox('detect-missing');
+  try {
+    const r = runStatusline('detect-statusline', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, false);
+    assertEq(out.settings_exists, false);
+    assertEq(out.source_script_exists, false);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-statusline: reports installed=false when settings.json lacks statusLine key', () => {
+  const home = makeHomeSandbox('detect-nokey');
+  try {
+    mkdirSync(join(home, '.claude'), {recursive: true});
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({agent: 'foo'}, null, 2));
+    const r = runStatusline('detect-statusline', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, false);
+    assertEq(out.settings_exists, true);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-statusline: reports installed=true when statusLine key present', () => {
+  const home = makeHomeSandbox('detect-present');
+  try {
+    mkdirSync(join(home, '.claude'), {recursive: true});
+    writeFileSync(join(home, '.claude', 'settings.json'),
+      JSON.stringify({statusLine: {type: 'command', command: 'bash foo'}}, null, 2));
+    const r = runStatusline('detect-statusline', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, true);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-statusline: surfaces JSON parse error when settings.json is malformed', () => {
+  const home = makeHomeSandbox('detect-bad');
+  try {
+    mkdirSync(join(home, '.claude'), {recursive: true});
+    writeFileSync(join(home, '.claude', 'settings.json'), '{not valid json');
+    const r = runStatusline('detect-statusline', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, false);
+    assert(out.settings_parse_error, 'should surface parse error: ' + JSON.stringify(out));
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline: writes statusLine block when absent', () => {
+  const home = makeHomeSandbox('install-fresh');
+  try {
+    seedStatuslineScript(home);
+    const r = runStatusline('install-statusline', home);
+    assertEq(r.status, 0, r.stderr);
+    assert(/statusLine block written/.test(r.stdout), r.stdout);
+    const s = readSettings(home);
+    assertEq(s.statusLine.type, 'command');
+    assert(/statusline-command\.sh/.test(s.statusLine.command), 'command points at .sh: ' + s.statusLine.command);
+    assertEq(s.statusLine.padding, 0);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline: preserves other settings when patching', () => {
+  const home = makeHomeSandbox('install-preserve');
+  try {
+    seedStatuslineScript(home);
+    writeFileSync(join(home, '.claude', 'settings.json'),
+      JSON.stringify({agent: 'master-foo', theme: 'dark'}, null, 2));
+    runStatusline('install-statusline', home);
+    const s = readSettings(home);
+    assertEq(s.agent, 'master-foo', 'agent preserved');
+    assertEq(s.theme, 'dark', 'theme preserved');
+    assert(s.statusLine, 'statusLine added');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline: refuses when statusLine already present (idempotent guard, exit 11)', () => {
+  const home = makeHomeSandbox('install-already');
+  try {
+    seedStatuslineScript(home);
+    writeFileSync(join(home, '.claude', 'settings.json'),
+      JSON.stringify({statusLine: {type: 'command', command: 'bash existing'}}, null, 2));
+    const r = runStatusline('install-statusline', home);
+    assertEq(r.status, 11, 'should exit 11 for already-present — stderr: ' + r.stderr);
+    assert(/already present/.test(r.stderr), 'should mention already present: ' + r.stderr);
+    // Existing value must be preserved
+    const s = readSettings(home);
+    assertEq(s.statusLine.command, 'bash existing', 'existing value preserved');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline --force: overwrites existing statusLine', () => {
+  const home = makeHomeSandbox('install-force');
+  try {
+    seedStatuslineScript(home);
+    writeFileSync(join(home, '.claude', 'settings.json'),
+      JSON.stringify({statusLine: {type: 'command', command: 'bash old'}}, null, 2));
+    const r = runStatusline('install-statusline', home, '--force');
+    assertEq(r.status, 0, r.stderr);
+    const s = readSettings(home);
+    assert(/statusline-command\.sh/.test(s.statusLine.command), 'overwrote to canonical: ' + s.statusLine.command);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline --dry-run: writes nothing', () => {
+  const home = makeHomeSandbox('install-dry');
+  try {
+    seedStatuslineScript(home);
+    const r = runStatusline('install-statusline', home, '--dry-run');
+    assertEq(r.status, 0, r.stderr);
+    assert(/DRY-RUN/.test(r.stdout), 'should announce DRY-RUN: ' + r.stdout);
+    // settings.json must NOT have been created
+    const settingsExists = existsSync(join(home, '.claude', 'settings.json'));
+    assertEq(settingsExists, false, 'settings.json must not be written in dry-run');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('install-statusline: refuses when source script missing (exit 12)', () => {
+  const home = makeHomeSandbox('install-noscript');
+  try {
+    // intentionally do NOT seed statusline-command.sh
+    const r = runStatusline('install-statusline', home);
+    assertEq(r.status, 12, 'should exit 12 for missing script — stderr: ' + r.stderr);
+    assert(/not found/.test(r.stderr), 'should mention not-found: ' + r.stderr);
+  } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
 // ------------------------------ summary ------------------------------

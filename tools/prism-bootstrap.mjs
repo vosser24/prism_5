@@ -57,9 +57,9 @@
 // records it under phases.structure.conventions_written = true.
 
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
-import {argv, exit, stderr, stdout} from 'node:process';
+import {argv, env, exit, stderr, stdout} from 'node:process';
 import {fileURLToPath} from 'node:url';
 
 import {
@@ -100,6 +100,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--with-deep-dive') opts.withDeepDive = true;
   else if (a === '--no-git-guard') opts.noGitGuard = true;
   else if (a === '--meta') named.meta = args[++i];
+  else if (a === '--home') named.home = args[++i];
   else if (a === '-h' || a === '--help' || a === 'help') usage();
   else positional.push(a);
 }
@@ -121,16 +122,23 @@ Commands:
   complete-phase <name> [--meta '<json>']
   fail-phase <name> "<error>"
   init-state-if-missing <project-name>
+  detect-statusline [--home <path>]
+  install-statusline [--home <path>] [--dry-run] [--force]
 
 Phases (v2 schema): ${PHASES.join(' | ')}
 project-master is opt-in: planner skips it unless --with-deep-dive is set.
+Statusline commands bypass the .git/ guard (they operate on $HOME/.claude/).
 `);
   exit(code);
 }
 
 // ------------------------------ guards ------------------------------
 
-if (!opts.noGitGuard && !existsSync(join(opts.root, '.git'))) {
+// statusline commands touch $HOME/.claude/settings.json, not a project root,
+// so they bypass the git guard. All other commands require .git/ unless
+// --no-git-guard is set.
+const STATUSLINE_COMMANDS = new Set(['detect-statusline', 'install-statusline']);
+if (!opts.noGitGuard && !STATUSLINE_COMMANDS.has(cmd) && !existsSync(join(opts.root, '.git'))) {
   die(`refusing to run: ${opts.root} has no .git/. Pass --no-git-guard to override.`, 2);
 }
 
@@ -382,6 +390,76 @@ function persistOrPrint(next, label) {
   writeStateAtomic(opts.root, next);
 }
 
+// ------------------------------ statusline helpers ------------------------------
+// Statusline install is a GLOBAL config change (writes to ~/.claude/settings.json),
+// not a project-local one. See scripts/install-statusline-only.sh for the canonical
+// pattern this matches — same JSON shape, same atomic-write discipline.
+
+function resolveStatuslineHome() {
+  // --home override exists primarily for tests (sandbox to a temp dir).
+  // Production: $HOME (Unix) or $USERPROFILE (Windows Git-Bash).
+  if (named.home) return resolve(named.home);
+  const home = env.HOME || env.USERPROFILE;
+  if (!home) die('cannot determine home directory (HOME and USERPROFILE both unset)', 9);
+  return home;
+}
+
+function detectStatusline(home) {
+  const settingsPath = join(home, '.claude', 'settings.json');
+  const sourceScript = join(home, '.claude', 'statusline-command.sh');
+  const result = {
+    settings_path: settingsPath,
+    settings_exists: existsSync(settingsPath),
+    settings_parse_error: null,
+    installed: false,
+    source_script_path: sourceScript,
+    source_script_exists: existsSync(sourceScript),
+  };
+  if (result.settings_exists) {
+    try {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+      result.installed =
+        settings && typeof settings === 'object' && !Array.isArray(settings) &&
+        Object.prototype.hasOwnProperty.call(settings, 'statusLine');
+    } catch (e) {
+      result.settings_parse_error = e.message;
+    }
+  }
+  return result;
+}
+
+function installStatusline({home, dryRun, force}) {
+  const detect = detectStatusline(home);
+  if (detect.settings_parse_error) {
+    die(`refusing: ${detect.settings_path} is not valid JSON (${detect.settings_parse_error}). Fix it or remove it before installing the statusline.`, 9);
+  }
+  if (detect.installed && !force) {
+    die(`statusLine key already present in ${detect.settings_path}. Pass --force to overwrite (the existing value will be replaced).`, 11);
+  }
+  if (!detect.source_script_exists) {
+    die(`refusing: ${detect.source_script_path} not found. Either do a full PRISM install (so the statusline script is copied) or run scripts/install-statusline-only.sh first.`, 12);
+  }
+  let settings = {};
+  if (detect.settings_exists) {
+    settings = JSON.parse(readFileSync(detect.settings_path, 'utf8'));
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      die(`refusing: existing ${detect.settings_path} is not a JSON object`, 9);
+    }
+  }
+  settings.statusLine = {
+    type: 'command',
+    command: `bash ${detect.source_script_path}`,
+    padding: 0,
+  };
+  if (dryRun) return detect.settings_path;
+  mkdirSync(dirname(detect.settings_path), {recursive: true});
+  const body = JSON.stringify(settings, null, 2) + '\n';
+  const tmp = detect.settings_path + '.tmp';
+  writeFileSync(tmp, body, 'utf8');
+  renameSync(tmp, detect.settings_path);
+  return detect.settings_path;
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -599,6 +677,21 @@ try {
       const next = markPhaseFailed(state, name, errMsg);
       persistOrPrint(next, `fail-phase ${name}`);
       stdout.write(`recorded failure for phase ${name}: ${errMsg}\n`);
+      break;
+    }
+
+    case 'detect-statusline': {
+      const home = resolveStatuslineHome();
+      stdout.write(JSON.stringify(detectStatusline(home), null, 2) + '\n');
+      break;
+    }
+
+    case 'install-statusline': {
+      const home = resolveStatuslineHome();
+      const path = installStatusline({home, dryRun: opts.dryRun, force: opts.force});
+      stdout.write(opts.dryRun
+        ? `DRY-RUN: would write statusLine block to ${path}\n`
+        : `statusLine block written to ${path}\n`);
       break;
     }
 
