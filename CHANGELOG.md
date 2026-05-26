@@ -4,6 +4,136 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.0.0] - 2026-05-26
+
+The **project-master surface** release. Each project can now grow its own
+`master-<slug>` agent with a project-local `MEMORY.md`; the master loads
+the shared `master-orchestrator` skill (which carries the multi-step
+orchestration protocol) and hires specialists from the global roster.
+
+Locked design: `docs/prism/adjudications/D004-v4-product-vision.md`.
+Migration guide: `docs/prism/MIGRATION.md`.
+
+### Added
+- **Phase D — `/prism-deep-dive`** (commits `37c6f34..1011af0`, `5a9a254..d5f3ae7`).
+  - `commands/prism-deep-dive.md` slash command — discovery + ≤5 clarifying
+    questions + writes `<project>/.claude/agents/master-<slug>.md`,
+    seeded `MEMORY.md`, and `settings.json` `agent: master-<slug>` field.
+  - `tools/prism-deep-dive.mjs` helper with subcommands: `slug-derive`,
+    `agent-write`, `memory-seed`, `settings-write`, `agent-diff`.
+  - `agent-factory --master-<slug>` mode for project-local master generation.
+  - State schema v2: `project_slug` field + `setProjectSlug` mutator.
+  - `/prism-bootstrap phase-project-master` wired to `/prism-deep-dive`
+    (opt-in only via `--with-deep-dive`).
+- **Phase E — master-orchestrator skill migration** (commits `054986e..07952d5`).
+  - `~/.claude/skills/master-orchestrator/SKILL.md` carries the orchestration
+    protocol body (PHASE 0–9, adversarial review, Phase 1.5 senior review).
+  - `~/.claude/agents/master-orchestrator.md` reduced to thin skill-loading
+    wrapper.
+  - CI drift-guard `tests/v3/state/test-master-orchestrator-thin-wrapper.mjs`
+    asserts the wrapper stays minimal and the skill carries the body.
+  - `@master-orchestrator` mentions and `master-<slug>` agents both load the
+    skill correctly.
+- **Phase H — knowledge evolution rhythms** (commits `14e1067..79d339b`).
+  - `append-decision` + `append-lesson` subcommands of `prism-deep-dive`.
+  - `/prism-clean` wired to call `append-decision` + `append-lesson` per
+    classifier level (D-level → adjudication; lesson-level → MEMORY.md
+    pointer with 25 KB cap enforcement).
+  - `prism-deep-dive agent-diff` subcommand for `/prism-deep-dive --upgrade <slug>`
+    diff-then-confirm flow.
+- **Phase J — tightened PHASE 1.5 evidence rules** (commits `efbeac8..dfda420`).
+  - `master-orchestrator` skill PHASE 1.5 gains three new subsections:
+    *Evidence taxonomy* (6-row claim-class table), *Per-claim verdict*
+    (`EVIDENCED / UN-CITED / REJECTED` with bounce-ONCE protocol +
+    KNOWN-LIMITATION fallback + factory-upgrade trigger at ≥3 UN-CITED),
+    and *Standard of evidence — delegation boilerplate*.
+  - `### Visible output` gains mandatory bullet listing claims rejected
+    as UN-CITED or REJECTED and their second-pass outcome.
+  - Drift-guard `tests/v3/state/test-master-orchestrator-evidence-rules.mjs`
+    pins uppercase verdict tokens case-sensitively (9 tests / 12 assertions).
+- **Phase K — docs + release prep** (commits `8bfde8e..` this release).
+  - `commands/prism-help.md` — curated v4.0 slash-command index by workflow.
+  - `commands/prism-bootstrap.md` — rebuilt phase table for 7 phases; new
+    Phase 3 (plugin-validate) section; renumbered + reordered for v2 schema.
+  - `docs/prism/MIGRATION.md` — standalone v3.10 → v3.11 → v4.0 migration
+    recipe with rollback section.
+  - `README.md` refreshed to surface v4.0 capability matrix.
+  - Statusline install fold into `/prism-bootstrap` (opt-in only, no auto-write).
+
+### Changed
+- **`/prism-bootstrap`** schema migrated from 5 phases (v1) to 7 phases (v2)
+  during Phase B; v4.0 doc finally catches up via Phase K's prose sweep.
+- **`master-orchestrator`** protocol body relocated from agent file to skill
+  file. Behavior preserved across `@master-orchestrator` mention and the new
+  `master-<slug>` project-agent dispatch path.
+- **`MEMORY.md` 25 KB cap** is now hard-enforced by `tools/lib/prism-state.mjs`
+  on every write (Phase D / D004 §risk #2).
+
+### Deferred
+- **Phase F — SessionEnd[clear] + PreCompact nudge hooks** — deferred to v4.1
+  per `docs/prism/adjudications/D005-phase-f-hook-api-incompatibility.md`.
+  The hook API does not support the side-effect-only output combination D004 §6
+  assumed. v4.1 will retry with the flag-file + SessionStart pickup pattern.
+
+## [3.11.0] - 2026-05-25
+
+The **foundation hardening** release. Three sub-phases (A, B, C) shipped
+together per the D004 phase plan; gates v4.0.
+
+Locked design: `docs/prism/adjudications/D001-bootstrap-unification.md`,
+`D002-v3.10-hooks-drift-scope.md`, `D003-bootstrap-scaffold-scope.md`,
+`D004-v4-product-vision.md`.
+
+### Added
+- **Phase A.1 — `/prism-sync`** (commits `5745062..72781f7`).
+  - `tools/prism-sync.mjs` with `plan [--smart-drift]` and `complete [--meta '<json>']`
+    subcommands. Conservative drift = always re-scan; `--smart-drift` is a
+    stderr-warning stub until v3.12.0 (D002 §5).
+  - `commands/prism-sync.md` slash command orchestrating the LLM-judged phases.
+  - 11 tests: git guard, conservative pending list, identity refresh conditional
+    on `CLAUDE.md` mtime, sync stamps, atomic crash safety, idempotency.
+- **Phase A.2 — `/prism-clean`** (commits `699e2c0`, `665c239`).
+  - `tools/prism-clean.mjs` with `next-d-number` (scans
+    `docs/prism/adjudications/D###-*.md`) and `git-stats --since <iso>`
+    (commits + diff shortstat) subcommands.
+  - `commands/prism-clean.md` slash command — applies a 5-level importance
+    classifier (D-level decision → adjudication; lesson-level → MEMORY.md
+    pointer; below → drop), surfaces candidates as a checklist, and writes
+    approved artifacts with locked headers.
+- **Phase A.3 — agent-write auto-fire hook** (commits `7636f41`, `0415a7d`).
+  - `hooks/agent-write-register.ps1` — registers a new global agent within
+    100ms of `Write` to `~/.claude/agents/*.md`.
+  - Hook wired into `install.ps1` / `install.sh` for both fresh installs and
+    upgrades (D002 §4).
+- **Phase B — Bootstrap 7-phase + schema v2 + sentinels** (commit `525d84e`).
+  - State schema v2: 7 phases (`identity`, `structure`, `plugin-validate`,
+    `discovery`, `roster`, `project-master`, `health`) with per-phase
+    sentinels `{started_at, completed_at, status, artifact_hashes}`.
+  - `tools/lib/prism-state.mjs` carries `PHASES` constant + `migrateV1ToV2`
+    transparently on `readState`.
+  - Crash-resume semantics: `in_progress` phase without `completed_at` is the
+    first pending entry on next plan.
+  - `phase-plugin-validate` stub helper (advances planner; full validator
+    lives in `/prism-validate-plugins`).
+  - `phase-project-master --with-deep-dive` helper — opt-in only;
+    `/prism-bootstrap` never auto-prompts.
+- **Phase C — `/prism-validate-plugins`** (commit `b8f02f5`).
+  - `tools/prism-validate-plugins.mjs` — shells out to `claude plugin list --json`,
+    reports broken hooks, missing manifests, skill-name conflicts, MCP reachability.
+  - Report-only in v3.11.0; `--fix` deferred to v3.12.0 (D004 risk #5 —
+    false-positive risk on legitimate plugins).
+  - `commands/prism-validate-plugins.md` slash command.
+
+### Changed
+- **`/prism-bootstrap`** is now the canonical first-run entry point. The
+  legacy commands `/prism-init`, `/prism-discover`, `/prism-roster --reconcile`,
+  `/prism-health` remain callable but are hidden from `/prism-help` per
+  D002 §3 line 30.
+
+### Tests
+- 107/107 tests pass at v3.11.0 ship across `tests/v3/state/test-*.mjs` +
+  `tests/v3/hooks/test-*.mjs`.
+
 ## [3.8.9] - 2026-04-26
 ### Improved
 - **install.ps1 / install.sh** auto-detect branch from script's own git repo when `-Branch` / `--branch` is not explicitly passed. Prevents the common "step 4 failed: install-merge.mjs missing" trap when the local clone is on a non-main branch but install defaults to main. Falls back to `main` if not running from a git repo. Logs branch source (explicit / auto-detected / default).
