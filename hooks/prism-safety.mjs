@@ -7,7 +7,7 @@ const cmd=(input.tool_input&&input.tool_input.command)||'';
 
 // Dangerous patterns to BLOCK (exit 2)
 const blocked=[
-  [/rm\s+-rf\s/i, 'rm -rf blocked by PRISM safety gate'],
+  [/rm\s+-rf(?:[\s/]|$)/i, 'rm -rf blocked by PRISM safety gate'],
   [/rm\s+(-[a-z]*f[a-z]*\s).*(\.\.|\/home|\/etc|~)/i, 'Destructive rm on important path'],
   [/DROP\s+(TABLE|DATABASE|SCHEMA)/i, 'DROP statement blocked by PRISM safety gate'],
   [/TRUNCATE\s+TABLE/i, 'TRUNCATE TABLE blocked by PRISM safety gate'],
