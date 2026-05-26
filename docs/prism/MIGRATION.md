@@ -199,11 +199,64 @@ After running `/prism-deep-dive` on a project:
 
 | Item | State | Tracking |
 |---|---|---|
-| `SessionEnd[clear]` + `PreCompact` nudge hooks | Deferred | [D005](adjudications/D005-phase-f-hook-api-incompatibility.md) — retry in v4.1 with flag-file + SessionStart pickup |
+| ~~`SessionEnd[clear]` + `PreCompact` nudge hooks~~ | ✅ Shipped in v4.1 Phase A | Per [D005](adjudications/D005-phase-f-hook-api-incompatibility.md) flag-file + SessionStart pickup. See "v4.0.0 → v4.1.0 (git hygiene)" below. |
 | `/prism-validate-plugins --fix` | Deferred | v3.12.0 per D004 risk #5 |
 | `--smart-drift` mode of `/prism-sync` | Stub (stderr warning) | v3.12.0 per D002 §5 |
 | User hook customization preservation | Not yet | v4.1+ |
 | Tested on macOS native | Not yet | Linux + Windows tested |
+
+---
+
+## v4.0.0 → v4.1.0 (git hygiene + freshness sweep + telemetry)
+
+The v4.1 release adds three things on top of v4.0:
+
+1. **Git-hygiene hook bundle** (Phase A): SessionEnd writes a flag if you exited via `/clear` or with a dirty working tree; PreCompact writes the same flag; the next SessionStart picks it up and nudges. PreToolUse on `Bash(git push *)` asks for confirmation + nudges to run `/code-review` + `/security-review` first.
+2. **SessionStart daily freshness sweep** (Phase B): once per 24h, the SessionStart hook scans plugin cache / update-log / CLAUDE.md mtime / stale agents / tool rotations and surfaces relevant nudges. Domain-grouped roster view added.
+3. **Telemetry auto-opt-in** (Phase C): `/prism-bootstrap` health phase asks whether to enable local-only telemetry. Cross-project rollup feeds the `prism-updater` agent's gap analysis.
+
+### Steps
+
+1. **Pull and re-run the installer.** Same commands as the v3.10→v3.11 upgrade above. The Phase A hooks are written to `~/.claude/hooks/`; the settings fragment is merged in by the installer.
+
+2. **Verify the new hooks are wired.** After install, `grep -E 'SessionEnd|prepush-review|clean-nudge|git-clean-nudge|precompact-nudge' ~/.claude/settings.json` should return matches for all five entries. If any are missing, re-run `/prism-bootstrap` — its plugin-validate phase will detect drift and offer to repair.
+
+3. **Test the git-hygiene nudge.** In any git project: leave an unstaged change, then `/clear`. Open a new Claude Code session in the same project. The first SessionStart should print a `PRISM NUDGE: previous session left N uncommitted changes` line.
+
+4. **Test the pre-push nudge (optional).** Run a `git push` against a feature branch. Claude Code should prompt with the "Run /code-review and /security-review first" ask. Approve to proceed, or set `PRISM_DISABLE_PREPUSH_NUDGE=1` in env to silence.
+
+5. **Opt-in or opt-out of telemetry.** During the next `/prism-bootstrap` run, the health phase will prompt for telemetry consent. Choose "yes" to enable cross-project rollup; choose "no" or pass `--no-telemetry` to skip. See [§Telemetry consent flow](#) below (added in Phase C).
+
+### Off-switches for the new hooks (set in env)
+
+| Env var | Effect |
+|---|---|
+| `PRISM_DISABLE_CLEAR_NUDGE=1` | SessionEnd[clear] flag-writer does nothing |
+| `PRISM_DISABLE_PRECOMPACT_NUDGE=1` | PreCompact flag-writer does nothing |
+| `PRISM_DISABLE_GIT_CLEAN_NUDGE=1` | SessionEnd git-dirty flag-writer does nothing |
+| `PRISM_DISABLE_PREPUSH_NUDGE=1` | PreToolUse pre-push ask is suppressed |
+
+All four are independent. The hook scripts themselves still run (the harness can't be told "skip this hook entirely without removing it") — they just exit 0 as no-ops when the off-switch is set.
+
+### Hard-gate mode (opt-in)
+
+If you want pushes to PROCEED without the ask once you've already run `/code-review`, write a flag file:
+
+```bash
+# bash
+mkdir -p ~/.claude/.prism-flags
+cat > ~/.claude/.prism-flags/review-done__<project-key>.json <<'EOF'
+{"flag":"review-done","branch":"<your-branch>"}
+EOF
+```
+
+The `<project-key>` is `<dir-basename>__<12-char-sha256-of-abs-path>`; the easiest way to compute it is from the helper:
+
+```bash
+node -e "import('$HOME/.claude/tools/lib/prism-flag-file.mjs').then(h => console.log(h.projectKey('$(pwd)')))"
+```
+
+A future PostToolUse hook on `/code-review` completion will write this automatically; for v4.1 the writer is manual (this is plumbing-only — opt-in).
 
 ---
 

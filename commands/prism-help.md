@@ -8,8 +8,9 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 This is the user-facing index for PRISM as of v4.0. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.0** (project-master surface). For migration from v3.x
-see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v4.0** + v4.1 git-hygiene + freshness sweep + telemetry
+opt-in (project-master surface). For migration from v3.x or v4.0 →
+v4.1, see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -81,6 +82,23 @@ them directly:
 | `/prism-health` | `/prism-bootstrap` (health phase) | Wiring health check |
 
 Per D002, these will be removed in v3.12.0+ after a usage soak.
+
+---
+
+## Hooks (auto-activated; no slash command)
+
+PRISM ships hooks that fire on Claude Code lifecycle events. None of
+these have a slash-command entry point; they run automatically. Off-
+switches let you suppress individual nudges via env vars.
+
+| Event | Hook | What it does | Off-switch |
+|---|---|---|---|
+| SessionStart | `prism-session-start.mjs` | Resets project turn counter, runs once-per-day context-tax audit, picks up + emits pending flag-file nudges (v4.1 Phase A), runs daily freshness sweep (v4.1 Phase B). | n/a — core |
+| SessionEnd[matcher=clear] | `prism-clean-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean` if session ended via `/clear`. | `PRISM_DISABLE_CLEAR_NUDGE=1` |
+| SessionEnd (catch-all) | `prism-git-clean-nudge.mjs` (v4.1 Phase A) | Writes flag if git working tree dirty → next session nudges to commit/stash. Skipped in non-git projects. | `PRISM_DISABLE_GIT_CLEAN_NUDGE=1` |
+| PreCompact | `prism-precompact-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean`. | `PRISM_DISABLE_PRECOMPACT_NUDGE=1` |
+| PreToolUse[Bash] | `prism-prepush-review.mjs` (v4.1 Phase A) | Detects `git push *` and asks for confirmation + nudges `/code-review` + `/security-review`. Bypass via per-branch `review-done` flag-file. | `PRISM_DISABLE_PREPUSH_NUDGE=1` |
+| PreToolUse[Bash] | `prism-safety.mjs` | Blocks `rm -rf`, `DROP TABLE`, `git push --force`, etc. Warns on push-to-main. | n/a — safety gate |
 
 ---
 
