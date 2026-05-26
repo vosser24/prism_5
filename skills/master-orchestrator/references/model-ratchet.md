@@ -21,7 +21,7 @@ Track model actually used and whether the task completed without correction (`co
   `consecutive_successful_sonnet_tasks` counter, log to
   `agents/{name}/lessons/improvements.md`: "Deescalated default model
    to sonnet after 5 successful tasks with zero corrections."
-- Manual override available via `/prism-roster @<name> --reset-model`.
+- Manual override available via `node ~/.claude/tools/prism-roster.mjs --reset-model @<name>`.
 
 ## Reset on factory upgrade (NEW v2.7.0)
 
@@ -47,4 +47,4 @@ Reads `~/.claude/.prism-phase-1-5-verdicts.jsonl` (append-only log of OOB review
 - UN-CITED rate ≥ 0.30 → set `pending_upgrade: true`, status: `"upgrade_needed"`, log to `agents/{name}/lessons/improvements.md`: "Evidence-discipline ratchet: UN-CITED rate {rate} over last {N} dispatches."
 - UN-CITED rate < 0.10 AND `pending_upgrade: true` AND no other ratchet flagged → no clear (manual review only — auto-clear deferred to v4.5).
 
-Atomic write: tempfile + rename on roster.json. Per-agent lock via flock on roster.json path (parallel sessions safe).
+Atomic write: tempfile + rename on roster.json. Parallel-session safety: not implemented in v4.4; concurrent `--apply-ratchet` calls can race on roster.json (last-writer-wins). Deferred to v4.5 (flock or lock-file pattern).

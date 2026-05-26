@@ -5,7 +5,7 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 
 # /prism-help — PRISM command index
 
-This is the user-facing index for PRISM as of v4.0. Commands are grouped by
+This is the user-facing index for PRISM as of v4.4. Commands are grouped by
 workflow; the most common entry points come first.
 
 Active version: **v4.4** — OOB PHASE 1.5 reviewer + master-orchestrator refactor + evidence-discipline ratchet. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
@@ -133,6 +133,6 @@ invoke them with a slash command, you trigger them by intent:
 ## See also
 
 - `README.md` — top-level PRISM overview
-- `docs/prism/MIGRATION.md` — v3.10 → v3.11 → v4.0 migration recipe
+- `docs/prism/MIGRATION.md` — v3.x → v4.0 and v4.3 → v4.4 upgrade recipes
 - `CHANGELOG.md` — release-by-release change history
 - `docs/prism/adjudications/D004-v4-product-vision.md` — locked v4.0 design

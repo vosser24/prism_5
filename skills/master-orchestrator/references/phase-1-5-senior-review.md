@@ -111,6 +111,6 @@ For FULL-ROUTINE tasks (classifier output: routine), full PHASE 1.5 is overkill.
 - **Skip** the Correctness / Optimality / Hidden-risks deep dive.
 - **Run** evidence-taxonomy verdict ONLY on the load-bearing claims (typically 1-3 per specialist).
 - **Surface** a 3-line Senior Review section: total claims, EVIDENCED count, UN-CITED count + first sample.
-- **OOB hook** still fires (no change at hook level) — reviewer sees the lite-mode flag in pending file and shortens its own analysis to evidence-only.
+- **OOB hook** still fires (no change at hook level) — the reviewer behaves identically regardless of the master's LITE-vs-full classification. The OOB-reviewer shortening based on a `task_classification` flag is deferred to v4.5; v4.4 ships master-side LITE behavior only (the OOB reviewer always runs its full evidence-only analysis).
 
 Roster gating: an agent's `requires_phase_1_5: true` flag triggers OOB review regardless of routine/novel classification. The LITE variant is the MASTER-side response on routine tasks; the OOB reviewer behaves identically.
