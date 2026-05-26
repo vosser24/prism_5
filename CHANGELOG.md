@@ -15,7 +15,7 @@ Locked design: `docs/prism/adjudications/D004-v4-product-vision.md`.
 Migration guide: `docs/prism/MIGRATION.md`.
 
 ### Added
-- **Phase D — `/prism-deep-dive`** (commits `37c6f34..1011af0`, `5a9a254..d5f3ae7`).
+- **Phase D — `/prism-deep-dive`** (commits `37c6f34..1011af0`, `5a9a254..8d8e27c`).
   - `commands/prism-deep-dive.md` slash command — discovery + ≤5 clarifying
     questions + writes `<project>/.claude/agents/master-<slug>.md`,
     seeded `MEMORY.md`, and `settings.json` `agent: master-<slug>` field.
@@ -66,8 +66,9 @@ Migration guide: `docs/prism/MIGRATION.md`.
 - **`master-orchestrator`** protocol body relocated from agent file to skill
   file. Behavior preserved across `@master-orchestrator` mention and the new
   `master-<slug>` project-agent dispatch path.
-- **`MEMORY.md` 25 KB cap** is now hard-enforced by `tools/lib/prism-state.mjs`
-  on every write (Phase D / D004 §risk #2).
+- **`MEMORY.md` 25 KB cap** is now hard-enforced on every write by
+  `tools/prism-clean.mjs` (`append-decision` / `append-lesson`) and
+  `tools/prism-deep-dive.mjs` (`memory-seed`) — Phase D / D004 §risk #2.
 
 ### Deferred
 - **Phase F — SessionEnd[clear] + PreCompact nudge hooks** — deferred to v4.1

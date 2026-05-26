@@ -195,7 +195,7 @@ defense-in-depth against accidentally pointing it at a real project.
 
 ## What the tests cover
 
-- Schema validation (positive integer `schema_version`, ISO-8601 dates, all five
+- Schema validation (positive integer `schema_version`, ISO-8601 dates, all seven
   required phases, `phase_failures` cap)
 - Checksum: deterministic, key-order-invariant, ignores its own field, detects
   tampering

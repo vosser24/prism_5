@@ -22,7 +22,7 @@
 //       Pretty-print current phase status table. Exit 0.
 //
 //   prism-bootstrap phase-structure [--dry-run]
-//       Phase 3: create the .claude/{references,rules,agents,hooks}/,
+//       Phase 2: create the .claude/{references,rules,agents,hooks}/,
 //       docs/prism/{adjudications,deviations,smoke}/, tasks/ tree.
 //       Idempotent. Marks phase=structure complete on success.
 //

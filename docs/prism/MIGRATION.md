@@ -155,8 +155,9 @@ tightened PHASE 1.5 evidence rules.
      with `memory: project` + `skills: [master-orchestrator]` in the
      frontmatter. The agent's body explains what it does for *this*
      project; the orchestration protocol is in the skill.
-   - `<project>/.claude/MEMORY.md` — seeded with router pointers. Hard 25
-     KB cap (D004 §risk #2) is enforced on every subsequent write.
+   - `<project>/.claude/agents/MEMORY.md` — seeded with router pointers.
+     Hard 25 KB cap (D004 §risk #2) is enforced on every subsequent write
+     by `tools/prism-clean.mjs` and `tools/prism-deep-dive.mjs`.
    - `<project>/.claude/settings.json` — `agent: master-<slug>` field
      written via atomic merge (preserves your other settings).
 
@@ -182,7 +183,7 @@ After running `/prism-deep-dive` on a project:
 
 - `<project>/.claude/agents/master-<slug>.md` exists with frontmatter
   containing `skills: [master-orchestrator]`.
-- `<project>/.claude/MEMORY.md` exists, ≤25 KB.
+- `<project>/.claude/agents/MEMORY.md` exists, ≤25 KB.
 - `<project>/.claude/settings.json` contains an `"agent"` key set to
   `"master-<slug>"`.
 - Open a fresh session in the project; the master agent should engage

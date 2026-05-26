@@ -89,22 +89,48 @@ After Phase K: v4.0 is shippable. Push-strategy decision in T10 handoff.
 
 _to be filled in during T9_
 
-## Cross-implementation review findings (T8 — populated during execution)
+## Cross-implementation review findings (T8 — internal-consistency lens)
 
-_to be filled in during T8 — internal consistency lens_
+Dispatched 2026-05-26 as `pgroup=review` in parallel with T8b. Verdict: **NEEDS-FIX-OPTIONAL**.
 
-## Claude-master code review findings (T8b — populated during execution)
+### MAJOR
 
-_to be filled in during T8b — Claude Code best-practices compliance lens (per `agents/claude-master.md`)_
+- **`tools/prism-bootstrap.mjs:25`** — `phase-structure` header comment labeled "Phase 3" under v2; should be "Phase 2" (structure is phase 2 in the canonical 7-phase order). Adjacent line 30 already says "Sub-step of Phase 2 (structure)" — direct internal contradiction. **Fixed** (Phase K post-review commit).
+- **`tests/v3/state/README.md:198-199`** — "all five required phases" should be "all seven" under v2 schema. T1 caught the upper walkthrough but missed this lower test-coverage bullet. **Fixed**.
 
-Per-artifact verdict matrix (filled at T8b):
+### MINOR (actionable)
+
+- **`CHANGELOG.md:18`** — Phase D's second commit range `5a9a254..d5f3ae7` overlapped into Phase E commits (Phase E is also cited separately on its own line). Trimmed to `5a9a254..8d8e27c` (last Phase D commit). **Fixed**.
+- **`README.md:3, 75`** — "16 hooks" undercount; `hooks/*.mjs` count is 17 (added `agent-write-register` in v3.11.0 Phase A.3 but README count was not bumped). **Fixed** (both occurrences).
+
+### MINOR (deferred — stylistic / out-of-scope)
+
+- **`commands/prism-help.md:38-42`** — no self-listing for `/prism-help`. Stylistic; defer.
+- **`README.md:95`** — D006 adjudication exists but isn't cited in CHANGELOG v4.0 or MIGRATION. Stylistic; defer (D006 is about prism-master canonicalisation, not v4.0 itself).
+- **`docs/prism/MIGRATION.md:113-118`** — could call out Phase letters explicitly in §v4.0. Stylistic; defer.
+
+## Claude-master code review findings (T8b — Claude Code best-practices lens)
+
+Dispatched 2026-05-26 as `pgroup=review` in parallel with T8. Verdict: **NEEDS-FIX-OPTIONAL**.
+
+### Per-artifact verdict matrix
 
 | Artifact | Verdict | Notes |
 |---|---|---|
-| commands/prism-help.md | _pending_ | |
-| commands/prism-bootstrap.md (post-T1 sweep) | _pending_ | |
-| CHANGELOG.md (Phase K entries) | _pending_ | |
-| README.md (Phase K updates) | _pending_ | |
-| docs/prism/MIGRATION.md | _pending_ | |
-| tools/lib/prism-statusline.mjs (or equivalent T6 file) | _pending_ | |
-| settings.json statusLine block format | _pending_ | |
+| `commands/prism-help.md` | **COMPLIANT** | Well-formed frontmatter; terse description; no body/description duplication |
+| `commands/prism-bootstrap.md` (T1 + T6 changes) | **COMPLIANT** | Step N.1 follows file's existing LLM-judged-step pattern; explicit confirm-before-write; AskUserQuestion usage correct |
+| `CHANGELOG.md` (v4.0.0 + v3.11.0) | **NEEDS-FIX → fixed** | Wrong file attribution for MEMORY.md 25 KB cap (Finding 1) |
+| `README.md` (modified surface) | **COMPLIANT** | Status table accurate; architecture matches reality; statusline correctly flagged opt-in |
+| `docs/prism/MIGRATION.md` | **NEEDS-FIX → fixed** | MEMORY.md path drift (Finding 2) — was `.claude/MEMORY.md`, canonical is `.claude/agents/MEMORY.md` |
+| `tools/prism-bootstrap.mjs` (statusline impl) | **COMPLIANT** | JSON shape matches Claude Code statusLine schema; atomic tmp+rename; STATUSLINE_COMMANDS git-guard bypass sound; `--home` mirrors `--root` convention; exit codes 9/11/12 well-chosen; matches `scripts/install-statusline-only.sh` shape exactly |
+| `tests/v3/state/test-prism-bootstrap.mjs` (statusline tests) | **COMPLIANT** | All 10 tests follow file precedent (`mkdtempSync` sandbox, subprocess spawn, `assertEq/assert`, `--home` override, no real `~/.claude/` touch) |
+
+### Findings detail
+
+**Finding 1 (NEEDS-FIX, applied): `CHANGELOG.md:69-70`** — v4.0.0 entry attributed the MEMORY.md 25 KB cap enforcer to `tools/lib/prism-state.mjs`. Verified via Grep: that file does NOT contain the cap. Actual enforcers: `tools/prism-clean.mjs:88` (`MEMORY_MD_HARD_CAP_BYTES = 25 * 1024`, enforced in `append-decision`/`append-lesson` at line 104) and `tools/prism-deep-dive.mjs:284` (same constant, enforced in `memory-seed`). Misattribution would misdirect `/prism-doctor` lookups on "MEMORY.md > 25 KB" failures. **Fixed** — CHANGELOG now points at the two real enforcers.
+
+**Finding 2 (NEEDS-FIX, applied): `docs/prism/MIGRATION.md:158, 185`** — used `<project>/.claude/MEMORY.md` for the project-local memory file. Verified via Grep: canonical path is `<project>/.claude/agents/MEMORY.md` (cited at `tools/prism-deep-dive.mjs:211` and `tools/prism-clean.mjs:20`). The `agents/` segment matters because Claude Code's subagent memory loader scopes to `.claude/agent-memory/<name>/MEMORY.md` (or the project equivalent) — without `agents/` in the path, no loader picks it up. **Fixed** — both occurrences in MIGRATION.md updated, including the verification checklist at line 185.
+
+## Consolidated review verdict (T8 + T8b)
+
+**Both reviews:** NEEDS-FIX-OPTIONAL. Six findings applied (2 MAJOR + 2 actionable MINOR from T8 + 2 NEEDS-FIX from T8b). Three stylistic findings deferred. Phase K artifacts are now internally consistent (T8 lens) AND Claude Code best-practices compliant (T8b lens). Gate 2 cleared; T9 dog-food may proceed.
