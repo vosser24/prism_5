@@ -64,6 +64,8 @@ re-doing the research.
    - source: "from-notebook" (distinguishes from agent-factory-created
      and reconcile-created)
    - default_model: "sonnet" (conservative)
+   - installed_via: "plugin" if $CLAUDE_PLUGIN_ROOT is set, else "manual"
+     (same detection logic as the standard CREATE PROTOCOL)
 
 6. Report:
    "Created agent @<name> from existing notebook <id>.
@@ -86,6 +88,8 @@ that writes to a project-local path.** All other modes write to
 `~/.claude/agents/` per the global-only rule. This mode writes to
 `<project-root>/.claude/agents/master-<slug>.md` because the master is
 project-scoped by definition (D004 §1).
+
+**Note on `installed_via` (v4.3+):** master agents write to project-local `<project-root>/.claude/agents/`, NOT to `~/.claude/agents/`. They are not subject to `/prism-uninstall-cleanup`. Do NOT add an `installed_via` field to the roster entry (or any project-local index) for master agents.
 
 ### When to use
 
@@ -273,6 +277,10 @@ If available:
    - cost_estimate: "$0.00" (Tier 1) or "$X.XX" (Tier 2/3)
    - quality_score: 1-5 from quality gate
    - projects_worked: [{name, date, tasks_completed}]
+   - installed_via: "plugin" if $CLAUDE_PLUGIN_ROOT is set in the factory's environment, else "manual".
+     Detect via bash: installed_via=$([ -n "$CLAUDE_PLUGIN_ROOT" ] && echo plugin || echo manual)
+     This field enables /prism-uninstall-cleanup to identify agents created while PRISM was installed as a plugin.
+     Missing field on legacy entries is treated as "manual" (safe default — never wiped).
 5. Report to orchestrator
 6. EVOLVE TEMPLATES:
    - If a new domain template was created (custom Q1-Q5):
