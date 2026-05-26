@@ -84,10 +84,10 @@ async function run() {
 
   // Test 6: listPendingVerdicts returns all pending SHAs
   total++;
-  mod.writePending('xyz789', {session_id: 'sess-2', specialist_name: '@code-reviewer', task_brief: '', specialist_output: '', phase_0d_challenges: [], extracted_claims: [], block_master: false});
-  mod.writePending('def012', {session_id: 'sess-3', specialist_name: '@security-architect', task_brief: '', specialist_output: '', phase_0d_challenges: [], extracted_claims: [], block_master: false});
+  mod.writePending('aabbccdd', {session_id: 'sess-2', specialist_name: '@code-reviewer', task_brief: '', specialist_output: '', phase_0d_challenges: [], extracted_claims: [], block_master: false});
+  mod.writePending('def01234', {session_id: 'sess-3', specialist_name: '@security-architect', task_brief: '', specialist_output: '', phase_0d_challenges: [], extracted_claims: [], block_master: false});
   const pending = mod.listPendingVerdicts();
-  if (pending.length === 2 && pending.includes('xyz789') && pending.includes('def012')) {
+  if (pending.length === 2 && pending.includes('aabbccdd') && pending.includes('def01234')) {
     pass++;
   } else {
     console.log(`FAIL: listPendingVerdicts returned ${pending.length} (expected 2)`);

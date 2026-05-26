@@ -36,12 +36,12 @@ function dotClaudeDir() {
 }
 
 function pendingPath(sha) {
-  if (!/^[a-z0-9]{6,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
+  if (!/^[a-f0-9]{8,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
   return join(dotClaudeDir(), `.prism-phase-1-5-pending-${sha}.json`);
 }
 
 function resultPath(sha) {
-  if (!/^[a-z0-9]{6,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
+  if (!/^[a-f0-9]{8,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
   return join(dotClaudeDir(), `.prism-phase-1-5-verdicts-${sha}.json`);
 }
 
