@@ -206,6 +206,7 @@ async function main() {
         summon_panel: !!inheritedSentinel.summon_panel,
         force_opus: !!inheritedSentinel.force_opus,
         mode: MODE,
+        phase_1_5: null,  // v4.4: extended by hooks/prism-phase-1-5-oob.mjs with {fired, variant, verdict_pre, verdict_post, agreement_rate}
       });
       const advice = `PRISM TIER ROUTER: ${inheritedSentinel.tier} (continuation-inherit from previous turn). Source: continuation-inherit`;
       const out = {
@@ -265,6 +266,7 @@ async function main() {
       force_opus: sentinel.force_opus,
       cache_key: classification.cache_key,
       mode: MODE,
+      phase_1_5: null,  // v4.4: extended by hooks/prism-phase-1-5-oob.mjs with {fired, variant, verdict_pre, verdict_post, agreement_rate}
     });
 
     const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel, classification.source, sessionId);
@@ -277,7 +279,7 @@ async function main() {
     process.stdout.write(JSON.stringify(out));
     process.exit(0);
   } catch (e) {
-    appendLog({event: 'prompt_tier_router', error: String(e && e.message || e)});
+    appendLog({event: 'prompt_tier_router', error: String(e && e.message || e), phase_1_5: null});
     process.exit(0);
   }
 }
