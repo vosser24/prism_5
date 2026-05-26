@@ -3,7 +3,7 @@ name: evidence-taxonomy
 description: 6-class evidence taxonomy + per-claim verdict protocol (EVIDENCED/UN-CITED/REJECTED) + factory-upgrade trigger + delegation boilerplate. Token-disambiguation note for REJECTED (1.5) vs REJECT (0d).
 ---
 
-# Evidence Taxonomy
+### Evidence taxonomy
 
 Every non-trivial claim a specialist returns belongs to a class. Each class
 has a fixed bar for what counts as evidence. If the bar is not met, the
