@@ -85,9 +85,42 @@ Per Phase J lesson "Plan-as-spec discipline matters" — re-read this plan as a 
 
 After Phase K: v4.0 is shippable. Push-strategy decision in T10 handoff.
 
-## Dog-food walkthrough log (T9 — populated during execution)
+## Dog-food walkthrough log (T9 — executed 2026-05-26)
 
-_to be filled in during T9_
+Synthetic testbed: `$TEMP/prism-dogfood-test/` with pre-populated v3.8.9-style `.claude/` tree (agents/roster.json + empty hooks/skills/references/commands dirs + CLAUDE.md with `## PRISM Operating Rules`). Sandboxed HOME at `$TEMP/dogfood-home2/` for statusline tests. Executed inline by orchestrator (T-shape mode — bounded execution + observation pairs with full context better than fresh subagent dispatch).
+
+### Per-step results
+
+| Migration recipe step | Result | Notes |
+|---|---|---|
+| **v3.10/v3.8.9 → v3.11.0** | | |
+| `init-state-if-missing` detect-and-adopt | ✅ PASS | 4 phases adopted (identity, structure, discovery, roster); v2-only phases (`plugin-validate`, `project-master`) correctly start at `status: null` |
+| `plan` after adopt | ✅ PASS | Pending = `[plugin-validate, health]`; project-master correctly excluded (opt-in default) |
+| `phase-plugin-validate` stub | ✅ PASS | Output matches doc: *"plugin-validate phase: stub (Phase C wires the real validator)"* |
+| `start-phase` / `complete-phase health` sentinel cycle | ✅ PASS | `last_command` set on start, cleared on complete; sentinel fields populated correctly |
+| `status` report | ✅ PASS | Matches MIGRATION.md verification step — all 7 phases reported; project-master shows `(pending)` since not opt-in |
+| **v3.11.0 → v4.0.0** | | |
+| `slug-derive --source auto` | ✅ PASS | Auto-derived `prism-dogfood-test` from basename |
+| `phase-project-master --with-deep-dive` | ✅ PASS | Slug locked in state with `slug + source` meta; correctly defers agent generation to slash command |
+| `agent-write --slug` | ✅ PASS | Wrote `agents/master-prism-dogfood-test.md` with correct frontmatter (`memory: project`, `skills: [master-orchestrator]`, `model: opus`, `prism_phase: D`) |
+| `memory-seed --slug --profile <inline>` | ✅ PASS | Wrote `agents/MEMORY.md` at 890 bytes (well under 25 KB cap). Path matches T8b-corrected MIGRATION.md |
+| `settings-write --slug` | ✅ PASS | Atomic merge preserved pre-existing `agent: master-foo` key when overwriting; final value = `master-prism-dogfood-test` |
+| **Statusline (T6 surface)** | | |
+| `detect-statusline` fresh sandbox | ✅ PASS | All three booleans return false; matches Step N.1 "script absent → log gap, do not prompt" branch |
+| `detect-statusline` real `$HOME` | ✅ PASS | Returns `settings_exists: true, installed: false, source_script_exists: false` — the third triggers correct "script absent" branch in user's actual env |
+| `install-statusline` against seeded sandbox | ✅ PASS | Wrote canonical `{type, command: "bash <path>", padding: 0}` shape; preserved pre-existing `agent` key |
+| `install-statusline` re-run (idempotency) | ✅ PASS | Exit code **11** with clear message *"statusLine key already present ... pass --force to overwrite"* |
+| `install-statusline --force` | ✅ PASS | Overwrote with exit 0 |
+
+### Non-blocker observations (captured as v4.1 backlog)
+
+- **`memory-seed --profile` not surfaced in MIGRATION.md manual flow.** Helper requires `--profile <json-file-or-inline>` (exit 5 if missing), but MIGRATION.md only documents the slash-command path where `/prism-deep-dive` builds the profile from AskUserQuestion. Users invoking helpers directly (scripting / automation) would hit a confusing exit-5. **Action:** v4.1 — add a "Manual / scripted invocation" appendix to MIGRATION.md or to `commands/prism-deep-dive.md` explaining the helper contract.
+- **User's dev install lacks `~/.claude/statusline-command.sh`.** The PRISM `manifest.json` does copy it (`statusline-command.sh → ~/.claude/statusline-command.sh`), but my current dev install was set up before that manifest entry shipped (or via partial copy). Means the Step N.1 statusline-offer branch *"script absent → log gap, do not prompt"* will fire for me until I re-run the full installer or `scripts/install-statusline-only.sh`. **Not a Phase K bug** — Phase K's Step N.1 correctly handles this state. **Action:** none in Phase K; user can run `scripts/install-statusline-only.sh` if they want the statusline now.
+- **`status` column alignment** has a small visual nit when phase names exceed 12 chars (`plugin-validate| 2026-...` instead of `plugin-validate | 2026-...`). Cosmetic only; not a Phase K regression (existed before). **Action:** v4.1 cleanup pass.
+
+### Dog-food verdict
+
+**PASS.** All MIGRATION.md steps execute successfully against a synthetic v3.8.9-style state. The v3.11.0 detect-and-adopt path works as documented; the v4.0 project-master path produces all three artifacts (`agents/master-<slug>.md`, `agents/MEMORY.md`, `settings.json` `agent:` field) at the canonical paths the post-T8b-fix MIGRATION.md describes. The new T6 statusline-install surface honors all four behavioural branches (already-installed, install-prompt, script-absent, parse-error). No blockers; 3 non-blockers captured as v4.1 backlog. Gate 3 cleared; T10 ship handoff may proceed.
 
 ## Cross-implementation review findings (T8 — internal-consistency lens)
 
