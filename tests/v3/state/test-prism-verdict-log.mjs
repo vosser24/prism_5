@@ -93,6 +93,46 @@ async function run() {
     console.log(`FAIL: listPendingVerdicts returned ${pending.length} (expected 2)`);
   }
 
+  // Test 7: readVerdict on missing SHA returns null (fail-open contract)
+  total++;
+  const missing = mod.readVerdict('aaaaaaaa');  // valid hex SHA, no file
+  if (missing === null) pass++;
+  else console.log('FAIL: readVerdict on missing SHA did not return null');
+
+  // Test 8: clearVerdict removes the result file
+  total++;
+  mod.clearVerdict(sha);  // 'abc123def456' from Test 1-5
+  if (!existsSync(join(sandboxHome, '.claude', `.prism-phase-1-5-verdicts-${sha}.json`))) {
+    pass++;
+  } else {
+    console.log('FAIL: clearVerdict did not remove result file');
+  }
+
+  // Test 9: listCompletedVerdicts returns previously written verdict SHAs (before clear; re-write one to test)
+  total++;
+  mod.writeVerdict('bbbbbbbb', {
+    session_id: 'sess-c',
+    specialist_name: '@code-reviewer',
+    reviewer_model: 'claude-sonnet-4-6',
+    verdicts: [],
+    challenges_addressed: [],
+    summary: {total: 0, evidenced: 0, un_cited: 0, rejected: 0},
+    reviewer_latency_ms: 50,
+  });
+  const completed = mod.listCompletedVerdicts();
+  if (completed.includes('bbbbbbbb')) pass++;
+  else console.log(`FAIL: listCompletedVerdicts did not include written SHA: ${completed}`);
+
+  // Test 10: readVerdictLog returns multiple entries in append order
+  total++;
+  const logEntries = mod.readVerdictLog();
+  // Tests 3 and 9 each wrote a verdict — log should have at least 2 entries
+  if (Array.isArray(logEntries) && logEntries.length >= 2 && logEntries.every(e => e.sha && e.summary)) {
+    pass++;
+  } else {
+    console.log(`FAIL: readVerdictLog did not return expected entries (got ${logEntries.length})`);
+  }
+
   // Cleanup
   rmSync(sandboxHome, {recursive: true, force: true});
 

@@ -54,8 +54,15 @@ function atomicWrite(path, content) {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
     renameSync(tmp, path);
+    return true;
   } catch {
-    try { writeFileSync(path, content); } catch {}
+    try {
+      writeFileSync(path, content);
+      return true;
+    } catch (e) {
+      process.stderr.write(`PRISM verdict-flag: write failed for ${path}: ${e && e.message}\n`);
+      return false;
+    }
   }
 }
 
@@ -67,7 +74,8 @@ export function writePending(sha, payload) {
     created_at: new Date().toISOString(),
     ...payload,
   });
-  atomicWrite(p, body);
+  const ok = atomicWrite(p, body);
+  if (!ok) process.stderr.write(`PRISM verdict-flag: writePending failed for sha ${sha} — hook will proceed without pending file\n`);
   return p;
 }
 
@@ -85,13 +93,15 @@ export function clearPending(sha) {
 
 export function writeVerdict(sha, payload) {
   const p = resultPath(sha);
+  const ts = new Date().toISOString();
   const body = JSON.stringify({
     schema_version: 1,
     sha,
-    completed_at: new Date().toISOString(),
+    completed_at: ts,
     ...payload,
   });
-  atomicWrite(p, body);
+  const ok = atomicWrite(p, body);
+  if (!ok) process.stderr.write(`PRISM verdict-flag: writeVerdict failed for sha ${sha} — verdict will not be persisted\n`);
   // Append summary line to the log
   const logLine = JSON.stringify({
     sha,
@@ -99,9 +109,13 @@ export function writeVerdict(sha, payload) {
     specialist_name: payload.specialist_name,
     reviewer_model: payload.reviewer_model,
     summary: payload.summary,
-    completed_at: new Date().toISOString(),
+    completed_at: ts,
   }) + '\n';
-  try { appendFileSync(logPath(), logLine); } catch {}
+  try {
+    appendFileSync(logPath(), logLine);
+  } catch (e) {
+    process.stderr.write(`PRISM verdict-flag: log append failed for sha ${sha}: ${e && e.message}\n`);
+  }
   return p;
 }
 
