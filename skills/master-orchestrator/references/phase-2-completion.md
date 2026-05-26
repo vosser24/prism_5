@@ -21,42 +21,9 @@ For EACH agent used in this task:
   - If corrections since last upgrade ≥ 3: set `pending_upgrade: true`, `status: "upgrade_needed"`
   - Update `last_updated` timestamp
 
-**v2.7.0 — Escalation / deescalation rules (model ratchet with reset):**
-
-Track model actually used and whether the task completed without
-correction (`consecutive_successful_sonnet_tasks` counter in roster).
-
-- **Escalate up** (existing behavior):
-  - If sonnet-tier task required Opus-level correction → increment
-    `corrections_since_last_upgrade`
-  - If `corrections_since_last_upgrade ≥ 3` → set `default_model: "opus"`,
-    log reason to `agents/{name}/lessons/improvements.md`
-
-- **Deescalate down** (NEW):
-  - If opus-locked agent completes 5 consecutive sonnet-tier tasks with
-    zero corrections → reset `default_model: "sonnet"`, zero the
-    `consecutive_successful_sonnet_tasks` counter, log to
-    `agents/{name}/lessons/improvements.md`: "Deescalated default model
-     to sonnet after 5 successful tasks with zero corrections."
-  - Manual override available via `/prism-roster @<name> --reset-model`.
-
-- **Reset on factory upgrade** (NEW):
-  - When `@agent-factory` completes an upgrade (quick refresh or full
-    rebuild), clear ALL of:
-      - `default_model: null`   (next hire re-evaluates from scratch)
-      - `pending_upgrade: false`
-      - `corrections_since_last_upgrade: 0`
-      - `consecutive_successful_sonnet_tasks: 0`
-  - Log to `agents/{name}/lessons/improvements.md`: "Upgrade complete.
-     Default model reset; next hire re-evaluates based on current task
-     complexity."
-  - Rationale: an opus-lock accumulated before refresh shouldn't
-    persist past the refresh — the refreshed agent deserves a fresh
-    evaluation against its new knowledge.
+Apply the escalation, deescalation, and factory-upgrade reset rules per `model-ratchet.md`.
 
 Write the updated roster.json back.
-
-See `model-ratchet.md` for the full ratchet rules (escalate / deescalate / reset) reference.
 
 ## 2c. Knowledge Persistence
 - Create/update context adapter: agent experience/context-adapters/{project}.md
