@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "3.8.9",
+  "version": "4.1.0",
   "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 16 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
   "author": {
     "name": "vosser24",
@@ -83,6 +83,15 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-prepush-review.mjs\""
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -137,6 +146,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-kb-autosync.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-agent-write-register.mjs\""
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -182,7 +200,26 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-session-start.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-precompact-nudge-flag.mjs\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-clean-nudge-flag.mjs\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-git-clean-nudge.mjs\""
           }
         ]
       }
