@@ -32,7 +32,7 @@
 
 import {spawnSync} from 'node:child_process';
 import {existsSync, readdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {join, resolve, dirname} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
 
 // ------------------------------ args ------------------------------
@@ -276,3 +276,20 @@ try {
   stderr.write('error: ' + (e.stack || e.message || String(e)) + '\n');
   exit(1);
 }
+
+// v4.4: invoke evidence-discipline ratchet at end-of-session hygiene.
+// Fail-open: missing tool or any error is silently ignored.
+// Suppress "No ratchet changes." to keep output clean.
+try {
+  const ratchetCwd = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
+  const fallback = join(ratchetCwd, 'prism-roster.mjs');
+  const H = process.env.HOME || process.env.USERPROFILE || '';
+  const installed = join(H, '.claude', 'tools', 'prism-roster.mjs');
+  const tool = existsSync(installed) ? installed : (existsSync(fallback) ? fallback : null);
+  if (tool) {
+    const r = spawnSync('node', [tool, '--apply-ratchet'], {encoding: 'utf-8', timeout: 10000});
+    if (r.stdout && !/No ratchet changes/.test(r.stdout) && !/No verdict log/.test(r.stdout)) {
+      stdout.write(`\nEvidence-discipline ratchet:\n${r.stdout}`);
+    }
+  }
+} catch {}
