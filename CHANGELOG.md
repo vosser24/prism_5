@@ -4,6 +4,57 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.4.0] - 2026-05-26
+
+Three composing layers: master-orchestrator skill refactor, out-of-band PHASE 1.5 reviewer, telemetry + lite-1.5. Closes 14 of 32 evaluation-flow gaps from the v4.4 brainstorm. Backward-compatible: legacy agents (no `requires_phase_1_5` tag) run unchanged.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
+
+### Layer A — master-orchestrator skill refactor
+
+- Split 770-line `skills/master-orchestrator/SKILL.md` into a ~130-line navigation index + 10 focused references under `skills/master-orchestrator/references/`.
+- New references: `phase-0a-inventory.md`, `phase-0-team-assembly.md`, `phase-0d-adversarial.md`, `phase-1-execution.md`, `phase-1-5-senior-review.md`, `phase-2-completion.md`, `evidence-taxonomy.md`, `adversarial-review.md`, `dispatch-shapes.md`, `model-ratchet.md`.
+- Closes E3 (compaction risk) and G3 (REJECTED-vs-REJECT token-namespace disambiguation explicit in references).
+
+### Layer B — Out-of-band PHASE 1.5 reviewer
+
+- New hook `hooks/prism-phase-1-5-oob.mjs` (SubagentStop matcher): when the just-stopped subagent's roster entry has `requires_phase_1_5: true`, the hook invokes an independent reviewer via direct Anthropic SDK call to `claude-sonnet-4-6`.
+- New verdict-flag lib at `tools/lib/prism-verdict-flag.mjs` (per-SHA pending/result files + append-only verdict log).
+- New reviewer system prompt at `agents/phase-1-5-oob-reviewer.md`.
+- New verdict-log reader CLI at `tools/prism-phase-1-5-verdicts.mjs`.
+- Roster schema additions: per-agent `requires_phase_1_5` and `requires_phase_1_5_block` flags (default false). Schema_version bumped to 4.4.0.
+- SessionStart hook extended to pick up completed verdicts and surface UN-CITED/REJECTED items as `[Prior turn]` notices (all-EVIDENCED is silent).
+- `agents/claude-master.md` PRISM-composition section refreshed for v4.3+v4.4 reality (closes G4).
+- Closes A2 (master judges own subagents), A4 + F1 (0d→1.5 challenge cross-link), B5 (verdict log persisted), D2-lite (FULL-ROUTINE LITE coverage), G4 (claude-master stale composition).
+
+### Layer C — Telemetry + lite-1.5
+
+- `tools/prism-telemetry-aggregate.mjs` adds `--phase-1-5-agreement` subcommand for reviewer↔master agreement signal.
+- `tools/prism-roster.mjs` is a new CLI with `--apply-ratchet` (evidence-discipline ratchet from verdict log, threshold ≥ 30% UN-CITED rate over last 10 dispatches → `pending_upgrade: true`), `--reset-model`, `--tag-1-5`, `--untag-1-5`.
+- `/prism-clean` automatically runs `--apply-ratchet` at end-of-session hygiene.
+- LITE PHASE 1.5 variant for FULL-ROUTINE tasks (documented in `references/phase-1-5-senior-review.md`); evidence-only verdict on load-bearing claims, 3-line Senior Review section.
+- Routing log entries now carry a `phase_1_5: null` placeholder field (extended by the OOB hook).
+- Closes A6 (bounce-2 measurement), B2/B4/B6/B7 (telemetry surfaces), F3 (atomic roster updates safe under parallel sessions).
+
+### Kill switches
+
+- `PRISM_DISABLE_OOB_REVIEW=1` env var disables the hook per-session.
+- Setting `requires_phase_1_5: false` on a roster entry disables OOB per-agent.
+- Removing the hook registration from `settings.fragment.json` disables system-wide.
+
+### Deferred to v4.5 / v5.0
+
+18 gaps identified in the brainstorm not closed in v4.4 — see `docs/prism/plans/2026-05-26-v4.4-phase-1-5-oob-reviewer-design.md` §"What's NOT in v4.4" for the full list. Highlights:
+- A1: panel-side OOB reviewer (v4.5)
+- A5: verdict regression scanner (v5.0)
+- Family C: structured-output / SARIF (v4.5+v5.0)
+- D3: SCOPE GUARD enforcement (v4.5)
+- F4: semantic cross-project knowledge index (v5.0)
+
+### Tests
+
+New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 3 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0%, exit 0). Full suite: 253/253 across 19 files.
+
 ## [4.3.0] - 2026-05-26
 
 The **plugin-vs-manual provenance** release. Enables safe pre-uninstall hygiene for PRISM-as-plugin installs without risking manually-created agents.
