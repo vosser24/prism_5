@@ -26,6 +26,7 @@ metadata:
 | `tools/prism-deep-dive.mjs` (default flip + prose alignment) | `tools/prism-deep-dive.mjs` (overwrites prior) | **Phase E re-sync** |
 | `commands/prism-deep-dive.md` (instruction update for new default) | `commands/prism-deep-dive.md` (overwrites prior) | **Phase E re-sync** |
 | `tools/prism-clean.mjs` + `tools/prism-deep-dive.mjs` + `commands/prism-clean.md` + `commands/prism-deep-dive.md` (Phase H append-decision / append-lesson / agent-diff / --upgrade) | (already covered by bulk rows above; re-sync required) | **Phase H** |
+| `skills/master-orchestrator/SKILL.md` (Phase J — tightened evidence rules in PHASE 1.5) | (already covered by Phase E row above; re-sync required) | **Phase J** |
 
 ## Cleanup commands (run AFTER smoke is captured + before re-installing from main)
 
