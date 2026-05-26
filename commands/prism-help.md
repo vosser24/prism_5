@@ -28,8 +28,10 @@ Active version: **v4.4** — OOB PHASE 1.5 reviewer + master-orchestrator refact
 | `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Opt-in entry point. |
 
 The `master-orchestrator` skill (Phase E) is loaded automatically by every
-`master-<slug>` agent — no slash command needed. Its protocol body lives at
-`~/.claude/skills/master-orchestrator/SKILL.md`.
+`master-<slug>` agent — no slash command needed. Its navigation index lives at
+`~/.claude/skills/master-orchestrator/SKILL.md`; detailed protocols are in
+`~/.claude/skills/master-orchestrator/references/` (v4.4 refactor — 10 focused
+reference files replacing the previous 770-line monolith).
 
 > **Where agents live (Q7 clarification, v4.1).** `@agent-factory` writes domain specialists to `~/.claude/agents/<name>.md` (global, reusable across all projects). Only `master-<slug>` agents (v4.0 Phase D, via `/prism-deep-dive`) are written to `<project>/.claude/agents/master-<slug>.md` — they're project-scoped by definition. Every other factory mode is global-write.
 
