@@ -59,13 +59,15 @@ test('PHASE 1.5 defines the three verdict tokens EVIDENCED / UN-CITED / REJECTED
   assert(/\bREJECTED\b/.test(raw), 'REJECTED token missing');
 });
 
-test('PHASE 1.5 escalation rule: bounce ONCE then ship as known limitation', () => {
-  // The exact phrasing — pinning this prevents the rule from being softened
-  // to "bounce twice" or "ship anyway" without an explicit follow-up decision.
-  assert(/bounce[^.]*\bONCE\b/i.test(raw),
-         'expected "bounce ... ONCE" rule in PHASE 1.5');
-  assert(/known limitation/i.test(raw),
-         'expected "known limitation" escalation in PHASE 1.5');
+test('PHASE 1.5 escalation rule: bounce ONCE then ship as KNOWN LIMITATION', () => {
+  // Pin uppercase ONCE and KNOWN LIMITATION — these are deliberate verdict-style
+  // tokens introduced by Phase J. The pre-Phase-J prose uses lowercase ("bounced
+  // back once", "Known limitations remaining"), so case-sensitive matching here
+  // gives the TDD-red state Task 2 must satisfy.
+  assert(/[Bb]ounce[^.\n]{1,60}\bONCE\b/.test(raw),
+         'expected "Bounce ... ONCE" (uppercase ONCE token) rule in PHASE 1.5');
+  assert(/KNOWN LIMITATION/.test(raw),
+         'expected "KNOWN LIMITATION" (uppercase singular token) in PHASE 1.5');
 });
 
 test('Visible output requires a rejected-claims line in the user-facing Senior Review', () => {
@@ -78,7 +80,7 @@ test('Visible output requires a rejected-claims line in the user-facing Senior R
 test('Delegation boilerplate names the taxonomy classes specialists must satisfy', () => {
   // The specialist-facing block must enumerate the categories so the bounce
   // criteria are visible at delegation time, not just at review time.
-  const categories = ['performance', 'security', 'correctness', 'compatibility'];
+  const categories = ['performance', 'security', 'correctness', 'completeness', 'compatibility'];
   for (const cat of categories) {
     assert(new RegExp(`\\b${cat}\\b`, 'i').test(raw),
            `delegation boilerplate must name claim category "${cat}"`);
@@ -101,7 +103,7 @@ test('Five Unbreakable Rules block is preserved verbatim (rule 4 + rule 5 anchor
 test('PHASE 0d still requires "at least two substantive challenges" (no bump to ≥3)', () => {
   // Match the PHASE 0d sentence specifically — the floor phrase appears in
   // multiple places (rule 4 + PHASE 0d body); both must read "two", not "three".
-  const phase0dBlock = raw.split(/^### PHASE 0d:/m)[1] || '';
+  const phase0dBlock = (raw.split(/^### PHASE 0d:/m)[1] || '').split(/^###/m)[0];
   assert(phase0dBlock.length > 0, 'PHASE 0d section missing entirely');
   assert(/at least two substantive challenges/.test(phase0dBlock),
          'PHASE 0d floor phrase must remain "two" — D004 §7 defers ≥3 to v4.1');
