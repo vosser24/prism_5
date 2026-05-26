@@ -1359,7 +1359,7 @@ PRISM runs as a layered system:
 Plus the surrounding infrastructure:
 
 - **Roster** — `~/.claude/skills/prism-plan/references/roster.json`, unified index of agents + skills + tools + mcps. v4.3 adds `installed_via` provenance tag; v4.4 adds per-agent `requires_phase_1_5` and `requires_phase_1_5_block` flags.
-- **Verdict log** (v4.4) — `~/.claude/.prism-phase-1-5-verdicts.jsonl`, append-only. Read by `tools/prism-phase-1-5-verdicts.mjs` (query CLI) and `tools/prism-roster.mjs --apply-ratchet` (evidence-discipline ratchet).
+- **Verdict log** (v4.4) — `~/.claude/.prism-phase-1-5-verdicts.jsonl`, append-only. Read by `tools/prism-phase-1-5-verdicts.mjs` (query CLI) and `tools/prism-roster.mjs --apply-ratchet` (evidence-discipline ratchet — Phase 4 deliverable, see plan).
 - **Telemetry rollup** (v4.1+) — `~/.claude/.prism-telemetry-rollup.json`, opt-in. v4.4 adds `--phase-1-5-agreement` subcommand for reviewer↔master agreement signal.
 - **Slash commands** — `/prism-bootstrap`, `/prism-sync`, `/prism-clean`, `/prism-health`, `/prism-roster`, `/prism-uninstall-cleanup` (v4.3+). The v4.4 verdict-log query is exposed via direct `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs`.
 

@@ -45,7 +45,16 @@ try {
   process.exit(1);
 }
 
-const sinceMs = opts.since ? new Date(opts.since).getTime() : (Date.now() - 30 * 24 * 60 * 60 * 1000);
+let sinceMs;
+if (opts.since) {
+  sinceMs = new Date(opts.since).getTime();
+  if (Number.isNaN(sinceMs)) {
+    process.stderr.write(`Invalid --since date: ${opts.since}. Expected YYYY-MM-DD.\n`);
+    process.exit(2);
+  }
+} else {
+  sinceMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+}
 entries = entries.filter(e => new Date(e.completed_at).getTime() >= sinceMs);
 if (opts.agent) {
   const target = opts.agent.startsWith('@') ? opts.agent : '@' + opts.agent;
