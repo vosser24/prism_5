@@ -88,5 +88,10 @@
     "agent_count": 2,
     "skill_count": 1,
     "last_indexed": "ISO-date"
+  },
+  "_schema_pilot_v4_4": {
+    "__comment": "v4.4 OOB PHASE 1.5 reviewer pilot guidance. Pilot tagging is per-install (not shipped with default roster.json). Recommended pilot specialists: @claude-master, @code-reviewer, @security-architect. To enable OOB review for an agent, add 'requires_phase_1_5: true' to its agent entry. Block-mode (requires_phase_1_5_block: true) is reserved for agents whose output drives an irreversible downstream action.",
+    "pilot_candidates": ["@claude-master", "@code-reviewer", "@security-architect"],
+    "default_mode": "async"
   }
 }
