@@ -53,7 +53,7 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
 
 ### Tests
 
-New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 3 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0%, exit 0). Full suite: 253/253 across 19 files.
+New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 3 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0%, exit 0). Full suite: 262/262 across 17 files (16 state + 1 hooks).
 
 ## [4.3.0] - 2026-05-26
 

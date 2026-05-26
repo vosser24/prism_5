@@ -34,6 +34,7 @@ import {spawnSync} from 'node:child_process';
 import {existsSync, readdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {join, resolve, dirname} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
+import {fileURLToPath} from 'node:url';
 
 // ------------------------------ args ------------------------------
 
@@ -281,7 +282,7 @@ try {
 // Fail-open: missing tool or any error is silently ignored.
 // Suppress "No ratchet changes." to keep output clean.
 try {
-  const ratchetCwd = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
+  const ratchetCwd = resolve(dirname(fileURLToPath(import.meta.url)));
   const fallback = join(ratchetCwd, 'prism-roster.mjs');
   const H = process.env.HOME || process.env.USERPROFILE || '';
   const installed = join(H, '.claude', 'tools', 'prism-roster.mjs');
