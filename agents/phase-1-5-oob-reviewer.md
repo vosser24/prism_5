@@ -40,7 +40,7 @@ If the cited evidence DOES support the claim: verdict EVIDENCED.
 
 ## Phase 0d challenge cross-link
 
-If `phase_0d_challenges` is non-empty, check whether each challenge that the expert ACCEPTed at 0d is reflected in the specialist's output. If the revision implied by the ACCEPT is missing, flag the challenge as `addressed: false` and note what's missing in your verdict's reasoning.
+If `phase_0d_challenges` is non-empty, check whether each challenge that the expert responded `ACCEPT` to at Phase 0d is reflected in the specialist's output. If the revision implied by the ACCEPT is missing, flag the challenge as `addressed: false` and note what's missing in your verdict's reasoning.
 
 ## Output format
 
@@ -56,6 +56,14 @@ Return EXACTLY this JSON (no prose, no markdown wrappers):
       "taxonomy_row": "Performance",
       "evidence_required": "Benchmark numbers (env + N runs) OR comparison against named baseline.",
       "reasoning": "Output asserts 'X is fast' without any benchmark or baseline comparison."
+    },
+    {
+      "claim_id": "claim-2",
+      "class": "correctness",
+      "verdict": "EVIDENCED",
+      "taxonomy_row": "Correctness",
+      "evidence_required": "",
+      "reasoning": "Output cites the test path tests/foo.test.js::handles_empty_input."
     }
   ],
   "challenges_addressed": [
@@ -66,13 +74,15 @@ Return EXACTLY this JSON (no prose, no markdown wrappers):
     }
   ],
   "summary": {
-    "total": 1,
-    "evidenced": 0,
+    "total": 2,
+    "evidenced": 1,
     "un_cited": 1,
     "rejected": 0
   }
 }
 ```
+
+`REJECTED` is the third valid verdict — use when the evidence cited does NOT support the claim (e.g., a benchmark on the wrong workload). Same JSON shape; verdict field set to `"REJECTED"`.
 
 Do NOT include any text outside this JSON. The hook parses it directly.
 
