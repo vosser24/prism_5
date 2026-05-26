@@ -8,7 +8,7 @@
 //   - ### Evidence taxonomy heading
 //   - ### Per-claim verdict heading
 //   - EVIDENCED / UN-CITED / REJECTED verdict tokens
-//   - "bounce back ONCE" + "known limitation" escalation phrases
+//   - "bounce back ONCE" + "KNOWN LIMITATION" escalation phrases
 //   - "Claims rejected" bullet in the Visible output subsection
 //
 // Also asserts the negative — D004 §7 invariants the phase MUST preserve:
