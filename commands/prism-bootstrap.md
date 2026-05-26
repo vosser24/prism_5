@@ -1,31 +1,36 @@
 ---
 name: prism-bootstrap
-description: One-command PRISM bootstrap — drives the 5-phase state machine from "no PRISM" to "fully operational." Idempotent. Replaces /prism-init + /prism-discover + /prism-roster --reconcile + /prism-health.
+description: One-command PRISM bootstrap — drives the 7-phase state machine from "no PRISM" to "fully operational." Idempotent. Replaces /prism-init + /prism-discover + /prism-roster --reconcile + /prism-health.
 ---
 
-# /prism-bootstrap — v3.10.0 unified bootstrap
+# /prism-bootstrap — v3.11.0 unified bootstrap
 
 Locked design: `docs/prism/adjudications/D001-bootstrap-unification.md`,
-`docs/prism/adjudications/D002-v3.10-hooks-drift-scope.md`. Schema lives in
+`docs/prism/adjudications/D002-v3.10-hooks-drift-scope.md`,
+`docs/prism/adjudications/D004-v4-product-vision.md` (Phase B brought the
+schema from v1's 5 phases to v2's 7 phases). Schema lives in
 `tools/lib/prism-state.mjs`. Phase machine is driven by
 `tools/prism-bootstrap.mjs` (deterministic ops) plus the LLM-judged steps
 described below.
 
 **Phases (locked schema, ordered):**
 
-| # | Phase     | Kind         | Notes |
-|---|-----------|--------------|-------|
-| 1 | identity  | LLM-judged   | Audit/create CLAUDE.md |
-| 2 | structure | deterministic | Helper creates dir tree + capture-conventions.md |
-| 3 | discovery | LLM-judged   | Codebase + DB + API scan |
-| 4 | roster    | LLM-judged   | Reconcile orphan agents |
-| 5 | health    | LLM-judged   | Verify wiring; report green/yellow/red |
+| # | Phase            | Kind          | Notes |
+|---|------------------|---------------|-------|
+| 1 | identity         | LLM-judged    | Audit/create CLAUDE.md |
+| 2 | structure        | deterministic | Helper creates dir tree + capture-conventions.md |
+| 3 | plugin-validate  | deterministic | v3.11.0 sentinel stub; `/prism-validate-plugins` runs the real validator |
+| 4 | discovery        | LLM-judged    | Codebase + DB + API scan |
+| 5 | roster           | LLM-judged    | Reconcile orphan agents |
+| 6 | project-master   | LLM-judged    | **Opt-in only** (`--with-deep-dive`); generates `master-<slug>` agent via `/prism-deep-dive` |
+| 7 | health           | LLM-judged    | Verify wiring; report green/yellow/red |
 
 **Flags:**
 - `--dry-run` — print plan, write nothing
 - `--interactive` — confirm between phases
 - `--force` — re-run all phases even if state shows them complete
 - `--skip-discover` — for projects without DB/API surface
+- `--with-deep-dive` — opt-in to phase 6 (project-master); default is skipped (D004 §8)
 
 ---
 
@@ -46,7 +51,9 @@ The helper:
 - If `.claude/.prism-state.json` exists and is valid → no-op.
 - If `.claude/` is already populated (v3.8.9 install) → synthesizes state
   from the filesystem (`detect-and-adopt`), marking phases whose evidence
-  is on disk as `completed_at: now, synthesized: true`.
+  is on disk as `completed_at: now, synthesized: true`. The v2-only phases
+  (`plugin-validate`, `project-master`) are never auto-synthesized — they
+  have no filesystem signal under v3.8.9 (D004 §4).
 - Otherwise → writes a fresh initial state.
 
 Then run: `node ~/.claude/tools/prism-bootstrap.mjs plan [--force] [--skip-discover]`
@@ -137,7 +144,31 @@ Note: this phase only *creates* directories. Populating `.claude/agents/`
 and global-memory pointers in CLAUDE.md (identity phase) happens in those
 later phases — see D003 §"Populating skills, agents, and global memory".
 
-### Phase 3 — discovery
+### Phase 3 — plugin-validate
+
+Goal: surface plugin-installation problems before later phases depend on
+them. v3.11.0 ships a **sentinel stub**; the full validator lives in
+`/prism-validate-plugins` (D004 Phase C).
+
+Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-plugin-validate`
+
+What the stub does today:
+- Marks the `plugin-validate` phase complete with `{stub: true, note: ...}`
+- Writes a one-line status: *"plugin-validate phase: stub (Phase C wires the real validator)"*
+- Lets the 7-phase planner advance past plugin-validate on idempotent reruns
+
+What `/prism-validate-plugins` does when invoked directly:
+- Shells out to `claude plugin list --json`
+- Reports broken hooks, missing manifests, skill-name conflicts, MCP reachability
+- **Report-only** in v3.11.0; `--fix` is deferred to v3.12.0 (D004 risk #5)
+
+If the stub fails (no `phase-plugin-validate` subcommand on this build):
+treat as a Phase B install drift — stop and surface the version mismatch
+to the user.
+
+Complete with meta: `{"stub": true, "note": "Phase C will populate plugin reachability + version drift checks."}`.
+
+### Phase 4 — discovery
 
 Goal: scan codebase + DB + API into `.claude/references/`.
 
@@ -157,7 +188,7 @@ if (ageMs < 24 * 3600_000 && !opts.force) skip;
 
 Complete with meta: `{"references_count": N, "tables_indexed": N, "endpoints_indexed": N}`.
 
-### Phase 4 — roster
+### Phase 5 — roster
 
 Goal: reconcile orphan agents (agents installed in `~/.claude/agents/` but
 not in this project's `.claude/agents/roster.json`).
@@ -169,14 +200,6 @@ phase 6 explicitly gates here: "**confirm before roster.json write**".
 If `--interactive`: hold for user confirmation.
 
 Complete with meta: `{"agents_registered": N, "orphans_remaining": N}`.
-
-### Phase 5 — health
-
-Goal: verify wiring; produce a green/yellow/red report.
-
-Invoke the existing `/prism-health` checks. Report status to the user.
-
-Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
 
 ### Phase 6 — project-master (opt-in via --with-deep-dive)
 
@@ -212,6 +235,14 @@ silently. Surface a one-line nudge at the end of bootstrap:
 
 Per D004 §8, this is the opt-in default. Do NOT auto-prompt or auto-run.
 
+### Phase 7 — health
+
+Goal: verify wiring; produce a green/yellow/red report.
+
+Invoke the existing `/prism-health` checks. Report status to the user.
+
+Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
+
 ---
 
 ## Step N — final report
@@ -221,9 +252,9 @@ Run: `node ~/.claude/tools/prism-bootstrap.mjs status`
 Then summarize for the user:
 
 - ✅ Phases completed this run
-- ⚠ Phases skipped (and why)
+- ⚠ Phases skipped (and why — especially project-master if `--with-deep-dive` was not passed)
 - ❌ Phases that failed (and where they're recorded)
-- Suggested next action: `/prism-sync` (when implemented) for maintenance,
+- Suggested next action: `/prism-sync` for ongoing maintenance,
   or `/prism-clean` before /exit to capture session lessons.
 
 If new files were written: show `git status --short` and ask the user

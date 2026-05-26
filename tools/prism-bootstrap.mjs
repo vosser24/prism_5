@@ -27,10 +27,10 @@
 //       Idempotent. Marks phase=structure complete on success.
 //
 //   prism-bootstrap phase-conventions [--dry-run]
-//       Phase 4: write .claude/rules/capture-conventions.md if absent.
-//       Marks phase=conventions complete on success. (Conventions live
-//       under the structure phase's metadata since the locked schema has
-//       only five phases — see notes below.)
+//       Sub-step of Phase 2 (structure): write .claude/rules/capture-conventions.md
+//       if absent. Conventions live under the structure phase's metadata
+//       rather than as their own phase — the locked 7-phase schema treats
+//       capture-conventions as part of scaffold creation (see notes below).
 //
 //   prism-bootstrap start-phase <name>
 //       Set last_command="<name>" in state for crash-resume tracking.
@@ -49,10 +49,12 @@
 // All subcommands accept --root <path> (default cwd) and refuse to run
 // in a directory without .git/ unless --no-git-guard is passed.
 //
-// Schema note: D001/D002 lock five phases — identity, structure,
-// discovery, roster, health. The "conventions" step from D001's table
-// (phase 4) is part of the structure phase: this helper records it
-// under phases.structure.conventions_written = true.
+// Schema note: D004 §B locks seven phases — identity, structure,
+// plugin-validate, discovery, roster, project-master, health. (D001/D002
+// originally locked five; the schema v1→v2 migration in Phase B added
+// plugin-validate and project-master.) The "conventions" step from
+// D001's original table is part of the structure phase: this helper
+// records it under phases.structure.conventions_written = true.
 
 import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
