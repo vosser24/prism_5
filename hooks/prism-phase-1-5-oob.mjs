@@ -268,6 +268,7 @@ async function invokeReviewerInline(sha, flagLib) {
     const parsed = parseVerdictJson(text);
     if (!parsed) {
       logEvent('parse-failed', {sha});
+      flagLib.clearPending(sha);
       return null;
     }
     parsed.session_id = pending.session_id;
@@ -286,34 +287,45 @@ async function invokeReviewerInline(sha, flagLib) {
 
 async function invokeReviewerHttp({apiKey, model, systemPrompt, userMessage, maxTokens}) {
   // Node 18+ global fetch. Returns parsed response body or throws on non-2xx.
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{role: 'user', content: userMessage}],
-    }),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    const err = new Error('Anthropic API ' + res.status + ': ' + txt.slice(0, 200));
-    err.status = res.status;
-    throw err;
+  // 45s deadline — well inside the 60s SubagentStop hook timeout.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 45_000);
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: ac.signal,
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{role: 'user', content: userMessage}],
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      const err = new Error('Anthropic API ' + res.status + ': ' + txt.slice(0, 200));
+      err.status = res.status;
+      throw err;
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
   }
-  return await res.json();
 }
 
 function parseVerdictJson(text) {
   try {
-    // Strip markdown fences if present
-    const cleaned = text.replace(/^```(json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    return JSON.parse(cleaned);
+    // Scan for first { / last } — robust against prose-wrapped reviewer responses
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+    const end = text.lastIndexOf('}');
+    if (end < start) return null;
+    return JSON.parse(text.slice(start, end + 1));
   } catch {
     return null;
   }
@@ -337,7 +349,7 @@ if (process.argv[2] === '--async-worker' && process.argv[3]) {
     const flagLib = await import(pathToFileURL(existsSync(libPath) ? libPath : join(process.cwd(), 'tools', 'lib', 'prism-verdict-flag.mjs')).href);
     await invokeReviewerInline(sha, flagLib);
     process.exit(0);
-  })();
+  })().catch(() => process.exit(0));
 } else {
   main().then(code => process.exit(code || 0)).catch(() => process.exit(0));
 }

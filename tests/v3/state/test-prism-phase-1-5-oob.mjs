@@ -14,6 +14,11 @@ let total = 0;
 // Set up sandbox HOME
 const sandboxHome = mkdtempSync(join(tmpdir(), 'prism-oob-test-'));
 const sandboxClaude = join(sandboxHome, '.claude');
+
+// Register cleanup that runs regardless of how the process exits
+process.on('exit', () => {
+  try { rmSync(sandboxHome, {recursive: true, force: true}); } catch {}
+});
 mkdirSync(sandboxClaude, {recursive: true});
 
 // Write a minimal roster.json with @code-reviewer tagged requires_phase_1_5: true
@@ -131,9 +136,6 @@ total++;
     }
   }
 }
-
-// Cleanup
-rmSync(sandboxHome, {recursive: true, force: true});
 
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);
