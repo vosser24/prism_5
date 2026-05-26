@@ -57,14 +57,14 @@ const rawAll = raw + '\n' + rawEvidenceTax + '\n' + rawSeniorReview + '\n' + raw
 
 // v4.4: "Evidence taxonomy" heading moved to references/evidence-taxonomy.md
 test('PHASE 1.5 introduces an "Evidence taxonomy" subsection heading', () => {
-  assert(/^### Evidence taxonomy\b/m.test(rawEvidenceTax),
-         'expected "### Evidence taxonomy" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
+  assert(/^## Evidence taxonomy\b/m.test(rawEvidenceTax),
+         'expected "## Evidence taxonomy" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
 });
 
 // v4.4: "Per-claim verdict" heading moved to references/evidence-taxonomy.md
 test('PHASE 1.5 introduces a "Per-claim verdict" subsection heading', () => {
-  assert(/^### Per-claim verdict\b/m.test(rawEvidenceTax),
-         'expected "### Per-claim verdict" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
+  assert(/^## Per-claim verdict\b/m.test(rawEvidenceTax),
+         'expected "## Per-claim verdict" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
 });
 
 test('PHASE 1.5 defines the three verdict tokens EVIDENCED / UN-CITED / REJECTED', () => {
@@ -95,7 +95,7 @@ test('Visible output requires a rejected-claims line in the user-facing Senior R
   // The bullet must mention rejected claims so the user sees the bounce outcome
   // rather than getting a clean-but-opaque summary.
   // v4.4: visible-output section lives in references/phase-1-5-senior-review.md.
-  assert(/Claims rejected|rejected (?:as |claims)/i.test(rawSeniorReview),
+  assert(/Claims rejected|rejected (?:as |claims)/.test(rawSeniorReview),
          'expected a "Claims rejected" bullet in PHASE 1.5 Visible output (phase-1-5-senior-review.md)');
 });
 

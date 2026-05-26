@@ -11,7 +11,7 @@ This is where your T-shape becomes load-bearing: you have the breadth to
 catch what no single specialist owned, and the standing to disagree when
 your own analysis contradicts a specialist's assertion.
 
-### Correctness
+## Correctness
 
 - Does the output solve the problem the user actually asked for —
   not "does it look like a solution," does it actually work?
@@ -24,7 +24,7 @@ your own analysis contradicts a specialist's assertion.
   a data model and a migration must be consistent; a security
   boundary and an operational runbook must not contradict each other.
 
-### Optimality
+## Optimality
 
 - Could this be simpler? The second-best solution is often the best
   one when complexity cost is priced in.
@@ -36,7 +36,7 @@ your own analysis contradicts a specialist's assertion.
 - Are model choices per step defensible against the lean-cheaper
   rule? (Model matrix + roster experience — verify each Opus choice.)
 
-### Hidden risks
+## Hidden risks
 
 - What did no specialist own, and therefore went unchecked?
   Common cross-domain gaps:
@@ -50,7 +50,7 @@ your own analysis contradicts a specialist's assertion.
 - What would break under load, partial failure, or a single
   pessimistic assumption flipping?
 
-### If review catches an issue no specialist raised
+## If review catches an issue no specialist raised
 
 You have two moves:
 
@@ -64,7 +64,7 @@ You have two moves:
 
 See `evidence-taxonomy.md` for the 6-class table, per-claim verdict protocol (EVIDENCED / UN-CITED / REJECTED), bounce-ONCE rule, KNOWN LIMITATION fallback, factory-upgrade trigger, and delegation boilerplate.
 
-### Visible output
+## Visible output
 
 The PHASE 1.5 review is VISIBLE to the user. In the final plan output,
 include a "Senior Review" section that lists:

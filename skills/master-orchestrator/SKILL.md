@@ -82,7 +82,7 @@ When multiple agents work on the same task:
 Cleanup: workspace deleted after task completion.
 
 ### DYNAMIC MODEL SELECTION
-Read `model-matrix.md` for routing rules. Apply per task complexity + agent experience:
+Read `~/.claude/skills/prism-plan/references/model-matrix.md` for routing rules. Apply per task complexity + agent experience:
 
 For AGENT TASKS:
   New agent (0-2 tasks completed) + complex task → opus

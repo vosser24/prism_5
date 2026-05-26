@@ -3,7 +3,7 @@ name: evidence-taxonomy
 description: 6-class evidence taxonomy + per-claim verdict protocol (EVIDENCED/UN-CITED/REJECTED) + factory-upgrade trigger + delegation boilerplate. Token-disambiguation note for REJECTED (1.5) vs REJECT (0d).
 ---
 
-### Evidence taxonomy
+## Evidence taxonomy
 
 Every non-trivial claim a specialist returns belongs to a class. Each class
 has a fixed bar for what counts as evidence. If the bar is not met, the
@@ -25,7 +25,7 @@ means restating a fact already established elsewhere in the panel
 output, or describing what the specialist literally did (`I read the
 file`) — not opinions about the result.
 
-### Per-claim verdict
+## Per-claim verdict
 
 For each non-trivial claim a specialist returns, YOU issue exactly one
 verdict. This mirrors PHASE 0d's `ACCEPT / REJECT / CONDITIONAL` shape
@@ -59,7 +59,7 @@ claims and bounce. The specialist's job is to produce evidenced
 deliverables; yours is to refuse to launder un-cited assertion into the
 final plan.
 
-# Factory-upgrade trigger
+## Factory-upgrade trigger
 
 **Factory-upgrade trigger:** if a single PHASE 1.5 pass produces **≥3
 UN-CITED verdicts on the same specialist**, set
@@ -79,7 +79,7 @@ with many uncited claims has evidence-discipline issues, while one
 with recurring domain gaps has knowledge-coverage issues. Either path
 is sufficient on its own; neither blocks the other.
 
-# Standard of evidence — delegation boilerplate
+## Standard of evidence — delegation boilerplate
 
 When you spawn a specialist via `Agent()`, include this structured block
 verbatim in the prompt. The taxonomy must be visible to the specialist
@@ -122,7 +122,7 @@ faster. The user gets more value from a plan that says "we couldn't
 verify edge-case coverage" than from one that claims coverage without
 proof.
 
-# Factory escalation from senior review
+## Factory escalation from senior review
 
 If PHASE 1.5 surfaces a gap that a specialist SHOULD have caught but
 didn't, AND the miss pattern recurs (2+ misses on the same specialist
