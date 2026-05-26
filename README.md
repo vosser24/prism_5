@@ -43,7 +43,7 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 
 (Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
 
-## Status — works / half-works / known-gaps (v4.0.0)
+## Status — works / half-works / known-gaps (v4.4.0)
 
 | Journey | State | Notes |
 |---|---|---|
@@ -101,9 +101,9 @@ Tag any rostered specialist with `requires_phase_1_5: true` to enable an indepen
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.0.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.0 upgrade recipe with rollback
-- `/prism-help` (in Claude Code) — curated v4.0 slash-command index
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.4.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.4 upgrade recipes
+- `/prism-help` (in Claude Code) — curated v4.4 slash-command index
 - [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
