@@ -25,7 +25,7 @@ means restating a fact already established elsewhere in the panel
 output, or describing what the specialist literally did (`I read the
 file`) — not opinions about the result.
 
-# Per-claim verdict
+### Per-claim verdict
 
 For each non-trivial claim a specialist returns, YOU issue exactly one
 verdict. This mirrors PHASE 0d's `ACCEPT / REJECT / CONDITIONAL` shape

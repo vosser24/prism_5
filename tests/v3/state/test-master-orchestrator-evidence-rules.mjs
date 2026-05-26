@@ -63,8 +63,8 @@ test('PHASE 1.5 introduces an "Evidence taxonomy" subsection heading', () => {
 
 // v4.4: "Per-claim verdict" heading moved to references/evidence-taxonomy.md
 test('PHASE 1.5 introduces a "Per-claim verdict" subsection heading', () => {
-  assert(/^# Per-claim verdict\b/m.test(rawEvidenceTax),
-         'expected "# Per-claim verdict" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
+  assert(/^### Per-claim verdict\b/m.test(rawEvidenceTax),
+         'expected "### Per-claim verdict" heading inside evidence-taxonomy.md (v4.4: moved from SKILL.md)');
 });
 
 test('PHASE 1.5 defines the three verdict tokens EVIDENCED / UN-CITED / REJECTED', () => {

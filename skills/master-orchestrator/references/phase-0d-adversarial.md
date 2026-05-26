@@ -53,7 +53,7 @@ If a position collects an ACCEPT that materially revises the approach,
 add a Phase 1 checkpoint immediately after execution begins so the
 revision gets tested empirically before the plan commits to it.
 
-See: `~/.claude/skills/prism-plan/references/adversarial-review.md`
+See: ~/.claude/skills/prism-plan/references/adversarial-review.md
 for the full protocol, common challenge patterns, and examples.
 
 ## Panel.json write (v4.4 NEW — closes A4/F1 0d→1.5 cross-link)
