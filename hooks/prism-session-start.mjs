@@ -224,6 +224,23 @@ try {
     }
   } catch {}
 
+  // ── v4.1 Phase B: daily freshness sweep ──
+  // One throttled (24h) pass closes 6 audit questions (plugin drift,
+  // stale agents, update-log age, CLAUDE.md mtime, tools-registry
+  // rotations). Off-switch: PRISM_DISABLE_FRESHNESS_SWEEP=1.
+  // Fail-open: any error skips silently.
+  if (String(process.env.PRISM_DISABLE_FRESHNESS_SWEEP || '') !== '1') {
+    try {
+      const sweep = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-freshness-sweep.mjs')).href).catch(() => null);
+      if (sweep && typeof sweep.runFreshnessSweep === 'function') {
+        const r = sweep.runFreshnessSweep({home: H});
+        if (r && Array.isArray(r.notices)) {
+          for (const n of r.notices) notices.push(n);
+        }
+      }
+    } catch {}
+  }
+
   if (notices.length) process.stdout.write(notices.join('\n'));
 } catch {}
 process.exit(0);

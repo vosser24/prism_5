@@ -8,12 +8,14 @@
     "Escalation ratchet: 3 corrections → opus-lock. Deescalation: 5 consecutive successful sonnet tasks with zero corrections → reset to sonnet.",
     "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade).",
     "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks.",
-    "v3.1.0 adds optional team_id field per agent. null = global/no team. String = arbitrary team identifier (e.g., 'platform-team', 'eng-uk'). /prism-roster --team <id> filters display to matching agents. Tier 3 visibility lever — surgical, no auth model implied. Admin convention: keep team_ids consistent across team's installs."
+    "v3.1.0 adds optional team_id field per agent. null = global/no team. String = arbitrary team identifier (e.g., 'platform-team', 'eng-uk'). /prism-roster --team <id> filters display to matching agents. Tier 3 visibility lever — surgical, no auth model implied. Admin convention: keep team_ids consistent across team's installs.",
+    "v4.1 adds the optional domain_groups block (top-level sibling to agents/skills/tools/mcps). Populated by /prism-index from agent.core_domains + skill.domains arrays — groups resources by shared domain so /prism-roster --by-domain can render a coverage view. domain_groups is DERIVED data: re-run /prism-index after agent/skill changes to refresh. Schema example at _schema_example_domain_group."
   ],
   "agents": {},
   "skills": {},
   "tools": {},
   "mcps": {},
+  "domain_groups": {},
   "index_meta": {
     "last_indexed": null,
     "indexer_version": null,
@@ -75,5 +77,13 @@
     "domains": ["array", "of", "domain", "tags"],
     "keywords": ["extracted", "terms"],
     "status": "connected | configured"
+  },
+  "_schema_example_domain_group": {
+    "__comment": "Domain-group entries: keyed by lowercase-kebab domain tag. Aggregates agent + skill names that declare this domain in their core_domains / domains arrays. Re-derived on every /prism-index run; never hand-edited. Used by /prism-roster --by-domain.",
+    "agents": ["agent-name-1", "agent-name-2"],
+    "skills": ["skill-name-1"],
+    "agent_count": 2,
+    "skill_count": 1,
+    "last_indexed": "ISO-date"
   }
 }

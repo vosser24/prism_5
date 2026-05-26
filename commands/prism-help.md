@@ -33,12 +33,14 @@ The `master-orchestrator` skill (Phase E) is loaded automatically by every
 `master-<slug>` agent — no slash command needed. Its protocol body lives at
 `~/.claude/skills/master-orchestrator/SKILL.md`.
 
+> **Where agents live (Q7 clarification, v4.1).** `@agent-factory` writes domain specialists to `~/.claude/agents/<name>.md` (global, reusable across all projects). Only `master-<slug>` agents (v4.0 Phase D, via `/prism-deep-dive`) are written to `<project>/.claude/agents/master-<slug>.md` — they're project-scoped by definition. Every other factory mode is global-write.
+
 ## Agent management
 
 | Command | What it does |
 |---|---|
 | `/prism-app-expert` | Create or update an app expert agent for a specific application. |
-| `/prism-roster` | Display the PRISM agent talent pool (the `--reconcile` mode is now part of `/prism-bootstrap`'s roster phase). |
+| `/prism-roster` | Display the PRISM agent talent pool. Modes: default (table), `--team <id>` (filter by team), `--by-domain` (v4.1 — group by domain tag, reads `roster.domain_groups`). The `--reconcile` mode is now part of `/prism-bootstrap`'s roster phase. |
 | `/prism-retire` | Archive an unused PRISM agent. |
 | `/prism-recommend` | Scan project and recommend external tools with fit-scoring. |
 
