@@ -141,6 +141,10 @@
           {
             "type": "command",
             "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-phase-0d-challenges.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-phase-0d-oob.mjs"
           }
         ]
       },

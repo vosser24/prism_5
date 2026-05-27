@@ -170,6 +170,10 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-phase-0d-challenges.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-phase-0d-oob.mjs\""
           }
         ]
       },
