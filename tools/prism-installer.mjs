@@ -296,47 +296,59 @@ function makeBackup() {
   const backupDir = join(CLAUDE_DIR, `.prism-install-backup-${ts}`);
   mkdirSync(backupDir, {recursive: true});
 
-  const candidateNames = ['settings.json', 'roster.json', 'prism-policy.json'];
-  const candidates = [
-    join(CLAUDE_DIR, 'settings.json'),
-    join(CLAUDE_DIR, 'skills', 'prism-plan', 'references', 'roster.json'),
-    join(CLAUDE_DIR, 'prism-policy.json'),
-  ];
+  // Load manifest once
+  const manifest = (() => {
+    try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')); } catch { return null; }
+  })();
+  if (!manifest) die('failed to load install-manifest.json for backup');
+
+  // Build the union of paths to back up (relative to CLAUDE_DIR)
+  const filePaths = (manifest.files || []).map(f => f.dst);
+  const dirPaths = (manifest.directories || []).map(d => d.dst);
+  const extraPaths = manifest.backup_paths || [];
 
   const backupFailures = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const src = candidates[i];
-    const name = candidateNames[i];
-    if (existsSync(src)) {
-      const rel = src.slice(CLAUDE_DIR.length + 1);
-      const dst = join(backupDir, rel);
-      mkdirSync(dirname(dst), {recursive: true});
-      try {
+  const filesBackedUp = [];
+
+  // Helper: copy one path (file or dir) preserving relative structure
+  const backupOne = (relPath) => {
+    const src = join(CLAUDE_DIR, relPath);
+    if (!existsSync(src)) return;
+    const dst = join(backupDir, relPath);
+    mkdirSync(dirname(dst), {recursive: true});
+    try {
+      const st = lstatSync(src);
+      if (st.isDirectory()) {
+        cpSync(src, dst, {recursive: true});
+      } else {
         cpSync(src, dst);
-      } catch (e) {
-        backupFailures.push({file: name, error: e.message});
       }
+      filesBackedUp.push(relPath);
+    } catch (e) {
+      backupFailures.push({file: relPath, error: e.message});
     }
-  }
+  };
+
+  for (const p of filePaths) backupOne(p);
+  for (const p of dirPaths) backupOne(p);
+  for (const p of extraPaths) backupOne(p);
 
   if (backupFailures.length > 0) {
     console.warn(`[prism-installer] WARNING: ${backupFailures.length} file(s) failed to back up:`);
     for (const f of backupFailures) console.warn(`  - ${f.file}: ${f.error}`);
+    // Existing settings.json refusal logic — keep it
     if (backupFailures.some(f => f.file === 'settings.json')) {
       die(`settings.json backup failed; refusing to proceed (pass --no-backup to override).`, 3);
     }
   }
 
-  // I1: write backup-metadata.json with source repo SHA + recovery note
-  const manifest = (() => {
-    try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')); } catch { return null; }
-  })();
+  // I1: backup-metadata.json — update files_backed_up to the real list
   const metadata = {
     timestamp,
     installed_prism_version: getInstalledPrismVersion(),
-    installer_version: manifest ? manifest.prism_version : '4.4.0',
+    installer_version: manifest.prism_version,
     source_repo_sha: getSourceRepoSha(),
-    files_backed_up: candidateNames,
+    files_backed_up: filesBackedUp,   // now the actual list, not the legacy 3
     recovery_note: 'To rollback hook/tool code: git checkout <source_repo_sha> in your PRISM clone and re-run install.',
   };
   try {

@@ -137,5 +137,14 @@
     ".prism-flags/",
     ".prism-task-*/",
     ".prism-telemetry-rollup.json"
+  ],
+  "backup_paths": [
+    "settings.json",
+    "prism-policy.json",
+    "MEMORY.md",
+    ".prism-routing.jsonl",
+    ".prism-spend.jsonl",
+    ".prism-phase-1-5-verdicts.jsonl",
+    ".prism-telemetry-rollup.json"
   ]
 }
