@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// PRISM v4.4 — roster management CLI
+// PRISM v4.5 — roster management CLI
 //
 // Subcommands:
 //   --apply-ratchet         apply evidence-discipline ratchet from verdict log
 //   --reset-model <agent>   manual deescalation reset
 //   --tag-1-5 <agent>       set requires_phase_1_5: true
 //   --untag-1-5 <agent>     set requires_phase_1_5: false
+//   --skip-next-oob <spec>  set skip_next_oob: true on the named agent (auto-cleared after one dispatch)
 //
 // All writes to roster.json are atomic (tempfile + rename). On --apply-ratchet,
 // processes verdict log read-only; only writes roster.json if any change is
@@ -17,6 +18,7 @@
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, appendFileSync} from 'fs';
 import {join} from 'path';
+import {withRosterLock} from './lib/prism-roster-lock.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
@@ -34,8 +36,9 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--reset-model') { mode = 'reset-model'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '--tag-1-5') { mode = 'tag-1-5'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '--untag-1-5') { mode = 'untag-1-5'; agentArg = args[++i]; seenModes.push(a); }
+  else if (a === '--skip-next-oob') { mode = 'skip-next-oob'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '-h' || a === '--help') {
-    process.stdout.write(`Usage: prism-roster [--apply-ratchet | --reset-model <agent> | --tag-1-5 <agent> | --untag-1-5 <agent>]\n`);
+    process.stdout.write(`Usage: prism-roster [--apply-ratchet | --reset-model <agent> | --tag-1-5 <agent> | --untag-1-5 <agent> | --skip-next-oob <spec>]\n`);
     process.exit(0);
   }
 }
@@ -171,4 +174,25 @@ if (mode === 'tag-1-5' || mode === 'untag-1-5') {
   writeRoster(roster);
   process.stdout.write(`@${agent}: requires_phase_1_5=${mode === 'tag-1-5'}\n`);
   process.exit(0);
+}
+
+if (mode === 'skip-next-oob') {
+  if (!agentArg || agentArg.startsWith('--')) {
+    process.stderr.write('--skip-next-oob requires a spec name argument\n');
+    process.exit(2);
+  }
+  const spec = agentArg.replace(/^@/, '');
+  (async () => {
+    await withRosterLock(ROSTER, async () => {
+      const r = readRoster();
+      if (!r.agents?.[spec]) {
+        process.stderr.write(`[prism-roster] no agent '${spec}' in roster\n`);
+        process.exit(1);
+      }
+      r.agents[spec].skip_next_oob = true;
+      writeRoster(r);
+      process.stdout.write(`[prism-roster] skip_next_oob set for '${spec}' (auto-cleared after one dispatch)\n`);
+    });
+    process.exit(0);
+  })().catch(e => { process.stderr.write(`[prism-roster] --skip-next-oob failed: ${e.message}\n`); process.exit(1); });
 }

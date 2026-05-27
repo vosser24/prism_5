@@ -121,6 +121,29 @@ async function main() {
       return acc;
     }, {});
 
+  // V1 — one-shot skip: if ANY panel specialist has skip_next_oob, skip this
+  // Phase 0d review and atomically clear all such flags.
+  const skipKeys = Object.keys(relevantAgents).filter(k => relevantAgents[k]?.skip_next_oob === true);
+  if (skipKeys.length > 0) {
+    try {
+      await withRosterLock(rosterPath, async () => {
+        const r = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+        let changed = false;
+        for (const k of skipKeys) {
+          if (r.agents?.[k]?.skip_next_oob) {
+            delete r.agents[k].skip_next_oob;
+            changed = true;
+          }
+        }
+        if (changed) {
+          writeFileSync(rosterPath, JSON.stringify(r, null, 2), 'utf-8');
+        }
+      });
+    } catch (e) { process.stderr.write(`[phase-0d-oob] failed to clear skip_next_oob: ${e.message}\n`); }
+    process.stderr.write(`[phase-0d-oob] skip_next_oob honored for [${skipKeys.join(', ')}]; flags cleared\n`);
+    process.exit(0);
+  }
+
   // Reviewer prompt
   let promptText = '';
   try {
