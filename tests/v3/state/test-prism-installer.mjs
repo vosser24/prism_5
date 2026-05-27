@@ -326,6 +326,69 @@ function snapshotFiles(dir) {
   rmSync(home, {recursive: true, force: true});
 }
 
+// ─── Test M3: non-PRISM hook preservation (regression for C1 statusLine fix) ──
+// Seeds a sandbox settings.json with one PRISM hook PLUS one non-PRISM hook.
+// After install, the non-PRISM hook must still be present.
+{
+  const home = makeSandbox();
+  const claudeDir = join(home, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+
+  // Seed settings with: one non-PRISM PreToolUse hook + one PRISM hook
+  const seedSettings = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'Bash',
+          hooks: [{type: 'command', command: 'bash some-other-tool.sh'}],
+        },
+        {
+          hooks: [{type: 'command', command: 'bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-hook.mjs'}],
+        },
+      ],
+    },
+  };
+  writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(seedSettings, null, 2));
+
+  const r = run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  ok('TM3: install exits 0 with mixed hooks in seed settings', r.status === 0);
+
+  const settings = readJson(join(claudeDir, 'settings.json'));
+  // Check non-PRISM hook is still present
+  let hasNonPrismHook = false;
+  let hasPrismHook = false;
+  if (settings && settings.hooks) {
+    for (const evHooks of Object.values(settings.hooks)) {
+      for (const group of evHooks) {
+        for (const h of (group.hooks || [])) {
+          if (h.command && h.command.includes('some-other-tool.sh')) hasNonPrismHook = true;
+          if (h.command && h.command.includes('prism-exec')) hasPrismHook = true;
+        }
+      }
+    }
+  }
+  ok('TM3: non-PRISM hook (some-other-tool.sh) preserved after install', hasNonPrismHook);
+  ok('TM3: PRISM hooks also present after install', hasPrismHook);
+
+  // Also verify statusLine preservation (C1 regression test)
+  const settingsWithStatusLine = {
+    statusLine: {type: 'command', command: 'bash my-custom-statusline.sh'},
+    hooks: {},
+  };
+  const home2 = makeSandbox();
+  const claudeDir2 = join(home2, '.claude');
+  mkdirSync(claudeDir2, {recursive: true});
+  writeFileSync(join(claudeDir2, 'settings.json'), JSON.stringify(settingsWithStatusLine, null, 2));
+  run(['install', '--quiet'], {HOME: home2, USERPROFILE: home2});
+  const settings2 = readJson(join(claudeDir2, 'settings.json'));
+  const statusLinePreserved = settings2 && settings2.statusLine &&
+    settings2.statusLine.command && settings2.statusLine.command.includes('my-custom-statusline');
+  ok('TM3: user custom statusLine preserved (C1 regression)', statusLinePreserved);
+  rmSync(home2, {recursive: true, force: true});
+
+  rmSync(home, {recursive: true, force: true});
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);
