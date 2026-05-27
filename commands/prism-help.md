@@ -5,10 +5,10 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 
 # /prism-help — PRISM command index
 
-This is the user-facing index for PRISM as of v4.4. Commands are grouped by
+This is the user-facing index for PRISM as of v4.5. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.4** — OOB PHASE 1.5 reviewer + master-orchestrator refactor + evidence-discipline ratchet. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v4.5** — out-of-band Phase 0d panel reviewer + installer hardening (`--target`, `update`, `--purge-state`, expanded backup) + telemetry tooling (no calibration) + SCOPE GUARD + alternatives-considered schema. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 

@@ -100,7 +100,7 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
 
-## Status — works / half-works / known-gaps (v4.4.0)
+## Status — works / half-works / known-gaps (v4.5.0)
 
 | Journey | State | Notes |
 |---|---|---|
@@ -130,10 +130,23 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 | OOB PHASE 1.5 reviewer (v4.4) | ✅ Shipped (v4.4) | SubagentStop hook invokes independent reviewer; verdict log + SessionStart pickup; opt-in per-agent via `prism-roster --tag-1-5` |
 | master-orchestrator skill refactor (v4.4) | ✅ Shipped (v4.4) | SKILL.md 770→~130 lines; 10 focused reference files under `references/` |
 | Evidence-discipline ratchet (v4.4) | ✅ Shipped (v4.4) | `prism-roster --apply-ratchet` reads verdict log; ≥30% UN-CITED rate → `pending_upgrade=true`; auto-runs in `/prism-clean` |
+| OOB Phase 0d panel reviewer (v4.5) | ✅ Shipped (v4.5) | `PostToolUse[Write]` on `.prism-task-*/panel.json` invokes independent reviewer; verdict surfaces next turn via SessionStart pickup; bypass via `prism-roster --skip-next-oob <spec>` |
+| Telemetry tooling — no calibration (v4.5) | ✅ Shipped (v4.5) | `phase_0d_challenge` + `dispatch_cap` events log to `.prism-routing.jsonl` schema 3; `tools/prism-telemetry-aggregate.mjs --agreement` reads them. Calibration decisions deferred to v4.6 |
+| Installer `--target <dir>` + `update` subcommand (v4.5) | ✅ Shipped (v4.5) | Multi-target installs; `update` chains detect→backup→install with `Already at vX` idempotency; `.prism-version` marker tracks installed version |
+| Expanded backup + `--purge-state` uninstall (v4.5) | ✅ Shipped (v4.5) | Backup now covers 94 paths (was 3); `--purge-state` wipes user state with interactive confirm |
+| SCOPE GUARD + alternatives_considered schema (v4.5) | ✅ Shipped (v4.5, advisory) | `panel-guard` Path B emits stderr on out-of-scope positions; `PRISM_SCOPE_GUARD=strict` blocks; G2 validates `rationale.alternatives_considered[]` shape |
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 
 See `tests/v3/plan.md` for the comprehensive user-journey test grid and
-`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0 and v4.3 → v4.4).
+`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0 and v4.4 → v4.5).
+
+### v4.5 — Out-of-band Phase 0d reviewer + installer hardening
+
+Closes Family A bias gap: the Phase 0d adversarial panel is now reviewed by an independent agent that fires on `PostToolUse[Write]` to `.prism-task-*/panel.json`. The reviewer reads only the panel JSON (not the master's reasoning) and emits a verdict to `~/.claude/.prism-phase-0d-verdicts-<sha>.json` for next-turn pickup via SessionStart. Bypass for a specific dispatch via `node tools/prism-roster.mjs --skip-next-oob <spec>`.
+
+Installer ergonomics: `--target <dir>` enables testbed installs; `update` chains detect→backup→install with version-equal idempotency; `--purge-state` makes uninstall fully clean. Backup is now wide (94 paths vs legacy 3) and the manifest ships all v4.5 hooks/tools/agents.
+
+Telemetry tooling (no calibration in v4.5): `phase_0d_challenge` and `dispatch_cap` events log to `.prism-routing.jsonl` schema 3. v4.6 will consume these to retune cap thresholds and master-override gates.
 
 ### v4.4 — Independent PHASE 1.5 reviewer (out-of-band)
 
@@ -158,9 +171,9 @@ Tag any rostered specialist with `requires_phase_1_5: true` to enable an indepen
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.4.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.4 upgrade recipes
-- `/prism-help` (in Claude Code) — curated v4.4 slash-command index
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.5.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.5 upgrade recipes
+- `/prism-help` (in Claude Code) — curated v4.5 slash-command index
 - [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
