@@ -533,5 +533,54 @@ function snapshotFiles(dir) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// v4.5 regression tests: F1 + F5 + F8
+// ─────────────────────────────────────────────────────────────────────────────
+
+// v4.5 regression: F1 — malformed roster.json under --target should give recovery instructions, not crash
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  const rosterDir = join(claudeDir, 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir, {recursive: true});
+  writeFileSync(join(rosterDir, 'roster.json'), '{ invalid json');
+  const r = run(['install', '--target', claudeDir, '--quiet']);
+  ok('F1: malformed roster + --target exits non-zero', r.status !== 0);
+  ok('F1: malformed roster + --target does NOT crash with HOME ReferenceError',
+     !((r.stderr || '') + (r.stdout || '')).includes('HOME is not defined'));
+  ok('F1: malformed roster error mentions roster.json',
+     ((r.stderr || '') + (r.stdout || '')).includes('roster.json'));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// v4.5 regression: F5 — update on already-current version must not create a backup dir
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  run(['install', '--target', claudeDir, '--quiet']);
+  // Count backups after install (install always creates one)
+  const before = readdirSync(claudeDir).filter(d => d.startsWith('.prism-install-backup-')).length;
+  // Update with matching version → "Already at vX" — no backup, no writes
+  const r = run(['update', '--target', claudeDir, '--quiet']);
+  ok('F5: update no-op exits 0', r.status === 0);
+  const after = readdirSync(claudeDir).filter(d => d.startsWith('.prism-install-backup-')).length;
+  ok('F5: update no-op does not create new backup', before === after);
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// v4.5 regression: F8 — --purge-state --quiet without --yes must fail fast, not hang on hidden prompt
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  run(['install', '--target', claudeDir, '--quiet']);
+  // No --yes, --quiet — should fail with exit 2, not hang
+  const r = run(['uninstall', '--target', claudeDir, '--purge-state', '--quiet']);
+  ok('F8: --purge-state --quiet without --yes exits 2', r.status === 2);
+  ok('F8: --purge-state --quiet without --yes stderr explains', /requires --yes/i.test(r.stderr || ''));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

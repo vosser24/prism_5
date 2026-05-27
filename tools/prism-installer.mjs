@@ -591,7 +591,11 @@ async function install() {
         if (!flags.dryRun && backupDir) {
           try { cpSync(rosterPath, corruptBackupPath); } catch {}
         }
-        const invocation = `node tools/prism-installer.mjs install --home ${HOME}`;
+        const invocation = flags.target
+          ? `node tools/prism-installer.mjs install --target ${flags.target}`
+          : flags.home
+          ? `node tools/prism-installer.mjs install --home ${flags.home}`
+          : `node tools/prism-installer.mjs install`;
         die([
           'roster.json at ' + rosterPath + ' is malformed; refusing to overwrite.',
           'Inspect the file (backup at ' + corruptBackupPath + ') and either:',
@@ -728,6 +732,10 @@ async function uninstall() {
 
     if (flags.purgeState) {
       if (!flags.yes) {
+        if (flags.quiet) {
+          console.error('[uninstall] --purge-state requires --yes when --quiet');
+          process.exit(2);
+        }
         // Interactive confirm
         process.stdout.write('[uninstall] --purge-state will DELETE: roster.json, MEMORY.md, .prism-routing.jsonl, .prism-spend.jsonl, .prism-phase-1-5-verdicts.jsonl, .prism-telemetry-rollup.json, prism-policy.json, .prism-flags/, .prism-task-*/. Continue? [y/N] ');
         const answer = readLineFromStdin();
@@ -825,8 +833,6 @@ async function runUpdate() {
       log(`[update] --dry-run: would back up and install.`);
       return 0;
     }
-    const backupDir = makeBackup();
-    log(`[update] Backup at ${backupDir}`);
     await install();
     return 0;
   }
