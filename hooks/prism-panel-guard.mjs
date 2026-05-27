@@ -246,9 +246,20 @@ function resolveMode() {
 // ─── Path B helpers: SCOPE GUARD (T31) + alternatives-considered (T32) ──────
 
 // T31 — D3 SCOPE GUARD: detect positions whose titles share no keywords with
-// the declared panel scope. Heuristic: simple keyword-overlap (false positives
-// over false negatives is acceptable for v4.5).
-// Kill switch: PRISM_DISABLE_SCOPE_GUARD=1.
+// the declared panel scope. Heuristic: simple keyword-overlap.
+//
+// Advisory by default (exit 0): emits a stderr warning per out-of-scope
+// position but does NOT block the write. The heuristic over-fires on
+// realistic PRISM panel scopes (e.g. "ship v4.5 Phase 4 coverage/hygiene"
+// paired with a position titled "D3 SCOPE GUARD enforcement test") because
+// domain-specific vocabulary in position titles rarely overlaps word-for-word
+// with the scope phrase.
+//
+// Strict mode (exit 2): set PRISM_SCOPE_GUARD=strict to restore the v4.4
+// block-on-violation behavior. Suitable for narrow, well-scoped panels where
+// hard enforcement is desired.
+//
+// Kill switch: PRISM_DISABLE_SCOPE_GUARD=1 (silences even the advisory).
 function checkScope(panel) {
   if (process.env.PRISM_DISABLE_SCOPE_GUARD === '1') return;
   if (!panel.scope || typeof panel.scope !== 'string') return; // backwards-compat
@@ -256,13 +267,20 @@ function checkScope(panel) {
   const tokenize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w && !stop.has(w));
   const scopeWords = new Set(tokenize(panel.scope).filter(w => w.length >= 4));
   if (scopeWords.size === 0) return; // scope too vague to enforce
+  const strict = process.env.PRISM_SCOPE_GUARD === 'strict';
   for (const pos of (panel.positions || [])) {
     if (!pos.title || typeof pos.title !== 'string') continue;
     const titleWords = tokenize(pos.title).filter(w => w.length >= 4);
     const overlap = titleWords.some(w => scopeWords.has(w));
     if (!overlap) {
-      process.stderr.write(`SCOPE GUARD: position "${pos.title}" appears outside panel scope "${panel.scope}"\n`);
-      process.exit(2);
+      const msg = `SCOPE GUARD: position "${pos.title}" appears outside panel scope "${panel.scope}"`;
+      if (strict) {
+        process.stderr.write(msg + '\n');
+        process.exit(2);
+      } else {
+        process.stderr.write(msg + ' (advisory; set PRISM_SCOPE_GUARD=strict to enforce)\n');
+        // continue scanning — emit one stderr line per out-of-scope position
+      }
     }
   }
 }
@@ -279,8 +297,12 @@ function checkAlternatives(panel) {
     process.exit(2);
   }
   for (const alt of alts) {
-    if (typeof alt !== 'object' || alt === null || !alt.approach || !alt.why_not) {
-      process.stderr.write('[panel-guard] each alternatives_considered entry must have approach + why_not\n');
+    if (typeof alt !== 'object' || alt === null || Array.isArray(alt)) {
+      process.stderr.write('[panel-guard] each alternatives_considered entry must be a {approach, why_not} object\n');
+      process.exit(2);
+    }
+    if (typeof alt.approach !== 'string' || alt.approach.trim() === '' || typeof alt.why_not !== 'string' || alt.why_not.trim() === '') {
+      process.stderr.write('[panel-guard] each alternatives_considered entry must have non-empty approach + why_not strings\n');
       process.exit(2);
     }
   }

@@ -154,6 +154,15 @@
         ]
       },
       {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-panel-guard.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
