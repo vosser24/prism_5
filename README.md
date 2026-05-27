@@ -18,11 +18,76 @@ Three pain points specific to heavy Claude Code users:
 
 **Specialist dispatch** — `/prism-index` populates a unified roster of installed agents/skills/tools/MCPs. `blueprint-prompt` queries the index BEFORE assembling a panel, so real specialists replace generic personas.
 
-## Install
+## Installation
 
-PRISM ships as a first-class Claude Code plugin (v3.5.0+). Two install paths — pick one.
+**Requirements:** Node.js 18+, Claude Code CLI (`claude` on PATH).
 
-### Recommended: plugin install (one-liner inside Claude Code)
+### Step 1: Clone the repo
+
+```bash
+git clone https://github.com/vosser24/prism_master.git
+cd prism_master
+```
+
+### Step 2: Run the installer
+
+**Windows (PowerShell):**
+```powershell
+pwsh .\install.ps1
+```
+
+**Mac / Linux / git-bash:**
+```bash
+bash install.sh
+```
+
+The installer is idempotent — running it again on an existing install upgrades safely (backs up your settings/roster first, then merges).
+
+### Step 3: Verify
+
+```bash
+node tools/prism-installer.mjs verify
+```
+
+All checks should print `PASS`. If any print `FAIL`, re-run the installer.
+
+### Install options
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Simulate — print what would happen, no changes |
+| `--no-backup` | Skip backup of existing settings/roster |
+| `--quiet` | Suppress progress output |
+| `--home <path>` | Override HOME directory (for testing) |
+
+### Upgrading from a prior PRISM version
+
+Run the same install command. The installer detects the existing install, backs it up, removes old files by name pattern, copies new files, and merges `settings.json` — preserving your roster agents, `prism-policy.json`, and telemetry logs.
+
+See `docs/prism/MIGRATION.md` for version-specific migration notes.
+
+### Uninstalling
+
+**Windows:**
+```powershell
+pwsh .\uninstall.ps1
+```
+
+**Mac / Linux / git-bash:**
+```bash
+bash uninstall.sh
+```
+
+To restore a backup made during install:
+```powershell
+pwsh .\uninstall.ps1 -RestoreBackup "~\.claude\.prism-install-backup-2026-05-27_12-00-00"
+```
+
+---
+
+## Plugin install (alternative)
+
+PRISM also ships as a first-class Claude Code plugin (v3.5.0+):
 
 ```text
 /plugin marketplace add vosser24/prism_master
@@ -34,14 +99,6 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 > **Uninstalling?** Run `/prism-uninstall-cleanup` **before** `/plugin uninstall prism@PRISM` to remove agents the factory created while PRISM was installed as a plugin. Manually-created agents (and legacy entries from before v4.3.0) are never touched.
 
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
-
-### Alternative: clone + install script
-
-```bash
-curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install.sh | bash
-```
-
-(Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
 
 ## Status — works / half-works / known-gaps (v4.4.0)
 

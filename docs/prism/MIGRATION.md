@@ -24,12 +24,42 @@ recipe (lines 165-188).
 
 **Backward compatible.** Legacy installs continue to work without changes.
 
-### What changed
+### Upgrade — run the installer
+
+The v4.4 installer handles backup, upgrade, and settings merge automatically.
+
+**Windows (PowerShell):**
+```powershell
+git pull
+pwsh .\install.ps1
+```
+
+**Mac / Linux / git-bash:**
+```bash
+git pull
+bash install.sh
+```
+
+The installer will:
+1. Back up your existing `~/.claude/settings.json` and `roster.json`
+2. Remove old PRISM files by name pattern
+3. Copy new v4.4 files
+4. Merge `settings.json` (JSON-aware; no duplicate hook entries; your non-PRISM hooks are preserved)
+5. Preserve your roster agents, `prism-policy.json`, and `.prism-*.jsonl` telemetry logs
+6. Run a post-install verify pass
+
+After install, confirm with:
+```bash
+node tools/prism-installer.mjs verify
+```
+
+### What changed in v4.4
 
 - `skills/master-orchestrator/SKILL.md` shrunk from 770 lines to ~130 lines. Detailed protocols moved to `skills/master-orchestrator/references/`.
 - Roster schema bumped to 4.4.0. New optional per-agent flags `requires_phase_1_5` and `requires_phase_1_5_block` (default false).
 - New SubagentStop hook `hooks/prism-phase-1-5-oob.mjs` registered as 3rd entry (after spend ledger and panel guard).
 - New tools: `tools/prism-roster.mjs`, `tools/prism-phase-1-5-verdicts.mjs`, `tools/lib/prism-verdict-flag.mjs`.
+- New installer: `tools/prism-installer.mjs` + `install.sh` / `install.ps1` / `uninstall.sh` / `uninstall.ps1`.
 
 ### Opting into OOB PHASE 1.5 review
 
@@ -65,10 +95,11 @@ The OOB reviewer requires the `claude` CLI to be on PATH (your Claude Code subsc
 
 After upgrading and tagging a pilot agent:
 
-1. Run a real specialist dispatch (e.g., spawn `@code-reviewer` on a small task).
-2. Check `~/.claude/.prism-routing.jsonl` for an `event: phase_1_5_oob` entry.
-3. Wait for the next session start; if any UN-CITED/REJECTED verdict was issued, you'll see a `[Prior turn] OOB PHASE 1.5 reviewer flagged …` notice.
-4. Query the verdict log: `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs --agent @code-reviewer`.
+1. Run the installer verify: `node tools/prism-installer.mjs verify`
+2. Run a real specialist dispatch (e.g., spawn `@code-reviewer` on a small task).
+3. Check `~/.claude/.prism-routing.jsonl` for an `event: phase_1_5_oob` entry.
+4. Wait for the next session start; if any UN-CITED/REJECTED verdict was issued, you'll see a `[Prior turn] OOB PHASE 1.5 reviewer flagged …` notice.
+5. Query the verdict log: `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs --agent @code-reviewer`.
 
 ---
 
@@ -94,14 +125,16 @@ workflow commands, and the plugin auditor — none of which existed in v3.10.
    Manual install path (bash):
 
    ```bash
-   bash scripts/install.sh
+   bash install.sh
    ```
 
    Manual install path (PowerShell-native, Windows):
 
    ```powershell
-   .\scripts\install.ps1
+   pwsh .\install.ps1
    ```
+
+   > v4.4+ installer supersedes the old `scripts/` path.
 
    The installer is idempotent and backs up your existing `~/.claude/` to
    `~/.claude/backups/pre-prism-<ts>/` before any write.
@@ -444,17 +477,18 @@ the v3.8.4 critical hotfix.
 
 ```bash
 # bash (Linux / macOS / Git Bash):
-bash scripts/uninstall.sh --purge
+bash uninstall.sh
 
 # PowerShell-native (Windows):
-.\scripts\uninstall.ps1 -Purge
+pwsh .\uninstall.ps1
 ```
 
-The uninstaller copies `references/roster.json` and
-`references/update-log.json` (your researched-specialist registrations and
-NotebookLM notebook IDs) to `$env:TEMP\prism-uninstall-preserve-<ts>\`
-BEFORE removing the prism-plan skill directory, then restores them after
-PRISM removal completes.
+> v4.4+ installer supersedes the old `scripts/` path.
+
+The uninstaller removes all PRISM files and strips PRISM hooks from
+`settings.json`. State files (`.prism-routing.jsonl`, `.prism-spend.jsonl`,
+`prism-policy.json`, etc.) are always preserved. To fully clean, manually
+delete `~/.claude/.prism-*` files after uninstall.
 
 Your most recent `~/.claude/backups/pre-prism-<ts>/` keeps the prior
 state file and config. To restore manually:
