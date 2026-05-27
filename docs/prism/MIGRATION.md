@@ -24,12 +24,42 @@ recipe (lines 165-188).
 
 **Backward compatible.** Legacy installs continue to work without changes.
 
-### What changed
+### Upgrade — run the installer
+
+The v4.4 installer handles backup, upgrade, and settings merge automatically.
+
+**Windows (PowerShell):**
+```powershell
+git pull
+pwsh .\install.ps1
+```
+
+**Mac / Linux / git-bash:**
+```bash
+git pull
+bash install.sh
+```
+
+The installer will:
+1. Back up your existing `~/.claude/settings.json` and `roster.json`
+2. Remove old PRISM files by name pattern
+3. Copy new v4.4 files
+4. Merge `settings.json` (JSON-aware; no duplicate hook entries; your non-PRISM hooks are preserved)
+5. Preserve your roster agents, `prism-policy.json`, and `.prism-*.jsonl` telemetry logs
+6. Run a post-install verify pass
+
+After install, confirm with:
+```bash
+node tools/prism-installer.mjs verify
+```
+
+### What changed in v4.4
 
 - `skills/master-orchestrator/SKILL.md` shrunk from 770 lines to ~130 lines. Detailed protocols moved to `skills/master-orchestrator/references/`.
 - Roster schema bumped to 4.4.0. New optional per-agent flags `requires_phase_1_5` and `requires_phase_1_5_block` (default false).
 - New SubagentStop hook `hooks/prism-phase-1-5-oob.mjs` registered as 3rd entry (after spend ledger and panel guard).
 - New tools: `tools/prism-roster.mjs`, `tools/prism-phase-1-5-verdicts.mjs`, `tools/lib/prism-verdict-flag.mjs`.
+- New installer: `tools/prism-installer.mjs` + `install.sh` / `install.ps1` / `uninstall.sh` / `uninstall.ps1`.
 
 ### Opting into OOB PHASE 1.5 review
 
@@ -65,10 +95,11 @@ The OOB reviewer requires the `claude` CLI to be on PATH (your Claude Code subsc
 
 After upgrading and tagging a pilot agent:
 
-1. Run a real specialist dispatch (e.g., spawn `@code-reviewer` on a small task).
-2. Check `~/.claude/.prism-routing.jsonl` for an `event: phase_1_5_oob` entry.
-3. Wait for the next session start; if any UN-CITED/REJECTED verdict was issued, you'll see a `[Prior turn] OOB PHASE 1.5 reviewer flagged …` notice.
-4. Query the verdict log: `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs --agent @code-reviewer`.
+1. Run the installer verify: `node tools/prism-installer.mjs verify`
+2. Run a real specialist dispatch (e.g., spawn `@code-reviewer` on a small task).
+3. Check `~/.claude/.prism-routing.jsonl` for an `event: phase_1_5_oob` entry.
+4. Wait for the next session start; if any UN-CITED/REJECTED verdict was issued, you'll see a `[Prior turn] OOB PHASE 1.5 reviewer flagged …` notice.
+5. Query the verdict log: `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs --agent @code-reviewer`.
 
 ---
 

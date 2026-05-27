@@ -51,9 +51,23 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
 - D3: SCOPE GUARD enforcement (v4.5)
 - F4: semantic cross-project knowledge index (v5.0)
 
+### Installer (NEW)
+
+- `tools/prism-installer.mjs` — Node 18+ core installer (~430 LOC) with four subcommands:
+  - `detect` — print JSON of current install state (no changes, exit 0 always). Detects file presence, hook registrations in `settings.json`, roster schema version.
+  - `install [--dry-run] [--no-backup] [--quiet]` — full install/upgrade. Idempotent. Steps: detect → backup → strip old PRISM hooks → remove old PRISM files (by name pattern) → copy new files → merge roster (preserve user agents) → JSON-aware `settings.json` merge (no duplicates, preserves non-PRISM hooks) → chmod+x on Unix → post-install verify → summary.
+  - `uninstall [--restore-backup <path>] [--keep-state] [--quiet]` — removes all PRISM files and strips PRISM hooks from `settings.json`. Preserves user state files (`.prism-*.jsonl`, `prism-policy.json`, `.prism-flags/`) by default.
+  - `verify` — checks every manifest file exists, `settings.json` parses and contains PRISM hooks, `roster.json` parses. Exit 0 if all pass, 1 if any fail.
+- `tools/install-manifest.json` — data-driven file manifest (85 individual files + 4 skill directories). Add new files here for future versions; installer reads the manifest at runtime.
+- `install.sh` / `uninstall.sh` — Bash 4+ wrappers (Mac/Linux/git-bash) with Node-18 check and banner.
+- `install.ps1` / `uninstall.ps1` — PowerShell 5.1+ wrappers (Windows) with Node-18 check and banner. `-DryRun`, `-NoBackup`, `-RestoreBackup`, `-KeepState`, `-Home` parameters.
+- Hardening: lock file (`~/.claude/.prism-install.lock`) prevents concurrent runs; atomic tempfile+rename writes; fail-loud on malformed `settings.json` (exit 2) instead of silently overwriting; read-only file handling on Windows (chmod before unlink).
+- `README.md` updated with a top-level **Installation** section (clone → install script → verify; Windows + Mac/Linux invocations; upgrade and uninstall instructions).
+- `docs/prism/MIGRATION.md` v4.3 → v4.4 section rewritten around the installer.
+
 ### Tests
 
-New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 5 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0% rate, does not fire below MIN_DISPATCHES, idempotent on already-flagged agents, exit 0). New Test 6 added to `test-prism-phase-1-5-oob.mjs`: recursion guard (PRISM_OOB_REVIEWER_PROCESS=1 exits 0 + logs action without writing pending file). Full suite: 265/265 across 17 files (16 state + 1 hooks).
+New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 5 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0% rate, does not fire below MIN_DISPATCHES, idempotent on already-flagged agents, exit 0). New Test 6 added to `test-prism-phase-1-5-oob.mjs`: recursion guard (PRISM_OOB_REVIEWER_PROCESS=1 exits 0 + logs action without writing pending file). New suite `tests/v3/state/test-prism-installer.mjs` — 41 cases covering detect/install/uninstall/verify/idempotency/dry-run/preservation. Full suite: 306/306 across 18 files (17 state + 1 hooks).
 
 ## [4.3.0] - 2026-05-26
 

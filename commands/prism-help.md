@@ -62,6 +62,15 @@ reference files replacing the previous 770-line monolith).
 | `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. Run to make the orchestrator and `blueprint-prompt` aware of resources not created via `agent-factory`. |
 | `/prism-telemetry` | Local-only telemetry aggregation. Aggregates `~/.claude/.prism-routing.jsonl` into a structured rollup. **No network** — export-to-JSON for manual sharing only. |
 
+### v4.4 installer tools (NEW)
+
+These are CLI tools for install/upgrade/verify. Run directly from the repo root or the installed copy.
+
+- `node tools/prism-installer.mjs verify` — check that all manifest files are present and hooks are wired in `settings.json`. **First diagnostic to run** when PRISM feels broken. Exit 0 = healthy; exit 1 = prints which files or hooks are missing.
+- `node tools/prism-installer.mjs detect` — print JSON of current install state (files found, hooks registered, roster schema version). No changes.
+- `node tools/prism-installer.mjs install --dry-run` — simulate a (re-)install; shows what would change.
+- `bash install.sh` / `pwsh .\install.ps1` — full install/upgrade from repo root. Idempotent.
+
 ### v4.4 OOB PHASE 1.5 tools
 
 These are CLI tools (not slash commands). Run directly from the terminal or via `/prism-clean` (ratchet is auto-invoked):
