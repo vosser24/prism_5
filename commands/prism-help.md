@@ -62,14 +62,18 @@ reference files replacing the previous 770-line monolith).
 | `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. Run to make the orchestrator and `blueprint-prompt` aware of resources not created via `agent-factory`. |
 | `/prism-telemetry` | Local-only telemetry aggregation. Aggregates `~/.claude/.prism-routing.jsonl` into a structured rollup. **No network** — export-to-JSON for manual sharing only. |
 
-### v4.4 installer tools (NEW)
+### Installer tools
 
-These are CLI tools for install/upgrade/verify. Run directly from the repo root or the installed copy.
+These are CLI tools for install/upgrade/verify. Run directly from the repo root or the installed copy. All subcommands accept `--target <dir>` (v4.5) to point at a `.claude/` directory other than `~/.claude/`.
 
-- `node tools/prism-installer.mjs verify` — check that all manifest files are present and hooks are wired in `settings.json`. **First diagnostic to run** when PRISM feels broken. Exit 0 = healthy; exit 1 = prints which files or hooks are missing.
-- `node tools/prism-installer.mjs detect` — print JSON of current install state (files found, hooks registered, roster schema version). No changes.
-- `node tools/prism-installer.mjs install --dry-run` — simulate a (re-)install; shows what would change.
+- `node tools/prism-installer.mjs verify [--target <dir>]` — check that all manifest files are present and hooks are wired in `settings.json`. **First diagnostic to run** when PRISM feels broken. Exit 0 = healthy; exit 1 = prints which files or hooks are missing.
+- `node tools/prism-installer.mjs detect [--target <dir>]` — print JSON of current install state (files found, hooks registered, roster schema version, `.prism-version` marker). No changes.
+- `node tools/prism-installer.mjs install [--target <dir>] [--dry-run]` — install/upgrade PRISM. Idempotent. Writes a `.prism-version` marker (v4.5) on success.
+- `node tools/prism-installer.mjs update [--target <dir>] [--dry-run]` — *(v4.5)* detect + backup + install in one command. No-op when installed version matches shipped (`Already at vX; nothing to do.`).
+- `node tools/prism-installer.mjs uninstall [--target <dir>] [--purge-state] [--yes]` — uninstall. By default preserves `roster.json`, `MEMORY.md`, routing/spend/telemetry logs. `--purge-state` *(v4.5)* additionally wipes those; `--yes` skips the confirmation prompt.
 - `bash install.sh` / `pwsh .\install.ps1` — full install/upgrade from repo root. Idempotent.
+
+Backup *(v4.5)*: every install creates a full snapshot under `<target>/.prism-install-backup-<timestamp>/` covering shipped files (`agents/`, `hooks/`, `tools/`, `commands/`, `skills/`) **plus** user state (`MEMORY.md`, `prism-policy.json`, `.prism-routing.jsonl`, `.prism-spend.jsonl`, `.prism-phase-1-5-verdicts.jsonl`, `.prism-telemetry-rollup.json`). Restore via `uninstall --restore-backup <dir>`.
 
 ### v4.4 OOB PHASE 1.5 tools
 
@@ -80,6 +84,7 @@ These are CLI tools (not slash commands). Run directly from the terminal or via 
 - `node ~/.claude/tools/prism-roster.mjs --tag-1-5 @<agent>` — opt agent into OOB PHASE 1.5 review.
 - `node ~/.claude/tools/prism-roster.mjs --untag-1-5 @<agent>` — remove OOB PHASE 1.5 review from agent.
 - `node ~/.claude/tools/prism-roster.mjs --reset-model @<agent>` — manual deescalation reset (clears `default_model` + counters).
+- `node ~/.claude/tools/prism-roster.mjs --skip-next-oob @<agent>` *(v4.5)* — set one-shot OOB skip on a specialist; the next SubagentStop bypasses Phase 1.5 review for that agent only.
 - `node ~/.claude/tools/prism-telemetry-aggregate.mjs --phase-1-5-agreement` — per-agent reviewer agreement signal (requires telemetry opt-in).
 
 ## Lifecycle
