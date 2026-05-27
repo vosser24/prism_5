@@ -98,3 +98,22 @@ EOF
 ```
 
 If no panel was assembled (standalone master-orchestrator session with no 0d), do NOT write panel.json — OOB reviewer's pending file gets `phase_0d_challenges: []`.
+
+## v4.5 — alternatives-considered logging
+
+When writing `panel.json` at end of Phase 0d, populate `rationale.alternatives_considered` with the approaches you rejected and why. Format:
+
+```json
+{
+  "rationale": {
+    "alternatives_considered": [
+      {"approach": "Single bundled PR for the refactor", "why_not": "would mix unrelated changes; reviewer fatigue"},
+      {"approach": "Separate PRs per layer", "why_not": "chosen — better review granularity"}
+    ]
+  }
+}
+```
+
+The OOB Phase 0d reviewer (v4.5 A1) reads this field to judge whether the master genuinely considered options. Absent field = pre-v4.5 master; reviewer treats as "alternatives not logged" without penalizing.
+
+Schema validation: `prism-panel-guard.mjs` Path B enforces the shape — each entry must have `approach` and `why_not` strings. Invalid shape → exit 2 with `[panel-guard] each alternatives_considered entry must have approach + why_not`.
