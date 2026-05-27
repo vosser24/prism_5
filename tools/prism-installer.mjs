@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Installer v4.4.0
+// PRISM Installer v4.5.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
@@ -10,6 +10,7 @@
 //
 // Common flags:
 //   --home <path>   sandbox HOME override (mirrors prism-telemetry-aggregate.mjs)
+//   --target <dir>  point directly at a .claude/ directory (mutually exclusive with --home)
 //   --src  <path>   source repo override (default: derived from import.meta.url)
 //   --dry-run       (install only) simulate, no filesystem changes
 //   --no-backup     (install only) skip backup step
@@ -45,6 +46,7 @@ const [subcommand, ...restArgs] = rawArgs;
 function parseFlags(args) {
   const flags = {
     home: null,
+    target: null,
     src: null,
     dryRun: false,
     noBackup: false,
@@ -54,6 +56,7 @@ function parseFlags(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--home') flags.home = args[++i];
+    else if (a === '--target') flags.target = args[++i];
     else if (a === '--src') flags.src = args[++i];
     else if (a === '--dry-run') flags.dryRun = true;
     else if (a === '--no-backup') flags.noBackup = true;
@@ -66,8 +69,22 @@ function parseFlags(args) {
 const flags = parseFlags(restArgs);
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
-const HOME = flags.home || process.env.HOME || process.env.USERPROFILE || homedir();
-const CLAUDE_DIR = join(HOME, '.claude');
+if (flags.home && flags.target) {
+  console.error('[prism-installer] ERROR: --home and --target are mutually exclusive');
+  process.exit(2);
+}
+let CLAUDE_DIR;
+if (flags.target) {
+  const abs = resolve(flags.target);
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+    console.error(`[prism-installer] ERROR: --target does not exist or is not a directory: ${abs}`);
+    process.exit(2);
+  }
+  CLAUDE_DIR = abs;
+} else {
+  const HOME = flags.home || process.env.HOME || process.env.USERPROFILE || homedir();
+  CLAUDE_DIR = join(HOME, '.claude');
+}
 const REPO_ROOT = flags.src || resolve(__dirname, '..');
 const MANIFEST_PATH = join(REPO_ROOT, 'tools', 'install-manifest.json');
 const LOCK_PATH = join(CLAUDE_DIR, '.prism-install.lock');
@@ -761,7 +778,7 @@ function verify() {
 // ─── help ─────────────────────────────────────────────────────────────────────
 function help() {
   console.log(`
-PRISM Installer v4.4.0
+PRISM Installer v4.5.0
 
 Usage:
   node tools/prism-installer.mjs <subcommand> [flags]
@@ -775,6 +792,7 @@ Subcommands:
 
 Common flags:
   --home <path>        Override HOME directory (for testing/sandbox)
+  --target <dir>       Point directly at a .claude/ directory (mutually exclusive with --home)
   --src  <path>        Override source repo root (default: derived from installer location)
   --quiet              Suppress progress output
 
@@ -792,6 +810,7 @@ Examples:
   node tools/prism-installer.mjs install
   node tools/prism-installer.mjs install --dry-run
   node tools/prism-installer.mjs install --home /tmp/sandbox
+  node tools/prism-installer.mjs install --target /path/to/.claude
   node tools/prism-installer.mjs verify
   node tools/prism-installer.mjs uninstall --restore-backup ~/.claude/.prism-install-backup-2026-05-27_12-00-00
   node tools/prism-installer.mjs detect
@@ -799,7 +818,7 @@ Examples:
 Exit codes:
   0   Success (or detect, which always exits 0)
   1   Verify failed / general error
-  2   settings.json malformed (refused to proceed)
+  2   Usage error / settings.json malformed (refused to proceed)
 `.trim());
 }
 
