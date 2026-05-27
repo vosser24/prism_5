@@ -22,7 +22,7 @@ Telemetry policy: TOOLING ONLY in v4.5. No defaults change. v4.6 will read these
 ### Added (Layer 2 — Out-of-band Phase 0d completion)
 
 - `hooks/prism-phase-0d-oob.mjs` + `agents/phase-0d-oob-reviewer.md` — out-of-band Phase 0d panel-quality reviewer (A1). Fires under `PostToolUse[Write]` on `.prism-task-*/panel.json`; runs in background; emits verdict to `~/.claude/.prism-phase-0d-verdicts-<sha>.json` for next-turn pickup.
-- `tools/lib/prism-roster-lock.mjs` — cross-platform exclusive-create lock for roster.json mutations (O2). All roster writes now wrap through `withRosterLock()`.
+- `tools/lib/prism-roster-lock.mjs` — cross-platform exclusive-create lock for roster.json mutations (O2). Roster writes in `tools/prism-roster.mjs`, `hooks/prism-phase-1-5-oob.mjs`, and `hooks/prism-phase-0d-oob.mjs` wrap through `withRosterLock()`. Other mutation sites (`hooks/prism-agent-write-register.mjs`, `tools/prism-uninstall-cleanup.mjs`, `tools/prism-installer.mjs`) remain on atomic write — extending the lock to those sites is deferred to v4.6.
 - `hooks/prism-phase-1-5-oob.mjs` — LITE mode plumbing (O1) gated by `roster.<spec>.phase_1_5_lite_oob`.
 - `tools/prism-roster.mjs --skip-next-oob <spec>` — one-shot OOB skip on a specialist (V1).
 - `hooks/prism-panel-guard.mjs` Path B — `dropped_positions[]` logging in panel.json (A3).
@@ -64,6 +64,12 @@ Telemetry policy: TOOLING ONLY in v4.5. No defaults change. v4.6 will read these
 ### Deferred to v4.6
 
 All telemetry-driven calibration decisions (B1 cap retune, master-overrides confirmation gate, auto-clear pending_upgrade); structured-output classifiers (C1, C2, C3); heavier coverage/hygiene (D1, E1, E2, G1); cosmetic installer polish (I3, I8); SCOPE GUARD heuristic upgrade beyond keyword overlap; refactor of `tools/lib/prism-verdict-flag.mjs` to support both phase-0d and phase-1-5 verdicts via a `kind` parameter (currently the phase-0d hook inlines its own `atomicWrite`).
+
+#### Known v4.5 telemetry-shape limitations (carried into v4.6 calibration design)
+
+- `dispatch_cap` events emit `{event, cap, subagent_type, description}` — the spec also listed `actual_parallel` and `queue_depth`, but Claude Code's `PostToolUse[Agent]` event doesn't expose sibling-dispatch state, so those fields are absent. v4.6 calibration must either compute them from on-disk task-dir state or accept the narrower signal.
+- `phase_0d_challenge` events emit `evidence_class: 'UNCLASSIFIED'` for every challenge because Layer 4's panel-guard does not pre-classify the `panel.positions[].challenges[]` entries. v4.6 will need to derive evidence-class downstream from challenge text, or extend panel-guard to compute and write the field at panel-write time.
+- Roster lock (`withRosterLock`) wraps the 3 primary mutation sites but NOT `prism-agent-write-register.mjs`, `prism-uninstall-cleanup.mjs`, or `prism-installer.mjs`. Concurrent writes from those sites against the locked sites can lose updates under contention.
 
 ## [4.4.0] - 2026-05-26
 

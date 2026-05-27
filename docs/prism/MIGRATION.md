@@ -50,7 +50,7 @@ If the installer reports `Already at v4.5.0; nothing to do.`, you're done.
 #### Roster schema (4.4.0 → 4.5.0)
 
 Two new per-agent fields (both optional, default false):
-- `phase_1_5_lite_oob` — opt agent into LITE-mode Phase 1.5 OOB review (cheaper variant; uses the same hook with a `--lite` flag).
+- `phase_1_5_lite_oob` — opt agent into LITE-mode Phase 1.5 OOB review (cheaper variant). When `true`, the OOB hook loads the shorter `agents/phase-1-5-oob-reviewer-lite.md` prompt instead of the full reviewer prompt (and propagates `PRISM_OOB_USE_LITE=1` to the async worker). Falls back to the FULL prompt silently if the lite file is absent.
 - `skip_next_oob` — ephemeral; auto-cleared after one SubagentStop. Set via `node tools/prism-roster.mjs --skip-next-oob <spec>` when you need to bypass OOB review for one specific dispatch.
 
 Existing rosters work unchanged. The `update` subcommand merges the new schema without overwriting your user agents.
