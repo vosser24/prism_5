@@ -97,22 +97,25 @@ for (const ref of REQUIRED_REFS) {
   }
 }
 
-// v4.4 Layer B — roster schema additions
+// v4.5 Layer 2 — roster schema additions (cumulative: v4.4 + v4.5 fields)
 total++;
 const rosterPath = join(repoRoot, 'skills', 'prism-plan', 'references', 'roster.json');
 const roster = JSON.parse(readFileSync(rosterPath, 'utf-8'));
 if (
-  roster.schema_version === '4.4.0' &&
+  roster.schema_version === '4.5.0' &&
   Array.isArray(roster.schema_notes) &&
   roster.schema_notes.some(n => /v4\.4/.test(n) && /requires_phase_1_5/.test(n)) &&
+  roster.schema_notes.some(n => /v4\.5/.test(n) && /phase_1_5_lite_oob/.test(n)) &&
   roster._schema_example_agent &&
   'requires_phase_1_5' in roster._schema_example_agent &&
-  'requires_phase_1_5_block' in roster._schema_example_agent
+  'requires_phase_1_5_block' in roster._schema_example_agent &&
+  'phase_1_5_lite_oob' in roster._schema_example_agent &&
+  'skip_next_oob' in roster._schema_example_agent
 ) {
   pass++;
 } else {
   fail++;
-  console.log('FAIL: roster.json missing v4.4 schema additions (schema_version=4.4.0 + schema_notes entry + _schema_example_agent fields)');
+  console.log('FAIL: roster.json missing v4.5 schema additions (schema_version=4.5.0 + v4.5 schema_notes entry + _schema_example_agent v4.4+v4.5 fields)');
 }
 
 process.stdout.write(`\ntests passed: ${pass}/${total}\n`);
