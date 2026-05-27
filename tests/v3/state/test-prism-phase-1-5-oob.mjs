@@ -137,5 +137,29 @@ total++;
   }
 }
 
+// Test 6: recursion guard — PRISM_OOB_REVIEWER_PROCESS=1 makes hook no-op
+total++;
+const r6 = runHook({
+  agent_name: 'code-reviewer',
+  session_id: 'sess-recurse',
+  output: 'Performance is great and security is solid.',
+  task_brief: 'test recursion',
+}, {PRISM_OOB_REVIEWER_PROCESS: '1'});
+if (r6.status === 0) {
+  // Verify NO pending file was written for this session
+  const fs = await import('fs');
+  const files = fs.readdirSync(sandboxClaude).filter(f => f.includes('sess-recurse'));
+  // Check routing log for "recursion-guard" action
+  const routingLog = join(sandboxClaude, '.prism-routing.jsonl');
+  const logged = fs.existsSync(routingLog) && fs.readFileSync(routingLog, 'utf-8').includes('"action":"recursion-guard"');
+  if (logged) {
+    pass++;
+  } else {
+    console.log('FAIL: recursion guard fired but log entry missing');
+  }
+} else {
+  console.log(`FAIL: recursion guard hook exit non-zero: ${r6.stderr}`);
+}
+
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

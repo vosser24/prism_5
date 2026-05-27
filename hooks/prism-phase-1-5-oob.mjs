@@ -6,25 +6,26 @@
 //   - extracts load-bearing claims from output (simple regex pass)
 //   - reads panel.json (if exists) for matching Phase 0d challenges
 //   - writes pending file via tools/lib/prism-verdict-flag.mjs
-//   - invokes Anthropic API reviewer via built-in fetch() (async by default,
-//     inline+block on flag)
+//   - invokes reviewer via `claude -p` (Claude Code subscription auth)
 //   - writes verdict result + appends log line
 //
 // Fail-open on every error path: hook NEVER blocks master on its own errors.
 // Async mode = exit 0 immediately after spawn; reviewer runs in background
 // and verdict picked up via SessionStart on next turn.
-// Block mode (requires_phase_1_5_block: true) = wait for API call to complete
-// + exit 2 with decision-block JSON containing verdict in reason.
+// Block mode (requires_phase_1_5_block: true) = wait for claude -p call to
+// complete + exit 2 with decision-block JSON containing verdict in reason.
 //
 // Kill switches:
 //   - PRISM_DISABLE_OOB_REVIEW=1 env var → immediate exit 0
 //   - roster.<agent>.requires_phase_1_5: false (or missing) → exit 0
-//   - ANTHROPIC_API_KEY unset → exit 0 with stderr warn
+//   - PRISM_OOB_REVIEWER_PROCESS=1 (set by this hook before spawning
+//     claude -p) → immediate exit 0 (recursion guard)
 //
-// Test mode: PRISM_OOB_TEST_MOCK_SDK=1 → skip real API call, write stub
+// Test mode: PRISM_OOB_TEST_MOCK_SDK=1 → skip real claude -p call, write stub
 // verdict instead.
 //
-// No npm dependencies. Uses Node 18+ built-in fetch().
+// No npm dependencies. Uses spawnSync('claude', ['-p', ...]) via Claude Code
+// subscription auth (no separate ANTHROPIC_API_KEY required).
 
 import {readFileSync, existsSync, mkdirSync, appendFileSync} from 'fs';
 import {join, dirname} from 'path';
@@ -52,6 +53,15 @@ function logEvent(event, extra) {
 }
 
 async function main() {
+  // Recursion guard: if we're running inside a Claude Code session that
+  // was spawned by this hook (e.g., the OOB reviewer's own session),
+  // bail out immediately. Without this, an inner SubagentStop would
+  // refire the hook → spawn another claude → ad infinitum.
+  if (process.env.PRISM_OOB_REVIEWER_PROCESS === '1') {
+    logEvent('recursion-guard');
+    return 0;
+  }
+
   // Kill switch
   if (process.env.PRISM_DISABLE_OOB_REVIEW === '1') {
     logEvent('killswitch-env');
@@ -177,13 +187,7 @@ async function main() {
     return 0;
   }
 
-  // Real API call
-  if (!process.env.ANTHROPIC_API_KEY) {
-    process.stderr.write('PRISM OOB: ANTHROPIC_API_KEY unset; skipping review.\n');
-    logEvent('no-api-key', {sha});
-    return 0;
-  }
-
+  // Real invocation via claude -p (Claude Code subscription auth)
   if (blockMode) {
     const verdict = await invokeReviewerInline(sha, flagLib);
     if (verdict && (verdict.summary.un_cited > 0 || verdict.summary.rejected > 0)) {
@@ -221,50 +225,42 @@ function hintClass(s) {
 }
 
 async function invokeReviewerInline(sha, flagLib) {
-  // Real API call — uses Node 18+ built-in fetch() against Anthropic API directly.
-  // No @anthropic-ai/sdk dependency (PRISM is dep-free by design).
-  // Skipped in test mode (handled above).
+  // Invokes the OOB reviewer via `claude -p` (Claude Code subscription auth).
+  // Prompt delivered via stdin to avoid Windows ENAMETOOLONG on >32KB payloads.
   try {
     const pending = flagLib.readPending(sha);
     if (!pending) return null;
 
-    // Load reviewer system prompt from agent file
+    // Read reviewer agent file for the model + system prompt
+    const reviewerFile = join(H, '.claude', 'agents', 'phase-1-5-oob-reviewer.md');
     let reviewerPrompt = 'You are an OOB PHASE 1.5 reviewer. Return JSON with a verdicts array.';
+    let reviewerModel = 'claude-sonnet-4-6';
     try {
-      const agentPath = join(H, '.claude', 'agents', 'phase-1-5-oob-reviewer.md');
-      if (existsSync(agentPath)) {
-        const raw = readFileSync(agentPath, 'utf-8');
+      const raw = readFileSync(reviewerFile, 'utf-8');
+      const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+      if (fmMatch) {
+        const modelMatch = fmMatch[1].match(/^model:\s*(\S+)/m);
+        if (modelMatch) reviewerModel = modelMatch[1];
         reviewerPrompt = raw.split('---').slice(2).join('---').trim() || reviewerPrompt;
       }
     } catch {}
 
     const userMessage = JSON.stringify(pending);
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const model = 'claude-sonnet-4-6';
-    const maxTokens = 2000;
-
     const t0 = Date.now();
-    let body;
+    let res;
     try {
-      body = await invokeReviewerHttp({apiKey, model, systemPrompt: reviewerPrompt, userMessage, maxTokens});
+      res = await invokeReviewerClaudeCode({
+        model: reviewerModel,
+        systemPrompt: reviewerPrompt,
+        userMessage,
+        timeoutMs: 50_000,
+      });
     } catch (e) {
-      if (e && e.status === 529) {
-        // single retry per 529 policy
-        await new Promise(r => setTimeout(r, 5000));
-        try {
-          body = await invokeReviewerHttp({apiKey, model, systemPrompt: reviewerPrompt, userMessage, maxTokens});
-        } catch (e2) {
-          logEvent('api-failed', {sha, error: String(e2 && e2.message)});
-          return null;
-        }
-      } else {
-        logEvent('api-failed', {sha, error: String(e && e.message)});
-        return null;
-      }
+      logEvent('reviewer-failed', {sha, error: String(e && e.message), code: e && e.code});
+      return null;
     }
-
     const latency = Date.now() - t0;
-    const text = body.content && body.content[0] && body.content[0].text || '';
+    const text = res.content && res.content[0] && res.content[0].text || '';
     const parsed = parseVerdictJson(text);
     if (!parsed) {
       logEvent('parse-failed', {sha});
@@ -273,7 +269,7 @@ async function invokeReviewerInline(sha, flagLib) {
     }
     parsed.session_id = pending.session_id;
     parsed.specialist_name = pending.specialist_name;
-    parsed.reviewer_model = model;
+    parsed.reviewer_model = reviewerModel;
     parsed.reviewer_latency_ms = latency;
     flagLib.writeVerdict(sha, parsed);
     flagLib.clearPending(sha);
@@ -285,37 +281,56 @@ async function invokeReviewerInline(sha, flagLib) {
   }
 }
 
-async function invokeReviewerHttp({apiKey, model, systemPrompt, userMessage, maxTokens}) {
-  // Node 18+ global fetch. Returns parsed response body or throws on non-2xx.
-  // 45s deadline — well inside the 60s SubagentStop hook timeout.
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 45_000);
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: ac.signal,
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system: systemPrompt,
-        messages: [{role: 'user', content: userMessage}],
-      }),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      const err = new Error('Anthropic API ' + res.status + ': ' + txt.slice(0, 200));
-      err.status = res.status;
-      throw err;
-    }
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
+async function invokeReviewerClaudeCode({model, systemPrompt, userMessage, timeoutMs}) {
+  const {spawnSync} = await import('node:child_process');
+  // Combine system + user into one prompt since `claude -p` via stdin
+  // doesn't have a separate system-prompt slot.
+  const combined = [
+    '=== SYSTEM (reviewer prompt) ===',
+    systemPrompt,
+    '',
+    '=== USER (dispatched payload to review) ===',
+    userMessage,
+    '',
+    '=== INSTRUCTIONS ===',
+    'Return ONLY the JSON verdict per the schema in the system block above.',
+    'No prose preamble, no markdown fences.',
+  ].join('\n');
+
+  const env = {
+    ...process.env,
+    PRISM_OOB_REVIEWER_PROCESS: '1', // recursion guard for any inner hook fires
+  };
+
+  const res = spawnSync('claude', ['-p', '--model', model], {
+    input: combined,
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    env,
+    windowsHide: true,
+  });
+
+  if (res.error) {
+    // spawnSync fail: claude binary not on PATH, OS-level error
+    const err = new Error(`claude binary not available: ${res.error.message}`);
+    err.code = 'CLAUDE_BINARY_MISSING';
+    throw err;
   }
+  if (res.signal === 'SIGTERM') {
+    const err = new Error('claude -p timed out');
+    err.code = 'CLAUDE_TIMEOUT';
+    throw err;
+  }
+  if (res.status !== 0) {
+    const err = new Error(`claude -p exit ${res.status}: ${(res.stderr || '').slice(0, 200)}`);
+    err.code = 'CLAUDE_NONZERO';
+    err.status = res.status;
+    throw err;
+  }
+
+  // Return a shape that parseVerdictJson can consume (preserving the same
+  // {content: [{text: '...'}]} contract as the old fetch() path).
+  return {content: [{text: res.stdout}]};
 }
 
 function parseVerdictJson(text) {
