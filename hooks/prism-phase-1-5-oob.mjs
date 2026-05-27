@@ -188,8 +188,9 @@ async function main() {
   }
 
   // Real invocation via claude -p (Claude Code subscription auth)
+  const useLite = entry.phase_1_5_lite_oob === true;
   if (blockMode) {
-    const verdict = await invokeReviewerInline(sha, flagLib);
+    const verdict = await invokeReviewerInline(sha, flagLib, useLite);
     if (verdict && (verdict.summary.un_cited > 0 || verdict.summary.rejected > 0)) {
       // Block: decision-block JSON via stdout (Claude Code reads it)
       const reason = 'OOB PHASE 1.5 reviewer flagged ' + verdict.summary.un_cited + ' UN-CITED + ' + verdict.summary.rejected + ' REJECTED claims on @' + agentName + '. Verdict file: ~/.claude/.prism-phase-1-5-verdicts-' + sha + '.json. Bounce-ONCE per protocol.';
@@ -199,7 +200,7 @@ async function main() {
     return 0;
   } else {
     // Async: spawn child to invoke reviewer, return immediately
-    spawnAsyncReviewer(sha);
+    spawnAsyncReviewer(sha, useLite);
     return 0;
   }
 }
@@ -224,15 +225,19 @@ function hintClass(s) {
   return 'correctness';
 }
 
-async function invokeReviewerInline(sha, flagLib) {
+async function invokeReviewerInline(sha, flagLib, useLite = false) {
   // Invokes the OOB reviewer via `claude -p` (Claude Code subscription auth).
   // Prompt delivered via stdin to avoid Windows ENAMETOOLONG on >32KB payloads.
+  // useLite: when true (roster.phase_1_5_lite_oob === true), use the shorter
+  // LITE reviewer prompt instead of the full one.
   try {
     const pending = flagLib.readPending(sha);
     if (!pending) return null;
 
     // Read reviewer agent file for the model + system prompt
-    const reviewerFile = join(H, '.claude', 'agents', 'phase-1-5-oob-reviewer.md');
+    const REVIEWER_FILE_FULL = join(H, '.claude', 'agents', 'phase-1-5-oob-reviewer.md');
+    const REVIEWER_FILE_LITE = join(H, '.claude', 'agents', 'phase-1-5-oob-reviewer-lite.md');
+    const reviewerFile = (useLite && existsSync(REVIEWER_FILE_LITE)) ? REVIEWER_FILE_LITE : REVIEWER_FILE_FULL;
     let reviewerPrompt = 'You are an OOB PHASE 1.5 reviewer. Return JSON with a verdicts array.';
     let reviewerModel = 'claude-sonnet-4-6';
     try {
@@ -346,12 +351,12 @@ function parseVerdictJson(text) {
   }
 }
 
-function spawnAsyncReviewer(sha) {
+function spawnAsyncReviewer(sha, useLite = false) {
   // Spawn detached child running this same script with --async-worker <sha>
   const child = spawn('node', [process.argv[1], '--async-worker', sha], {
     detached: true,
     stdio: 'ignore',
-    env: {...process.env, PRISM_OOB_ASYNC_WORKER: '1'},
+    env: {...process.env, PRISM_OOB_ASYNC_WORKER: '1', PRISM_OOB_USE_LITE: useLite ? '1' : '0'},
   });
   child.unref();
 }
@@ -362,7 +367,8 @@ if (process.argv[2] === '--async-worker' && process.argv[3]) {
     const sha = process.argv[3];
     const libPath = join(H, '.claude', 'tools', 'lib', 'prism-verdict-flag.mjs');
     const flagLib = await import(pathToFileURL(existsSync(libPath) ? libPath : join(process.cwd(), 'tools', 'lib', 'prism-verdict-flag.mjs')).href);
-    await invokeReviewerInline(sha, flagLib);
+    const useLite = process.env.PRISM_OOB_USE_LITE === '1';
+    await invokeReviewerInline(sha, flagLib, useLite);
     process.exit(0);
   })().catch(() => process.exit(0));
 } else {
