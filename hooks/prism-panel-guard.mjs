@@ -243,6 +243,49 @@ function resolveMode() {
   return ['soft', 'hard', 'off'].includes(mode) ? mode : 'soft';
 }
 
+// ─── Path B helpers: SCOPE GUARD (T31) + alternatives-considered (T32) ──────
+
+// T31 — D3 SCOPE GUARD: detect positions whose titles share no keywords with
+// the declared panel scope. Heuristic: simple keyword-overlap (false positives
+// over false negatives is acceptable for v4.5).
+// Kill switch: PRISM_DISABLE_SCOPE_GUARD=1.
+function checkScope(panel) {
+  if (process.env.PRISM_DISABLE_SCOPE_GUARD === '1') return;
+  if (!panel.scope || typeof panel.scope !== 'string') return; // backwards-compat
+  const stop = new Set(['the','a','an','of','for','to','in','on','and','or','with','from','by','at','is','as']);
+  const tokenize = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w && !stop.has(w));
+  const scopeWords = new Set(tokenize(panel.scope).filter(w => w.length >= 4));
+  if (scopeWords.size === 0) return; // scope too vague to enforce
+  for (const pos of (panel.positions || [])) {
+    if (!pos.title || typeof pos.title !== 'string') continue;
+    const titleWords = tokenize(pos.title).filter(w => w.length >= 4);
+    const overlap = titleWords.some(w => scopeWords.has(w));
+    if (!overlap) {
+      process.stderr.write(`SCOPE GUARD: position "${pos.title}" appears outside panel scope "${panel.scope}"\n`);
+      process.exit(2);
+    }
+  }
+}
+
+// T32 — G2 alternatives-considered validation: if present, must be an array
+// of {approach, why_not} objects. Absent = pass (additive, backwards-compat).
+// Kill switch: PRISM_DISABLE_ALTERNATIVES_CHECK=1.
+function checkAlternatives(panel) {
+  if (process.env.PRISM_DISABLE_ALTERNATIVES_CHECK === '1') return;
+  const alts = panel.rationale?.alternatives_considered;
+  if (alts === undefined) return; // additive — absent is fine (pre-v4.5 panels)
+  if (!Array.isArray(alts)) {
+    process.stderr.write('[panel-guard] rationale.alternatives_considered must be an array\n');
+    process.exit(2);
+  }
+  for (const alt of alts) {
+    if (typeof alt !== 'object' || alt === null || !alt.approach || !alt.why_not) {
+      process.stderr.write('[panel-guard] each alternatives_considered entry must have approach + why_not\n');
+      process.exit(2);
+    }
+  }
+}
+
 // ─── Path B: PostToolUse dropped-positions logger (v4.5 A3) ─────────────────
 
 // Returns the panel.json file path if the payload is a PostToolUse Write
@@ -291,6 +334,12 @@ function handleDroppedPositions(payload) {
     process.stderr.write(`[panel-guard/A3] cannot read panel.json: ${e.message}\n`);
     process.exit(0);
   }
+
+  // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
+  checkScope(panel);
+
+  // T32 — G2 alternatives-considered shape validation.
+  checkAlternatives(panel);
 
   const positions = panel.positions ?? [];
   const ts = new Date().toISOString();
