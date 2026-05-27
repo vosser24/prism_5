@@ -4,6 +4,7 @@
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
 //   install  — full install/upgrade. Idempotent.
+//   update   — detect → (idempotency check) → backup → install; respects --dry-run
 //   uninstall — reverse the install
 //   verify   — check every manifest file is present + hooks wired (exit 0 ok, 1 fail)
 //   --help   — usage
@@ -185,7 +186,7 @@ function releaseLock(dryRun) {
 }
 
 // ─── detect ──────────────────────────────────────────────────────────────────
-function detect() {
+function detectInternal() {
   const manifest = (() => {
     try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')); } catch { return null; }
   })();
@@ -235,7 +236,7 @@ function detect() {
   const totalFiles = manifest ? manifest.files.length : 0;
   const partial = installed && (filesFound < totalFiles || hooksRegistered === 0);
 
-  const result = {
+  return {
     installed,
     partial,
     files_found: filesFound,
@@ -246,7 +247,10 @@ function detect() {
     prism_version: manifest ? manifest.prism_version : null,
     claude_dir: CLAUDE_DIR,
   };
+}
 
+function detect() {
+  const result = detectInternal();
   console.log(JSON.stringify(result, null, 2));
   // detect always exits 0
 }
@@ -636,11 +640,12 @@ async function install() {
       }
     }
 
-    // Step 10: summary
+    // Step 10: write version marker + summary
     if (flags.dryRun) {
       log(`[prism-installer] DRY-RUN complete. No changes made.`);
       log(`[prism-installer] Would install ${manifest.files.length} files + ${manifest.directories.length} directories.`);
     } else {
+      atomicWrite(join(CLAUDE_DIR, '.prism-version'), manifest.prism_version);
       log(`[prism-installer] PRISM ${manifest.prism_version} install complete.`);
       if (backupDir) log(`[prism-installer] Backup: ${backupDir}`);
     }
@@ -683,6 +688,11 @@ async function uninstall() {
       log(`[prism-installer] Stripped PRISM hooks from settings.json.`);
     }
 
+    // Remove version marker
+    if (!flags.dryRun) {
+      safeUnlink(join(CLAUDE_DIR, '.prism-version'));
+    }
+
     // State files are always preserved — we never delete .prism-*.jsonl, prism-policy.json, etc.
     // To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
     if (!flags.dryRun) {
@@ -693,6 +703,56 @@ async function uninstall() {
 
   } finally {
     releaseLock(flags.dryRun);
+  }
+}
+
+// ─── update ───────────────────────────────────────────────────────────────────
+async function runUpdate() {
+  // Step 1: read manifest for shipped version
+  const manifest = loadManifest();
+  const shippedVersion = manifest.prism_version;
+
+  // Step 2: detect current install state (without printing to stdout)
+  const detection = detectInternal();
+
+  // Step 3: read installed version from marker file
+  const versionMarkerPath = join(CLAUDE_DIR, '.prism-version');
+  let installedVersion = 'unknown';
+  if (existsSync(versionMarkerPath)) {
+    try {
+      installedVersion = readFileSync(versionMarkerPath, 'utf8').trim();
+    } catch {
+      installedVersion = 'unknown';
+    }
+  }
+
+  // Step 4: decide
+  if (!detection.installed) {
+    log(`[update] no existing install at ${CLAUDE_DIR}; running fresh install.`);
+    if (flags.dryRun) {
+      log(`[update] --dry-run: would install v${shippedVersion}.`);
+      return 0;
+    }
+    await install();
+    return 0;
+  } else if (installedVersion === shippedVersion) {
+    log(`[update] Already at v${shippedVersion}; nothing to do.`);
+    return 0;
+  } else {
+    // mismatch or unknown
+    if (installedVersion === 'unknown') {
+      log(`[update] installed version unknown (no .prism-version marker); upgrading to v${shippedVersion}.`);
+    } else {
+      log(`[update] Upgrading from v${installedVersion} → v${shippedVersion}.`);
+    }
+    if (flags.dryRun) {
+      log(`[update] --dry-run: would back up and install.`);
+      return 0;
+    }
+    const backupDir = makeBackup();
+    log(`[update] Backup at ${backupDir}`);
+    await install();
+    return 0;
   }
 }
 
@@ -786,6 +846,7 @@ Usage:
 Subcommands:
   detect               Print JSON of current install state (no changes, exit 0 always)
   install              Full install/upgrade. Idempotent.
+  update               detect → idempotency check → backup → install; respects --dry-run
   uninstall            Remove PRISM files and hooks
   verify               Check all manifest files are present and hooks are wired
   --help               Show this help
@@ -796,8 +857,8 @@ Common flags:
   --src  <path>        Override source repo root (default: derived from installer location)
   --quiet              Suppress progress output
 
-install flags:
-  --dry-run            Simulate install; print what would happen, no changes
+install / update flags:
+  --dry-run            Simulate install/update; print what would happen, no changes
   --no-backup          Skip backup of existing settings/roster
 
 uninstall flags:
@@ -811,6 +872,9 @@ Examples:
   node tools/prism-installer.mjs install --dry-run
   node tools/prism-installer.mjs install --home /tmp/sandbox
   node tools/prism-installer.mjs install --target /path/to/.claude
+  node tools/prism-installer.mjs update
+  node tools/prism-installer.mjs update --dry-run
+  node tools/prism-installer.mjs update --target /path/to/.claude
   node tools/prism-installer.mjs verify
   node tools/prism-installer.mjs uninstall --restore-backup ~/.claude/.prism-install-backup-2026-05-27_12-00-00
   node tools/prism-installer.mjs detect
@@ -835,6 +899,9 @@ async function main() {
       break;
     case 'install':
       await install();
+      break;
+    case 'update':
+      process.exit(await runUpdate());
       break;
     case 'uninstall':
       await uninstall();
