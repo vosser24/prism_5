@@ -125,14 +125,16 @@ workflow commands, and the plugin auditor — none of which existed in v3.10.
    Manual install path (bash):
 
    ```bash
-   bash scripts/install.sh
+   bash install.sh
    ```
 
    Manual install path (PowerShell-native, Windows):
 
    ```powershell
-   .\scripts\install.ps1
+   pwsh .\install.ps1
    ```
+
+   > v4.4+ installer supersedes the old `scripts/` path.
 
    The installer is idempotent and backs up your existing `~/.claude/` to
    `~/.claude/backups/pre-prism-<ts>/` before any write.
@@ -475,17 +477,18 @@ the v3.8.4 critical hotfix.
 
 ```bash
 # bash (Linux / macOS / Git Bash):
-bash scripts/uninstall.sh --purge
+bash uninstall.sh
 
 # PowerShell-native (Windows):
-.\scripts\uninstall.ps1 -Purge
+pwsh .\uninstall.ps1
 ```
 
-The uninstaller copies `references/roster.json` and
-`references/update-log.json` (your researched-specialist registrations and
-NotebookLM notebook IDs) to `$env:TEMP\prism-uninstall-preserve-<ts>\`
-BEFORE removing the prism-plan skill directory, then restores them after
-PRISM removal completes.
+> v4.4+ installer supersedes the old `scripts/` path.
+
+The uninstaller removes all PRISM files and strips PRISM hooks from
+`settings.json`. State files (`.prism-routing.jsonl`, `.prism-spend.jsonl`,
+`prism-policy.json`, etc.) are always preserved. To fully clean, manually
+delete `~/.claude/.prism-*` files after uninstall.
 
 Your most recent `~/.claude/backups/pre-prism-<ts>/` keeps the prior
 state file and config. To restore manually:

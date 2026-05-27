@@ -6,16 +6,17 @@
 #
 # Parameters (forwarded to prism-installer.mjs):
 #   -RestoreBackup <path>   Restore settings/roster from a backup directory
-#   -KeepState              Preserve .prism-*.jsonl logs and prism-policy.json
 #   -Quiet                  Suppress progress output
 #   -Home <path>            Override HOME directory
+#
+# Note: state files (.prism-*.jsonl, prism-policy.json, etc.) are always preserved.
+# To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
 #
 # Requirements:
 #   - Node.js 18+ on PATH
 
 param(
     [string]$RestoreBackup = '',
-    [switch]$KeepState,
     [switch]$Quiet,
     [string]$Home = ''
 )
@@ -57,7 +58,6 @@ if (-not (Test-Path $Installer)) {
 # ─── Build arg list ────────────────────────────────────────────────────────────
 $nodeArgs = @($Installer, 'uninstall')
 if ($RestoreBackup -ne '') { $nodeArgs += @('--restore-backup', $RestoreBackup) }
-if ($KeepState) { $nodeArgs += '--keep-state' }
 if ($Quiet)     { $nodeArgs += '--quiet' }
 if ($Home -ne '') { $nodeArgs += @('--home', $Home) }
 

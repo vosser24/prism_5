@@ -7,9 +7,11 @@
 #
 # Options (forwarded to prism-installer.mjs):
 #   --restore-backup <path>   Restore settings/roster from a backup directory
-#   --keep-state              Preserve .prism-*.jsonl logs and prism-policy.json
 #   --quiet                   Suppress progress output
 #   --home <path>             Override HOME directory
+#
+# Note: state files (.prism-*.jsonl, prism-policy.json, etc.) are always preserved.
+# To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
 #
 # Requirements:
 #   - Node.js 18+ on PATH

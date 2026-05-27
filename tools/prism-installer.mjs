@@ -48,7 +48,6 @@ function parseFlags(args) {
     dryRun: false,
     noBackup: false,
     quiet: false,
-    keepState: false,
     restoreBackup: null,
   };
   for (let i = 0; i < args.length; i++) {
@@ -58,7 +57,6 @@ function parseFlags(args) {
     else if (a === '--dry-run') flags.dryRun = true;
     else if (a === '--no-backup') flags.noBackup = true;
     else if (a === '--quiet') flags.quiet = true;
-    else if (a === '--keep-state') flags.keepState = true;
     else if (a === '--restore-backup') flags.restoreBackup = args[++i];
   }
   return flags;
@@ -141,7 +139,7 @@ function readSettings() {
       try { JSON.parse(raw.split('\n').slice(0, i + 1).join('\n')); return false; }
       catch { return true; }
     });
-    die(`settings.json appears malformed at line ~${lineNum + 1}; backup made; aborting`, 2);
+    die(`settings.json appears malformed at line ~${lineNum + 1}; refusing to proceed (no changes made). Inspect or fix the file manually, then re-run.`, 2);
   }
 }
 
@@ -585,11 +583,10 @@ async function uninstall() {
       log(`[prism-installer] Stripped PRISM hooks from settings.json.`);
     }
 
-    // Optionally preserve state files (keep-state: don't remove .jsonl logs etc.)
-    if (!flags.keepState && !flags.dryRun) {
-      // Default: preserve state (we never delete .prism-*.jsonl etc. without explicit flag)
-      // State files are listed in manifest.user_state_paths_preserved — we always preserve them.
-      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.)`);
+    // State files are always preserved — we never delete .prism-*.jsonl, prism-policy.json, etc.
+    // To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
+    if (!flags.dryRun) {
+      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.). To fully clean, manually delete ~/.claude/.prism-* files.`);
     }
 
     log(`[prism-installer] Uninstall complete.`);
@@ -704,8 +701,9 @@ install flags:
 
 uninstall flags:
   --restore-backup <path>  Restore settings/roster from a backup directory
-  --keep-state         Preserve .prism-*.jsonl logs and prism-policy.json
   --quiet              Suppress progress output
+  (State files — .prism-*.jsonl, prism-policy.json, etc. — are always preserved.
+   To fully clean, manually delete ~/.claude/.prism-* files after uninstall.)
 
 Examples:
   node tools/prism-installer.mjs install

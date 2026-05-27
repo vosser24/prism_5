@@ -56,12 +56,13 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
 - `tools/prism-installer.mjs` — Node 18+ core installer (~430 LOC) with four subcommands:
   - `detect` — print JSON of current install state (no changes, exit 0 always). Detects file presence, hook registrations in `settings.json`, roster schema version.
   - `install [--dry-run] [--no-backup] [--quiet]` — full install/upgrade. Idempotent. Steps: detect → backup → strip old PRISM hooks → remove old PRISM files (by name pattern) → copy new files → merge roster (preserve user agents) → JSON-aware `settings.json` merge (no duplicates, preserves non-PRISM hooks) → chmod+x on Unix → post-install verify → summary.
-  - `uninstall [--restore-backup <path>] [--keep-state] [--quiet]` — removes all PRISM files and strips PRISM hooks from `settings.json`. Preserves user state files (`.prism-*.jsonl`, `prism-policy.json`, `.prism-flags/`) by default.
+  - `uninstall [--restore-backup <path>] [--quiet]` — removes all PRISM files and strips PRISM hooks from `settings.json`. State files (`.prism-routing.jsonl`, `.prism-spend.jsonl`, `prism-policy.json`, etc.) are always preserved. To fully clean, manually delete `~/.claude/.prism-*` files after uninstall.
   - `verify` — checks every manifest file exists, `settings.json` parses and contains PRISM hooks, `roster.json` parses. Exit 0 if all pass, 1 if any fail.
 - `tools/install-manifest.json` — data-driven file manifest (85 individual files + 4 skill directories). Add new files here for future versions; installer reads the manifest at runtime.
 - `install.sh` / `uninstall.sh` — Bash 4+ wrappers (Mac/Linux/git-bash) with Node-18 check and banner.
-- `install.ps1` / `uninstall.ps1` — PowerShell 5.1+ wrappers (Windows) with Node-18 check and banner. `-DryRun`, `-NoBackup`, `-RestoreBackup`, `-KeepState`, `-Home` parameters.
+- `install.ps1` / `uninstall.ps1` — PowerShell 5.1+ wrappers (Windows) with Node-18 check and banner. `-DryRun`, `-NoBackup`, `-RestoreBackup`, `-Home` parameters.
 - Hardening: lock file (`~/.claude/.prism-install.lock`) prevents concurrent runs; atomic tempfile+rename writes; fail-loud on malformed `settings.json` (exit 2) instead of silently overwriting; read-only file handling on Windows (chmod before unlink).
+- `settings.fragment.json` is also copied to `~/.claude/` for audit purposes (it lists every hook entry the installer merged; not read at runtime).
 - `README.md` updated with a top-level **Installation** section (clone → install script → verify; Windows + Mac/Linux invocations; upgrade and uninstall instructions).
 - `docs/prism/MIGRATION.md` v4.3 → v4.4 section rewritten around the installer.
 
