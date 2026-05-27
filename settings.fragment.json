@@ -140,11 +140,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-phase-0d-challenges.mjs"
-          },
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-phase-0d-challenges.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
           {
             "type": "command",
-            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-phase-0d-oob.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-phase-0d-oob.mjs"
           }
         ]
       },
@@ -153,7 +158,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-dispatch-cap.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-dispatch-cap.mjs"
           }
         ]
       }
