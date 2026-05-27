@@ -2,7 +2,6 @@
 // tests/v3/state/test-prism-telemetry-v4-5.mjs
 // v4.5 Layer 1 — telemetry tooling tests
 import { existsSync, readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -33,7 +32,7 @@ check('telemetry-aggregate has --agreement mode',
 const routerPath = join(repoRoot, 'hooks', 'prism-prompt-tier-router.mjs');
 const routerSrc = readFileSync(routerPath, 'utf-8');
 check('.prism-routing.jsonl schema_version bumped to 3',
-  /schema_version["\s:]+3/.test(routerSrc));
+  /schema_version["\s:]+3\b/.test(routerSrc));
 
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);
