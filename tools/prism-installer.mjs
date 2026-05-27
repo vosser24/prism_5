@@ -16,6 +16,7 @@
 //   --dry-run       (install only) simulate, no filesystem changes
 //   --no-backup     (install only) skip backup step
 //   --quiet         suppress progress output
+//   --purge-state   (uninstall only) wipe state files; --yes skip confirm
 //
 // Fail-loud: any unrecoverable error exits non-zero with a clear message.
 // Fail-safe: --dry-run, lock-file, atomic writes (tempfile+rename).
@@ -53,6 +54,8 @@ function parseFlags(args) {
     noBackup: false,
     quiet: false,
     restoreBackup: null,
+    purgeState: false,
+    yes: false,
   };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -63,6 +66,8 @@ function parseFlags(args) {
     else if (a === '--no-backup') flags.noBackup = true;
     else if (a === '--quiet') flags.quiet = true;
     else if (a === '--restore-backup') flags.restoreBackup = args[++i];
+    else if (a === '--purge-state') flags.purgeState = true;
+    else if (a === '--yes' || a === '-y') flags.yes = true;
   }
   return flags;
 }
@@ -129,6 +134,16 @@ function safeUnlink(path) {
     unlinkSync(path);
     return true;
   } catch { return false; }
+}
+
+function readLineFromStdin() {
+  try {
+    const buf = readFileSync(0, 'utf-8');  // 0 = stdin fd
+    const line = buf.split(/\r?\n/)[0] ?? '';
+    return line.trim();
+  } catch {
+    return '';  // stdin closed / EOF → treat as no
+  }
 }
 
 function loadManifest() {
@@ -693,10 +708,59 @@ async function uninstall() {
       safeUnlink(join(CLAUDE_DIR, '.prism-version'));
     }
 
-    // State files are always preserved — we never delete .prism-*.jsonl, prism-policy.json, etc.
-    // To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
-    if (!flags.dryRun) {
-      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.). To fully clean, manually delete ~/.claude/.prism-* files.`);
+    // State files are preserved by default — .prism-*.jsonl, prism-policy.json, etc.
+    // Pass --purge-state to remove them.
+    if (!flags.purgeState && !flags.dryRun) {
+      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.). Use --purge-state to remove them.`);
+    }
+
+    if (flags.purgeState) {
+      if (!flags.yes) {
+        // Interactive confirm
+        process.stdout.write('[uninstall] --purge-state will DELETE: roster.json, MEMORY.md, .prism-routing.jsonl, .prism-spend.jsonl, .prism-phase-1-5-verdicts.jsonl, .prism-telemetry-rollup.json, prism-policy.json, .prism-flags/, .prism-task-*/. Continue? [y/N] ');
+        const answer = readLineFromStdin();
+        if (answer.toLowerCase() !== 'y') {
+          log('[uninstall] --purge-state aborted by user; state preserved.');
+          return;
+        }
+      }
+      // Purge: build full list from manifest user_state_paths_preserved + extras
+      // Note: globPattern(base, pattern) treats patterns ending with '/' as exact dir matches,
+      // not as globs. We strip trailing '/' before calling it so '.prism-task-*/' correctly
+      // hits the wildcard branch (and '.prism-flags/' hits the exact-dir branch).
+      const preserved = manifest.user_state_paths_preserved || [];
+      const extras = ['MEMORY.md', 'skills/prism-plan/references/roster.json'];
+      const purgeList = [...preserved, ...extras];
+      let purged = 0;
+      for (const pattern of purgeList) {
+        if (flags.dryRun) {
+          log(`[uninstall] --dry-run: would purge ${pattern}`);
+          continue;
+        }
+        // Strip trailing '/' before passing to globPattern so the wildcard branch is reached
+        // for patterns like '.prism-task-*/' — globPattern's directory branch does a literal
+        // existsSync and would never match a glob with '*' in the name.
+        const strippedPattern = pattern.replace(/\/$/, '');
+        const matches = globPattern(CLAUDE_DIR, strippedPattern);
+        if (matches.length === 0 && !strippedPattern.includes('*')) {
+          // Non-glob file/dir that doesn't exist — skip silently
+          continue;
+        }
+        for (const m of matches) {
+          try {
+            const st = lstatSync(m);
+            if (st.isDirectory()) {
+              rmSync(m, {recursive: true, force: true});
+            } else {
+              safeUnlink(m);
+            }
+            const rel = m.replace(CLAUDE_DIR + '/', '').replace(CLAUDE_DIR + '\\', '');
+            log(`[uninstall] purged: ${rel}`);
+            purged++;
+          } catch {}
+        }
+      }
+      log(`[uninstall] --purge-state removed ${purged} state item(s).`);
     }
 
     log(`[prism-installer] Uninstall complete.`);
@@ -863,9 +927,12 @@ install / update flags:
 
 uninstall flags:
   --restore-backup <path>  Restore settings/roster from a backup directory
+  --purge-state        Also delete preserved state files (roster.json, MEMORY.md,
+                       .prism-*.jsonl, prism-policy.json, .prism-flags/, .prism-task-*/)
+  --yes / -y           Skip confirmation prompt for --purge-state
   --quiet              Suppress progress output
-  (State files — .prism-*.jsonl, prism-policy.json, etc. — are always preserved.
-   To fully clean, manually delete ~/.claude/.prism-* files after uninstall.)
+  (State files — .prism-*.jsonl, prism-policy.json, etc. — are preserved by default.
+   Pass --purge-state to remove them; add --yes to skip the confirmation prompt.)
 
 Examples:
   node tools/prism-installer.mjs install
@@ -877,6 +944,7 @@ Examples:
   node tools/prism-installer.mjs update --target /path/to/.claude
   node tools/prism-installer.mjs verify
   node tools/prism-installer.mjs uninstall --restore-backup ~/.claude/.prism-install-backup-2026-05-27_12-00-00
+  node tools/prism-installer.mjs uninstall --purge-state --yes
   node tools/prism-installer.mjs detect
 
 Exit codes:
