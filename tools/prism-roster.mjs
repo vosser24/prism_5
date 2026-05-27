@@ -119,60 +119,66 @@ if (mode === 'apply-ratchet') {
     perAgent[a].un_cited += ((e.summary && e.summary.un_cited) || 0) + ((e.summary && e.summary.rejected) || 0);
   }
 
-  const roster = readRoster();
-  let changes = 0;
-  for (const [agent, stats] of Object.entries(perAgent)) {
-    if (stats.dispatches < MIN_DISPATCHES) continue;
-    if (stats.total_claims === 0) continue;
-    const rate = stats.un_cited / stats.total_claims;
-    if (rate < THRESHOLD) continue;
-    if (!roster.agents || !roster.agents[agent]) continue;
-    if (roster.agents[agent].pending_upgrade === true) continue;
-    roster.agents[agent].pending_upgrade = true;
-    roster.agents[agent].status = 'upgrade_needed';
-    logToImprovements(agent, `Evidence-discipline ratchet flipped pending_upgrade=true (UN-CITED rate ${(rate * 100).toFixed(1)}% over ${stats.dispatches} dispatches).`);
-    process.stdout.write(`Flagged @${agent}: pending_upgrade=true (UN-CITED rate ${(rate * 100).toFixed(1)}%)\n`);
-    changes++;
-  }
+  await withRosterLock(ROSTER, async () => {
+    const roster = readRoster();
+    let changes = 0;
+    for (const [agent, stats] of Object.entries(perAgent)) {
+      if (stats.dispatches < MIN_DISPATCHES) continue;
+      if (stats.total_claims === 0) continue;
+      const rate = stats.un_cited / stats.total_claims;
+      if (rate < THRESHOLD) continue;
+      if (!roster.agents || !roster.agents[agent]) continue;
+      if (roster.agents[agent].pending_upgrade === true) continue;
+      roster.agents[agent].pending_upgrade = true;
+      roster.agents[agent].status = 'upgrade_needed';
+      logToImprovements(agent, `Evidence-discipline ratchet flipped pending_upgrade=true (UN-CITED rate ${(rate * 100).toFixed(1)}% over ${stats.dispatches} dispatches).`);
+      process.stdout.write(`Flagged @${agent}: pending_upgrade=true (UN-CITED rate ${(rate * 100).toFixed(1)}%)\n`);
+      changes++;
+    }
 
-  if (changes > 0) {
-    roster.last_updated = new Date().toISOString();
-    writeRoster(roster);
-    process.stdout.write(`Updated roster.json: ${changes} agent(s) flagged.\n`);
-  } else {
-    process.stdout.write('No ratchet changes.\n');
-  }
+    if (changes > 0) {
+      roster.last_updated = new Date().toISOString();
+      writeRoster(roster);
+      process.stdout.write(`Updated roster.json: ${changes} agent(s) flagged.\n`);
+    } else {
+      process.stdout.write('No ratchet changes.\n');
+    }
+  });
   process.exit(0);
 }
 
 if (mode === 'reset-model') {
   if (!agentArg) { process.stderr.write('error: --reset-model requires an agent name\n'); process.exit(2); }
   const agent = agentArg.replace(/^@/, '');
-  const roster = readRoster();
-  if (!roster.agents || !roster.agents[agent]) {
-    process.stderr.write(`error: agent ${agent} not in roster\n`);
-    process.exit(5);
-  }
-  roster.agents[agent].default_model = null;
-  roster.agents[agent].corrections_since_last_upgrade = 0;
-  roster.agents[agent].consecutive_successful_sonnet_tasks = 0;
-  writeRoster(roster);
-  logToImprovements(agent, `Manual model reset via prism-roster --reset-model.`);
-  process.stdout.write(`Reset @${agent}: default_model=null, counters=0.\n`);
+  await withRosterLock(ROSTER, async () => {
+    const roster = readRoster();
+    if (!roster.agents || !roster.agents[agent]) {
+      process.stderr.write(`error: agent ${agent} not in roster\n`);
+      process.exit(5);
+    }
+    roster.agents[agent].default_model = null;
+    roster.agents[agent].corrections_since_last_upgrade = 0;
+    roster.agents[agent].consecutive_successful_sonnet_tasks = 0;
+    writeRoster(roster);
+    logToImprovements(agent, `Manual model reset via prism-roster --reset-model.`);
+    process.stdout.write(`Reset @${agent}: default_model=null, counters=0.\n`);
+  });
   process.exit(0);
 }
 
 if (mode === 'tag-1-5' || mode === 'untag-1-5') {
   if (!agentArg) { process.stderr.write(`error: ${mode} requires an agent name\n`); process.exit(2); }
   const agent = agentArg.replace(/^@/, '');
-  const roster = readRoster();
-  if (!roster.agents || !roster.agents[agent]) {
-    process.stderr.write(`error: agent ${agent} not in roster\n`);
-    process.exit(5);
-  }
-  roster.agents[agent].requires_phase_1_5 = (mode === 'tag-1-5');
-  writeRoster(roster);
-  process.stdout.write(`@${agent}: requires_phase_1_5=${mode === 'tag-1-5'}\n`);
+  await withRosterLock(ROSTER, async () => {
+    const roster = readRoster();
+    if (!roster.agents || !roster.agents[agent]) {
+      process.stderr.write(`error: agent ${agent} not in roster\n`);
+      process.exit(5);
+    }
+    roster.agents[agent].requires_phase_1_5 = (mode === 'tag-1-5');
+    writeRoster(roster);
+    process.stdout.write(`@${agent}: requires_phase_1_5=${mode === 'tag-1-5'}\n`);
+  });
   process.exit(0);
 }
 
