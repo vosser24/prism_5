@@ -1348,7 +1348,20 @@ When reviewing a proposed change, use the Adversarial review output format
 
 ---
 
-## PRISM composition
+## PRISM composition (v4.4)
+
+PRISM runs as a layered system:
+
+- **Master layer** — this agent (claude-master, or the project-specific `master-<slug>`). Main thread; loads the `master-orchestrator` skill.
+- **Specialist layer** — domain experts dispatched as Level-2 subagents via the `Agent()` tool. Subagents cannot spawn subagents (Claude Code enforces — verified at https://code.claude.com/docs/en/sub-agents).
+- **OOB reviewer layer** (v4.4) — out-of-band PHASE 1.5 reviewer invoked from a SubagentStop hook (`hooks/prism-phase-1-5-oob.mjs`) via direct Anthropic API call (Node 18+ built-in `fetch()`). Runs OUTSIDE the master dispatch tree; preserves the two-level topology. Verdicts surface via SessionStart pickup or block-mode decision-block.
+
+Plus the surrounding infrastructure:
+
+- **Roster** — `~/.claude/skills/prism-plan/references/roster.json`, unified index of agents + skills + tools + mcps. v4.3 adds `installed_via` provenance tag; v4.4 adds per-agent `requires_phase_1_5` and `requires_phase_1_5_block` flags.
+- **Verdict log** (v4.4) — `~/.claude/.prism-phase-1-5-verdicts.jsonl`, append-only. Read by `tools/prism-phase-1-5-verdicts.mjs` (query CLI) and `tools/prism-roster.mjs --apply-ratchet` (evidence-discipline ratchet — Phase 4 deliverable, see plan).
+- **Telemetry rollup** (v4.1+) — `~/.claude/.prism-telemetry-rollup.json`, opt-in. v4.4 adds `--phase-1-5-agreement` subcommand for reviewer↔master agreement signal.
+- **Slash commands** — `/prism-bootstrap`, `/prism-sync`, `/prism-clean`, `/prism-health`, `/prism-roster`, `/prism-uninstall-cleanup` (v4.3+). The v4.4 verdict-log query is exposed via direct `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs`.
 
 If you detect PRISM (presence of `~/.claude/skills/prism-plan/`,
 `~/.claude/.prism-routing.jsonl`, or `.claude/.prism-state.json`):
@@ -1360,10 +1373,13 @@ If you detect PRISM (presence of `~/.claude/skills/prism-plan/`,
   acts on it.
 - **Respect PRISM env vars** (`PRISM_PROMPT_ROUTER`, `PRISM_DISPATCH_GUARD`,
   `PRISM_MUTATION_GUARD`, `PRISM_MODEL_GUARD`, `PRISM_TASK_TIER`,
-  `PRISM_MEMORY_NUDGE`). Do not recommend disabling them without cause.
+  `PRISM_MEMORY_NUDGE`, `PRISM_DISABLE_OOB_REVIEW`). Do not recommend
+  disabling them without cause.
 - **`/prism-bootstrap`, `/prism-sync`, `/prism-clean`** are v3.10.0
   state-machine commands. If user is migrating from v3.8.9, run
   `init-state-if-missing` with detect-and-adopt before any other phase.
+
+The OOB reviewer is opt-in per-agent (default off). To enable for a specialist, set `requires_phase_1_5: true` on its roster.json entry. To run synchronously (master pauses for verdict), additionally set `requires_phase_1_5_block: true`. Kill switches: `PRISM_DISABLE_OOB_REVIEW=1` (per-session env var); `requires_phase_1_5: false` (per-agent).
 
 ---
 

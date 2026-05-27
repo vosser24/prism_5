@@ -5,12 +5,10 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 
 # /prism-help — PRISM command index
 
-This is the user-facing index for PRISM as of v4.0. Commands are grouped by
+This is the user-facing index for PRISM as of v4.4. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.0** + v4.1 git-hygiene + freshness sweep + telemetry
-opt-in (project-master surface). For migration from v3.x or v4.0 →
-v4.1, see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v4.4** — OOB PHASE 1.5 reviewer + master-orchestrator refactor + evidence-discipline ratchet. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -30,8 +28,10 @@ v4.1, see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 | `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Opt-in entry point. |
 
 The `master-orchestrator` skill (Phase E) is loaded automatically by every
-`master-<slug>` agent — no slash command needed. Its protocol body lives at
-`~/.claude/skills/master-orchestrator/SKILL.md`.
+`master-<slug>` agent — no slash command needed. Its navigation index lives at
+`~/.claude/skills/master-orchestrator/SKILL.md`; detailed protocols are in
+`~/.claude/skills/master-orchestrator/references/` (v4.4 refactor — 10 focused
+reference files replacing the previous 770-line monolith).
 
 > **Where agents live (Q7 clarification, v4.1).** `@agent-factory` writes domain specialists to `~/.claude/agents/<name>.md` (global, reusable across all projects). Only `master-<slug>` agents (v4.0 Phase D, via `/prism-deep-dive`) are written to `<project>/.claude/agents/master-<slug>.md` — they're project-scoped by definition. Every other factory mode is global-write.
 
@@ -61,6 +61,17 @@ The `master-orchestrator` skill (Phase E) is loaded automatically by every
 | `/prism-archive` | Consolidate agent learnings into RAG-queryable sources. |
 | `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. Run to make the orchestrator and `blueprint-prompt` aware of resources not created via `agent-factory`. |
 | `/prism-telemetry` | Local-only telemetry aggregation. Aggregates `~/.claude/.prism-routing.jsonl` into a structured rollup. **No network** — export-to-JSON for manual sharing only. |
+
+### v4.4 OOB PHASE 1.5 tools
+
+These are CLI tools (not slash commands). Run directly from the terminal or via `/prism-clean` (ratchet is auto-invoked):
+
+- `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs` — query verdict log; flags `--agent <name>`, `--since <YYYY-MM-DD>`, `--json`, `--uncited-rate`.
+- `node ~/.claude/tools/prism-roster.mjs --apply-ratchet` — apply evidence-discipline ratchet from verdict log. Auto-invoked by `/prism-clean`.
+- `node ~/.claude/tools/prism-roster.mjs --tag-1-5 @<agent>` — opt agent into OOB PHASE 1.5 review.
+- `node ~/.claude/tools/prism-roster.mjs --untag-1-5 @<agent>` — remove OOB PHASE 1.5 review from agent.
+- `node ~/.claude/tools/prism-roster.mjs --reset-model @<agent>` — manual deescalation reset (clears `default_model` + counters).
+- `node ~/.claude/tools/prism-telemetry-aggregate.mjs --phase-1-5-agreement` — per-agent reviewer agreement signal (requires telemetry opt-in).
 
 ## Lifecycle
 
@@ -101,6 +112,7 @@ switches let you suppress individual nudges via env vars.
 | PreCompact | `prism-precompact-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean`. | `PRISM_DISABLE_PRECOMPACT_NUDGE=1` |
 | PreToolUse[Bash] | `prism-prepush-review.mjs` (v4.1 Phase A) | Detects `git push *` and asks for confirmation + nudges `/code-review` + `/security-review`. Bypass via per-branch `review-done` flag-file. | `PRISM_DISABLE_PREPUSH_NUDGE=1` |
 | PreToolUse[Bash] | `prism-safety.mjs` | Blocks `rm -rf`, `DROP TABLE`, `git push --force`, etc. Warns on push-to-main. | n/a — safety gate |
+| SubagentStop | `prism-phase-1-5-oob.mjs` (v4.4) | When specialist has `requires_phase_1_5: true` in roster, invokes independent reviewer via Anthropic SDK. Async by default; block-mode if `requires_phase_1_5_block: true`. | `PRISM_DISABLE_OOB_REVIEW=1` |
 
 ---
 
@@ -121,6 +133,6 @@ invoke them with a slash command, you trigger them by intent:
 ## See also
 
 - `README.md` — top-level PRISM overview
-- `docs/prism/MIGRATION.md` — v3.10 → v3.11 → v4.0 migration recipe
+- `docs/prism/MIGRATION.md` — v3.x → v4.0 and v4.3 → v4.4 upgrade recipes
 - `CHANGELOG.md` — release-by-release change history
 - `docs/prism/adjudications/D004-v4-product-vision.md` — locked v4.0 design

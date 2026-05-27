@@ -43,7 +43,7 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 
 (Or clone manually — see [Manual install](#manual-install) below.) The clone path remains supported for users who want full control, are developing PRISM itself, or need the post-install scaffolding the plugin install cannot perform (see CHANGELOG v3.5.0 limitations).
 
-## Status — works / half-works / known-gaps (v4.0.0)
+## Status — works / half-works / known-gaps (v4.4.0)
 
 | Journey | State | Notes |
 |---|---|---|
@@ -70,10 +70,17 @@ curl -sSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/i
 | SessionStart daily freshness sweep (v4.1) | ✅ Shipped (v4.1 Phase B) | Once-per-24h: plugin drift, stale agents, update-log, CLAUDE.md, tools-registry rotations |
 | Telemetry opt-in prompt (v4.1) | ✅ Shipped (v4.1 Phase C, default-off in v4.2) | `/prism-bootstrap` health phase prompts once; default off; honors `DISABLE_TELEMETRY=1` + `DO_NOT_TRACK=1`; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
 | User hook customization preservation | ❌ Not yet | v4.1+ |
+| OOB PHASE 1.5 reviewer (v4.4) | ✅ Shipped (v4.4) | SubagentStop hook invokes independent reviewer; verdict log + SessionStart pickup; opt-in per-agent via `prism-roster --tag-1-5` |
+| master-orchestrator skill refactor (v4.4) | ✅ Shipped (v4.4) | SKILL.md 770→~130 lines; 10 focused reference files under `references/` |
+| Evidence-discipline ratchet (v4.4) | ✅ Shipped (v4.4) | `prism-roster --apply-ratchet` reads verdict log; ≥30% UN-CITED rate → `pending_upgrade=true`; auto-runs in `/prism-clean` |
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 
 See `tests/v3/plan.md` for the comprehensive user-journey test grid and
-`docs/prism/MIGRATION.md` for the v3.x → v4.0 upgrade recipe.
+`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0 and v4.3 → v4.4).
+
+### v4.4 — Independent PHASE 1.5 reviewer (out-of-band)
+
+Tag any rostered specialist with `requires_phase_1_5: true` to enable an independent reviewer that runs OUTSIDE the master's dispatch tree. The reviewer sees only the specialist's output (not the master's reasoning or final synthesis) and issues per-claim verdicts using the 6-class evidence taxonomy. Verdicts surface on the next turn (async) or block the irreversible next step (block-mode). Verdict log at `~/.claude/.prism-phase-1-5-verdicts.jsonl`; query CLI at `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs`.
 
 ## Architecture at a glance
 
@@ -94,9 +101,9 @@ See `tests/v3/plan.md` for the comprehensive user-journey test grid and
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.0.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.0 upgrade recipe with rollback
-- `/prism-help` (in Claude Code) — curated v4.0 slash-command index
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.4.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.4 upgrade recipes
+- `/prism-help` (in Claude Code) — curated v4.4 slash-command index
 - [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack

@@ -224,6 +224,27 @@ try {
     }
   } catch {}
 
+  // ── v4.4 Layer B: OOB PHASE 1.5 verdict pickup ──
+  // Reads completed verdict files and surfaces UN-CITED/REJECTED items as
+  // [Prior turn] prefixed notices. Severity-filtered: all-EVIDENCED is silent.
+  try {
+    const verdictLib = await import(pathToFileURL(join(H, '.claude', 'tools', 'lib', 'prism-verdict-flag.mjs')).href).catch(() => null);
+    if (verdictLib) {
+      const completed = verdictLib.listCompletedVerdicts();
+      for (const sha of completed.slice(0, 5)) {  // cap surface area
+        const v = verdictLib.readVerdict(sha);
+        if (!v) continue;
+        const flagged = (v.verdicts || []).filter(c => c.verdict === 'UN-CITED' || c.verdict === 'REJECTED');
+        if (flagged.length > 0) {
+          const sample = flagged.slice(0, 3).map(c => `${c.verdict} (${c.class}): ${c.reasoning.slice(0, 80)}`).join('; ');
+          const more = flagged.length > 3 ? ` (+${flagged.length - 3} more)` : '';
+          notices.push(`[Prior turn] OOB PHASE 1.5 reviewer flagged ${flagged.length} claim${flagged.length === 1 ? '' : 's'} on ${v.specialist_name}: ${sample}${more}. Verdict: ~/.claude/.prism-phase-1-5-verdicts-${sha}.json. Master should reconcile per phase-1-5-senior-review.md.`);
+        }
+        verdictLib.clearVerdict(sha);  // clear after pickup
+      }
+    }
+  } catch {}
+
   // ── v4.1 Phase B: daily freshness sweep ──
   // One throttled (24h) pass closes 6 audit questions (plugin drift,
   // stale agents, update-log age, CLAUDE.md mtime, tools-registry

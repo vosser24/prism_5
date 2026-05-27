@@ -10,19 +10,21 @@
 //
 // Run: node tests/v3/state/test-master-orchestrator-thin-wrapper.mjs
 
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const AGENT_FILE = join(__dirname, '..', '..', '..', 'agents', 'master-orchestrator.md');
+const repoRoot = join(__dirname, '..', '..', '..');
+const AGENT_FILE = join(repoRoot, 'agents', 'master-orchestrator.md');
 
 const CANONICAL_BODY = `Load skill: master-orchestrator
 `;
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, total = 0;
 
 function test(name, fn) {
+  total++;
   try { fn(); pass++; process.stdout.write(`  ok  ${name}\n`); }
   catch (e) { fail++; process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`); }
 }
@@ -71,5 +73,47 @@ test('no protocol-body leakage: STARTUP / PHASE 0 / PHASE 1 sections must NOT ap
   assert(!/^## PHASE 2\b/m.test(raw), 'PHASE 2 leaked back into agent file');
 });
 
-process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
+// v4.4 Layer A — references/ coverage test
+const REQUIRED_REFS = [
+  'phase-0a-inventory.md',
+  'phase-0-team-assembly.md',
+  'phase-0d-adversarial.md',
+  'phase-1-execution.md',
+  'phase-1-5-senior-review.md',
+  'phase-2-completion.md',
+  'evidence-taxonomy.md',
+  'adversarial-review.md',
+  'dispatch-shapes.md',
+  'model-ratchet.md',
+];
+for (const ref of REQUIRED_REFS) {
+  total++;
+  const path = join(repoRoot, 'skills', 'master-orchestrator', 'references', ref);
+  if (existsSync(path) && readFileSync(path, 'utf-8').length > 200) {
+    pass++;
+  } else {
+    fail++;
+    console.log(`FAIL: required reference missing or stub: references/${ref}`);
+  }
+}
+
+// v4.4 Layer B — roster schema additions
+total++;
+const rosterPath = join(repoRoot, 'skills', 'prism-plan', 'references', 'roster.json');
+const roster = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+if (
+  roster.schema_version === '4.4.0' &&
+  Array.isArray(roster.schema_notes) &&
+  roster.schema_notes.some(n => /v4\.4/.test(n) && /requires_phase_1_5/.test(n)) &&
+  roster._schema_example_agent &&
+  'requires_phase_1_5' in roster._schema_example_agent &&
+  'requires_phase_1_5_block' in roster._schema_example_agent
+) {
+  pass++;
+} else {
+  fail++;
+  console.log('FAIL: roster.json missing v4.4 schema additions (schema_version=4.4.0 + schema_notes entry + _schema_example_agent fields)');
+}
+
+process.stdout.write(`\ntests passed: ${pass}/${total}\n`);
 process.exit(fail === 0 ? 0 : 1);

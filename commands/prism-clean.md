@@ -242,3 +242,11 @@ session lessons is `docs/prism/lessons/YYYY-MM-DD-session.md`.
 - `/prism-bye` wrapper (= `/prism-clean` + confirm + `/exit`). Deferred — user-driven.
 - Auto-fire on `SessionEnd[matcher=clear]` and `PreCompact` — deferred to v4.0 per D004 §6.
 - Per-decision and per-session MEMORY.md pointer-append — shipped in v4.0 Phase H (Step 4 above).
+
+---
+
+## Step (auto, v4.4+) — evidence-discipline ratchet
+
+After the human-facing steps complete, `prism-clean.mjs` automatically invokes `node ~/.claude/tools/prism-roster.mjs --apply-ratchet`. This reads the OOB PHASE 1.5 verdict log (`~/.claude/.prism-phase-1-5-verdicts.jsonl`) and, for any agent with ≥10 dispatches and an UN-CITED rate ≥ 30%, flips `pending_upgrade: true` on the roster entry. The ratchet output (if any agents crossed the threshold) is appended to the `/prism-clean` user output. No master action required; this is automatic hygiene.
+
+Kill: remove the ratchet block from `prism-clean.mjs` lines 281-295, OR invoke `prism-clean.mjs` directly with arguments that skip the final step (none currently — see v4.5 for `--skip-ratchet`).

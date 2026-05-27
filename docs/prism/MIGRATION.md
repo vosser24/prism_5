@@ -20,6 +20,58 @@ recipe (lines 165-188).
 
 ---
 
+## v4.3 → v4.4
+
+**Backward compatible.** Legacy installs continue to work without changes.
+
+### What changed
+
+- `skills/master-orchestrator/SKILL.md` shrunk from 770 lines to ~130 lines. Detailed protocols moved to `skills/master-orchestrator/references/`.
+- Roster schema bumped to 4.4.0. New optional per-agent flags `requires_phase_1_5` and `requires_phase_1_5_block` (default false).
+- New SubagentStop hook `hooks/prism-phase-1-5-oob.mjs` registered as 3rd entry (after spend ledger and panel guard).
+- New tools: `tools/prism-roster.mjs`, `tools/prism-phase-1-5-verdicts.mjs`, `tools/lib/prism-verdict-flag.mjs`.
+
+### Opting into OOB PHASE 1.5 review
+
+OOB review is opt-in per-agent. After upgrading:
+
+```
+node ~/.claude/tools/prism-roster.mjs --tag-1-5 @claude-master
+node ~/.claude/tools/prism-roster.mjs --tag-1-5 @code-reviewer
+```
+
+To enable block-mode (master pauses for verdict — for agents whose output drives irreversible actions), edit `roster.json` directly:
+
+```json
+"agents": {
+  "schema-migrator": {
+    "requires_phase_1_5": true,
+    "requires_phase_1_5_block": true
+  }
+}
+```
+
+### `claude` CLI prerequisite
+
+The OOB reviewer requires the `claude` CLI to be on PATH (your Claude Code subscription auth). The hook invokes `claude -p` via `spawnSync` — no separate `ANTHROPIC_API_KEY` is needed. If the `claude` binary is missing, the hook logs `claude-binary-missing` to `.prism-routing.jsonl` and skips the review (no block, fail-open). Each review counts against your Claude Code subscription quota (~5–15s per review, no separate billing).
+
+### Kill switches
+
+- Per-session: `export PRISM_DISABLE_OOB_REVIEW=1`
+- Per-agent: set `requires_phase_1_5: false` in roster.json
+- System-wide: remove the hook entry from `settings.fragment.json`
+
+### Verifying the upgrade
+
+After upgrading and tagging a pilot agent:
+
+1. Run a real specialist dispatch (e.g., spawn `@code-reviewer` on a small task).
+2. Check `~/.claude/.prism-routing.jsonl` for an `event: phase_1_5_oob` entry.
+3. Wait for the next session start; if any UN-CITED/REJECTED verdict was issued, you'll see a `[Prior turn] OOB PHASE 1.5 reviewer flagged …` notice.
+4. Query the verdict log: `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs --agent @code-reviewer`.
+
+---
+
 ## v3.10.x → v3.11.0 (foundation)
 
 The v3.11.0 release adds the locked-design state machine, two new daily
