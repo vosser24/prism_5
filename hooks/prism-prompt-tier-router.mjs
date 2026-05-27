@@ -197,6 +197,7 @@ async function main() {
         } catch {}
       }
       appendLog({
+        schema_version: 3,
         event: 'prompt_tier_router',
         ts: inheritedSentinel.ts,
         session_id: sessionId,
@@ -255,7 +256,10 @@ async function main() {
       } catch {}
     }
 
+    // v4.5: additive event types phase_0d_challenge + dispatch_cap.
+    // schema_version is the writer's version; readers must ignore unknown fields.
     appendLog({
+      schema_version: 3,
       event: 'prompt_tier_router',
       ts: sentinel.ts,
       session_id: sessionId,
