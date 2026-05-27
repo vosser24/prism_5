@@ -31,6 +31,7 @@ import {join, dirname, resolve, basename} from 'path';
 import {tmpdir, homedir} from 'os';
 import {fileURLToPath} from 'url';
 import {createHash} from 'crypto';
+import {spawnSync} from 'child_process';
 
 // ─── Path resolution ──────────────────────────────────────────────────────────
 // [[feedback-windows-spawnsync-url-path]]: always use fileURLToPath, never new URL().pathname
@@ -86,14 +87,11 @@ function atomicWrite(path, content) {
   try {
     writeFileSync(tmp, content);
     renameSync(tmp, path);
-  } catch {
-    // Fallback: direct write
-    try { writeFileSync(path, content); } catch (e) {
-      // Clean up tmp if it exists
-      try { unlinkSync(tmp); } catch {}
-      throw e;
-    }
+  } catch (renameErr) {
     try { unlinkSync(tmp); } catch {}
+    const err = new Error(`atomicWrite failed for ${path}: ${renameErr.message}`);
+    err.code = 'ATOMIC_WRITE_FAILED';
+    throw err;
   }
 }
 
@@ -133,19 +131,15 @@ function readSettings() {
   if (!existsSync(path)) return {_fresh: true};
   try { return JSON.parse(readFileSync(path, 'utf8')); }
   catch (e) {
-    // Detect line number for error message
-    const raw = (() => { try { return readFileSync(path, 'utf8'); } catch { return ''; } })();
-    const lineNum = raw.split('\n').findIndex((_, i) => {
-      try { JSON.parse(raw.split('\n').slice(0, i + 1).join('\n')); return false; }
-      catch { return true; }
-    });
-    die(`settings.json appears malformed at line ~${lineNum + 1}; refusing to proceed (no changes made). Inspect or fix the file manually, then re-run.`, 2);
+    die(`settings.json appears malformed (${e.message}); refusing to proceed (no changes made). Inspect or fix the file manually, then re-run.`, 2);
   }
 }
 
 // Check if a hook command is a PRISM hook (by name pattern)
 function isPrismHookCommand(cmd) {
-  return typeof cmd === 'string' && cmd.includes('prism-exec.sh') && cmd.includes('prism-');
+  return typeof cmd === 'string' &&
+    (cmd.includes('prism-exec.sh') || cmd.includes('prism-exec.cmd')) &&
+    cmd.includes('prism-');
 }
 
 // ─── Lock file ───────────────────────────────────────────────────────────────
@@ -160,7 +154,10 @@ function acquireLock(dryRun) {
         die(`Another install is in progress (lock ${age}ms old). Wait 60s or delete ${LOCK_PATH}.`);
       }
       console.warn(`[prism-installer] Stale lock found (${Math.round(age / 1000)}s old); proceeding with warning.`);
-    } catch { /* stale/corrupt lock, proceed */ }
+    } catch (parseErr) {
+      console.warn(`WARNING: lock file at ${LOCK_PATH} is corrupt; treating as stale and proceeding.`);
+      // proceed
+    }
   }
   writeFileSync(LOCK_PATH, JSON.stringify({ts: new Date().toISOString(), pid: process.pid}));
 }
@@ -238,24 +235,78 @@ function detect() {
 }
 
 // ─── Backup ──────────────────────────────────────────────────────────────────
+function getSourceRepoSha() {
+  try {
+    const r = spawnSync('git', ['rev-parse', 'HEAD'], {cwd: REPO_ROOT, encoding: 'utf-8'});
+    if (r.status === 0 && r.stdout) return r.stdout.trim();
+  } catch {}
+  return 'unknown';
+}
+
+function getInstalledPrismVersion() {
+  try {
+    const pluginJson = join(REPO_ROOT, '.claude-plugin', 'plugin.json');
+    if (existsSync(pluginJson)) {
+      const p = JSON.parse(readFileSync(pluginJson, 'utf-8'));
+      if (p.version) return p.version;
+    }
+  } catch {}
+  return 'unknown';
+}
+
 function makeBackup() {
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  const timestamp = new Date().toISOString();
+  const ts = timestamp.replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
   const backupDir = join(CLAUDE_DIR, `.prism-install-backup-${ts}`);
   mkdirSync(backupDir, {recursive: true});
 
+  const candidateNames = ['settings.json', 'roster.json', 'prism-policy.json'];
   const candidates = [
     join(CLAUDE_DIR, 'settings.json'),
     join(CLAUDE_DIR, 'skills', 'prism-plan', 'references', 'roster.json'),
     join(CLAUDE_DIR, 'prism-policy.json'),
   ];
-  for (const src of candidates) {
+
+  const backupFailures = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const src = candidates[i];
+    const name = candidateNames[i];
     if (existsSync(src)) {
       const rel = src.slice(CLAUDE_DIR.length + 1);
       const dst = join(backupDir, rel);
       mkdirSync(dirname(dst), {recursive: true});
-      try { cpSync(src, dst); } catch {}
+      try {
+        cpSync(src, dst);
+      } catch (e) {
+        backupFailures.push({file: name, error: e.message});
+      }
     }
   }
+
+  if (backupFailures.length > 0) {
+    console.warn(`[prism-installer] WARNING: ${backupFailures.length} file(s) failed to back up:`);
+    for (const f of backupFailures) console.warn(`  - ${f.file}: ${f.error}`);
+    if (backupFailures.some(f => f.file === 'settings.json')) {
+      die(`settings.json backup failed; refusing to proceed (pass --no-backup to override).`, 3);
+    }
+  }
+
+  // I1: write backup-metadata.json with source repo SHA + recovery note
+  const manifest = (() => {
+    try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')); } catch { return null; }
+  })();
+  const metadata = {
+    timestamp,
+    installed_prism_version: getInstalledPrismVersion(),
+    installer_version: manifest ? manifest.prism_version : '4.4.0',
+    source_repo_sha: getSourceRepoSha(),
+    files_backed_up: candidateNames,
+    recovery_note: 'To rollback hook/tool code: git checkout <source_repo_sha> in your PRISM clone and re-run install.',
+  };
+  try {
+    writeFileSync(join(backupDir, 'backup-metadata.json'), JSON.stringify(metadata, null, 2));
+  } catch {}
+
   return backupDir;
 }
 
@@ -311,8 +362,8 @@ function mergeSettings(existing, fragment, dryRun) {
     Object.assign(merged.env, fragment.env);
   }
 
-  // Merge statusLine (overwrite if PRISM-managed)
-  if (fragment.statusLine) {
+  // Merge statusLine: only set if no existing statusLine (user's custom statusline preserved)
+  if (fragment.statusLine && !merged.statusLine) {
     merged.statusLine = fragment.statusLine;
   }
 
@@ -366,13 +417,33 @@ function stripPrismHooks(settings) {
 }
 
 // ─── Roster merge ─────────────────────────────────────────────────────────────
+// Merge agents at per-agent level so new shipped agents are added and user agents preserved
+function mergeAgentsMaps(shippedAgents, existingAgents) {
+  const result = {};
+  const allKeys = new Set([
+    ...Object.keys(shippedAgents || {}),
+    ...Object.keys(existingAgents || {}),
+  ]);
+  for (const key of allKeys) {
+    if (key.startsWith('_')) continue;  // schema example entries handled separately
+    if (existingAgents && existingAgents[key]) {
+      result[key] = existingAgents[key];  // user state preserved
+    } else if (shippedAgents && shippedAgents[key]) {
+      result[key] = shippedAgents[key];  // new shipped agent
+    }
+  }
+  return result;
+}
+
 // Preserve user-managed sections; overwrite PRISM-shipped sections
 function mergeRoster(existingRoster, shippedRoster) {
   if (!existingRoster) return shippedRoster;
   // Preserve user-managed data
   const merged = JSON.parse(JSON.stringify(shippedRoster));
-  // Sections to preserve from existing (user-managed)
-  for (const key of ['agents', 'skills', 'tools', 'mcps', 'index_meta', 'domain_groups']) {
+  // agents: per-agent merge so new shipped agents aren't stripped on upgrade
+  merged.agents = mergeAgentsMaps(shippedRoster.agents, existingRoster.agents);
+  // Other user-managed sections: whole-section preserve (populated by /prism-index)
+  for (const key of ['skills', 'tools', 'mcps', 'index_meta', 'domain_groups']) {
     if (existingRoster[key] !== undefined) {
       merged[key] = existingRoster[key];
     }
@@ -465,10 +536,22 @@ async function install() {
     if (existsSync(rosterPath)) {
       try { existingRoster = JSON.parse(readFileSync(rosterPath, 'utf8')); }
       catch {
-        console.warn(`[prism-installer] WARNING: existing roster.json is malformed; backup made; will write fresh roster.`);
+        // C3: escalate to blocking abort instead of silently wiping user agent data
+        const corruptBackupPath = backupDir
+          ? join(backupDir, 'skills', 'prism-plan', 'references', 'roster.json.corrupt')
+          : rosterPath + '.corrupt';
         if (!flags.dryRun && backupDir) {
-          try { cpSync(rosterPath, join(backupDir, 'skills', 'prism-plan', 'references', 'roster.json.corrupt')); } catch {}
+          try { cpSync(rosterPath, corruptBackupPath); } catch {}
         }
+        const invocation = `node tools/prism-installer.mjs install --home ${HOME}`;
+        die([
+          'roster.json at ' + rosterPath + ' is malformed; refusing to overwrite.',
+          'Inspect the file (backup at ' + corruptBackupPath + ') and either:',
+          '  - fix the JSON syntax + re-run install',
+          '  - rename the file to roster.json.broken to start fresh:',
+          '    mv ' + rosterPath + ' ' + rosterPath + '.broken && ' + invocation,
+          'NEVER auto-wipe agent data without explicit user confirmation.',
+        ].join('\n'), 2);
       }
     }
 
