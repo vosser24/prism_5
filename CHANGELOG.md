@@ -18,7 +18,7 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
 
 ### Layer B — Out-of-band PHASE 1.5 reviewer
 
-- New hook `hooks/prism-phase-1-5-oob.mjs` (SubagentStop matcher): when the just-stopped subagent's roster entry has `requires_phase_1_5: true`, the hook invokes an independent reviewer via direct Anthropic SDK call to `claude-sonnet-4-6`.
+- New hook `hooks/prism-phase-1-5-oob.mjs` (SubagentStop matcher): when the just-stopped subagent's roster entry has `requires_phase_1_5: true`, the hook invokes an independent reviewer via `claude -p` (Claude Code subscription auth — no separate API key required).
 - New verdict-flag lib at `tools/lib/prism-verdict-flag.mjs` (per-SHA pending/result files + append-only verdict log).
 - New reviewer system prompt at `agents/phase-1-5-oob-reviewer.md`.
 - New verdict-log reader CLI at `tools/prism-phase-1-5-verdicts.mjs`.
@@ -53,7 +53,7 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.3 → v4.4".
 
 ### Tests
 
-New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 5 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0% rate, does not fire below MIN_DISPATCHES, idempotent on already-flagged agents, exit 0). Full suite: 264/264 across 17 files (16 state + 1 hooks).
+New suite `tests/v3/state/test-prism-model-ratchet-behavior.mjs` — 5 cases (ratchet fires at 40% UN-CITED rate, does not fire at 0% rate, does not fire below MIN_DISPATCHES, idempotent on already-flagged agents, exit 0). New Test 6 added to `test-prism-phase-1-5-oob.mjs`: recursion guard (PRISM_OOB_REVIEWER_PROCESS=1 exits 0 + logs action without writing pending file). Full suite: 265/265 across 17 files (16 state + 1 hooks).
 
 ## [4.3.0] - 2026-05-26
 

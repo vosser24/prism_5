@@ -51,9 +51,9 @@ To enable block-mode (master pauses for verdict — for agents whose output driv
 }
 ```
 
-### API key requirement
+### `claude` CLI prerequisite
 
-The OOB reviewer requires `ANTHROPIC_API_KEY` to be set in the shell where Claude Code runs. If unset, the hook logs to stderr and skips the review (no block). Per-review cost: ~$0.01–$0.03.
+The OOB reviewer requires the `claude` CLI to be on PATH (your Claude Code subscription auth). The hook invokes `claude -p` via `spawnSync` — no separate `ANTHROPIC_API_KEY` is needed. If the `claude` binary is missing, the hook logs `claude-binary-missing` to `.prism-routing.jsonl` and skips the review (no block, fail-open). Each review counts against your Claude Code subscription quota (~5–15s per review, no separate billing).
 
 ### Kill switches
 

@@ -116,6 +116,6 @@ After every subagent returns, the OOB PHASE 1.5 hook fires automatically (if the
 
 **Failure modes (both modes):**
 
-- Hook missing API key (`ANTHROPIC_API_KEY` unset) → reviewer skipped, log entry written, no block. YOU proceed; visible-output annotation: "OOB review skipped (no API key)."
-- Hook SDK call fails (5xx/timeout) → single retry + 5s backoff, then skip with log. NO block on hook errors.
+- Hook `claude` binary missing (not on PATH) → reviewer skipped, `claude-binary-missing` log entry written, no block. YOU proceed; visible-output annotation: "OOB review skipped (claude binary unavailable)."
+- Hook `claude -p` call fails (non-zero exit/timeout) → skip with log. NO block on hook errors.
 - Kill switches: `PRISM_DISABLE_OOB_REVIEW=1` env var, or `requires_phase_1_5: false` on the roster entry.
