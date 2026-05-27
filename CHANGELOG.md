@@ -4,6 +4,67 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.5.0] - 2026-05-27
+
+Four composing layers: telemetry tooling (no calibration), out-of-band Phase 0d panel reviewer, installer hardening, coverage/hygiene picks. Closes 15 evaluation-flow items from the v4.5 brainstorm across 40 plan tasks. Backward-compatible: all schema changes additive; pre-v4.5 panels and rosters work unchanged.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.4 → v4.5".
+
+### Added (Layer 1 — Telemetry tooling, no calibration)
+
+- `hooks/prism-phase-0d-challenges.mjs` — log Phase 0d challenge events to `.prism-routing.jsonl` (B1-tool).
+- `hooks/prism-dispatch-cap.mjs` — log parallel-dispatch cap utilization (B3-tool).
+- `tools/prism-telemetry-aggregate.mjs --agreement` — reviewer-agreement aggregator (B4-tool).
+- `.prism-routing.jsonl` `schema_version` bumped 2 → 3 (additive; readers must ignore unknown fields).
+
+Telemetry policy: TOOLING ONLY in v4.5. No defaults change. v4.6 will read these and decide calibration (B1 cap retune, master-overrides confirmation gate, auto-clear pending_upgrade).
+
+### Added (Layer 2 — Out-of-band Phase 0d completion)
+
+- `hooks/prism-phase-0d-oob.mjs` + `agents/phase-0d-oob-reviewer.md` — out-of-band Phase 0d panel-quality reviewer (A1). Fires under `PostToolUse[Write]` on `.prism-task-*/panel.json`; runs in background; emits verdict to `~/.claude/.prism-phase-0d-verdicts-<sha>.json` for next-turn pickup.
+- `tools/lib/prism-roster-lock.mjs` — cross-platform exclusive-create lock for roster.json mutations (O2). All roster writes now wrap through `withRosterLock()`.
+- `hooks/prism-phase-1-5-oob.mjs` — LITE mode plumbing (O1) gated by `roster.<spec>.phase_1_5_lite_oob`.
+- `tools/prism-roster.mjs --skip-next-oob <spec>` — one-shot OOB skip on a specialist (V1).
+- `hooks/prism-panel-guard.mjs` Path B — `dropped_positions[]` logging in panel.json (A3).
+- `tests/v3/state/test-oob-pickup-e2e.mjs` — E2E for verdict pickup (O3).
+- SessionStart hook picks up phase-0d verdicts in addition to phase-1-5 verdicts.
+
+### Added (Layer 3 — Installer polish)
+
+- `--target <dir>` flag for `install` / `update` / `uninstall` / `verify` / `detect` (I7). Default unchanged (omitted = `~/.claude/`). Mutually exclusive with `--home`.
+- `update` subcommand (`detect && backup && install` chained) with `--dry-run` preview and `Already at vX; nothing to do.` no-op when installed version matches shipped (I6).
+- `.prism-version` marker written by `install()` on success; consumed by `update`.
+- `--purge-state` flag for `uninstall` (I4). Wipes `MEMORY.md`, `roster.json`, `.prism-routing.jsonl`, `.prism-spend.jsonl`, `.prism-phase-1-5-verdicts.jsonl`, `.prism-telemetry-rollup.json`, `prism-policy.json`, `.prism-flags/`, `.prism-task-*/`. Interactive prompt; `--yes` skips confirmation; `--quiet --purge-state` without `--yes` is rejected fail-fast.
+- Expanded backup paths (I5): every install now snapshots the union of shipped files (`agents/`, `hooks/`, `tools/`, `commands/`, `skills/`) and user state (`MEMORY.md`, `prism-policy.json`, `.prism-routing.jsonl`, `.prism-spend.jsonl`, `.prism-phase-1-5-verdicts.jsonl`, `.prism-telemetry-rollup.json`, `settings.json`). 94 paths vs legacy 3.
+
+### Added (Layer 4 — Coverage/hygiene)
+
+- `tests/v3/state/test-scope-guard.mjs` — D3 SCOPE GUARD test (26 cases).
+- `hooks/prism-panel-guard.mjs` — `rationale.alternatives_considered[]` shape validation in panel.json (G2). Additive; absent field still passes.
+
+### Changed
+
+- SCOPE GUARD is **advisory by default** (emits stderr, exits 0). Set `PRISM_SCOPE_GUARD=strict` to restore the original block-on-violation behavior. The keyword-overlap heuristic is intentionally loose; advisory mode keeps it useful as a signal without blocking real Phase 0d panels.
+- `hooks/prism-panel-guard.mjs` is now registered under `PostToolUse[Write]` in both `.claude-plugin/plugin.json` and `settings.fragment.json` (in addition to `SubagentStop` from v3.2). Path B was dead code in v4.4; fix landed during Phase 4 review.
+- `hooks/prism-session-start.mjs` output format changed from plain-text to JSON `{hookSpecificOutput:{additionalContext:...}}` per Claude Code's Context-only hook contract (D005).
+
+### Schema
+
+- `roster.json` schema 4.4.0 → 4.5.0 (additive: `phase_1_5_lite_oob`, `skip_next_oob`).
+- `.prism-routing.jsonl` schema 2 → 3 (additive event types: `phase_0d_challenge`, `dispatch_cap`).
+- `panel.json` schema additive: `dropped_positions[]`, `rationale.alternatives_considered[]`.
+
+### Fixed
+
+- Installer manifest now ships all 5 v4.5 files (`hooks/prism-phase-0d-oob.mjs`, `hooks/prism-phase-0d-challenges.mjs`, `hooks/prism-dispatch-cap.mjs`, `tools/lib/prism-roster-lock.mjs`, `agents/phase-0d-oob-reviewer.md`). Without this, the installer would have silently shipped v4.4 only.
+- `settings.fragment.json` Phase 0d hook entries rewritten from `node $CLAUDE_PROJECT_DIR/...` to the standard `bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/...` form so `isPrismHookCommand()` recognizes them and `mergeSettings()` wires them on install.
+- Installer `--target`-aware error recovery on malformed `roster.json`: previously crashed with `HOME is not defined` ReferenceError; now emits actionable instructions with the correct `--target` (or `--home`) invocation.
+- Installer `update` no longer creates two backup dirs per invocation (was: explicit `makeBackup()` + `install()`'s internal backup; now: only `install()`'s).
+
+### Deferred to v4.6
+
+All telemetry-driven calibration decisions (B1 cap retune, master-overrides confirmation gate, auto-clear pending_upgrade); structured-output classifiers (C1, C2, C3); heavier coverage/hygiene (D1, E1, E2, G1); cosmetic installer polish (I3, I8); SCOPE GUARD heuristic upgrade beyond keyword overlap; refactor of `tools/lib/prism-verdict-flag.mjs` to support both phase-0d and phase-1-5 verdicts via a `kind` parameter (currently the phase-0d hook inlines its own `atomicWrite`).
+
 ## [4.4.0] - 2026-05-26
 
 Three composing layers: master-orchestrator skill refactor, out-of-band PHASE 1.5 reviewer, telemetry + lite-1.5. Closes 14 of 32 evaluation-flow gaps from the v4.4 brainstorm. Backward-compatible: legacy agents (no `requires_phase_1_5` tag) run unchanged.
