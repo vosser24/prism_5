@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// PRISM Panel-Hallucination Guard (v3.1.0) — closes DOCTRINE-DRIFT-001
+// PRISM Panel-Hallucination Guard (v3.2.0) — closes DOCTRINE-DRIFT-001
 //
-// SubagentStop hook. When a subagent of subagent_type containing
+// Dual-path hook — handles two event shapes:
+//
+// PATH A — SubagentStop: when a subagent of subagent_type containing
 // "blueprint", "panel", or "orchestrator" returns, scan its output for
 // expert-persona patterns and cross-reference against the indexed roster
 // at ~/.claude/skills/prism-plan/references/roster.json (agents + skills
@@ -10,7 +12,16 @@
 // Performance / etc.) are flagged as "unindexed personas" — the doctrinal
 // drift case where the subagent invents experts not actually available.
 //
-// Cross-reference logic:
+// PATH B — PostToolUse (Write to panel.json): v4.5 A3 DROPPED-positions
+// logging. When a Write tool call targets a panel.json path, read the
+// just-written panel.json, identify positions that have zero challenges
+// (insufficient evidence — dropped/theater positions), and append
+// {position, reason, dropped_at_phase, ts} entries to
+// panel.dropped_positions[]. Writes panel.json back atomically.
+// Fires ONLY when there are actual drops (non-empty dropped set).
+// Kill switch: PRISM_DISABLE_DROPPED_LOG=1.
+//
+// Cross-reference logic (Path A):
 //   1. Extract candidate names from output via persona patterns:
 //        **[Name]**:                  (markdown bold colon)
 //        **Name**:                    (no brackets)
@@ -39,8 +50,10 @@
 //     v2.7.5 — used here defensively in case the SubagentStop event fires
 //     under a runtime that propagates parent_tool_use_id.
 //   - force_opus passthrough: prism-mutation-guard.mjs:281-311.
+//   - PostToolUse panel.json path pattern + atomicWrite shape:
+//     prism-phase-0d-challenges.mjs (Path B reuses same detection logic).
 //
-// Modes:
+// Modes (Path A only):
 //   soft (default): warn on stdout listing flagged names, exit 0
 //   hard:           exit 2 with deny message asking to re-assemble panel
 //                   from indexed resources
@@ -230,10 +243,108 @@ function resolveMode() {
   return ['soft', 'hard', 'off'].includes(mode) ? mode : 'soft';
 }
 
+// ─── Path B: PostToolUse dropped-positions logger (v4.5 A3) ─────────────────
+
+// Returns the panel.json file path if the payload is a PostToolUse Write
+// targeting a panel.json inside a .prism-task-<sha> directory. null otherwise.
+function panelPathFromPayload(payload) {
+  // Only act on Write tool completions.
+  if (payload?.tool_name !== 'Write') return null;
+  const fp = payload?.tool_input?.file_path;
+  if (!fp) return null;
+  if (!/\.prism-task-[^/\\]+[/\\]panel\.json$/.test(fp)) return null;
+  return fp;
+}
+
+// Classify why a position was dropped.
+// Returns a reason string, or null if the position should NOT be logged.
+function classifyDropReason(position) {
+  const challenges = position.challenges ?? [];
+  if (challenges.length === 0) return 'insufficient_challenges';
+  // A specialist key is required for a position to be valid.
+  if (!position.specialist) return 'specialist_unknown';
+  return null;
+}
+
+// Atomic write — same shape as prism-phase-0d-oob.mjs atomicWrite.
+function atomicWritePanel(filePath, obj) {
+  const content = JSON.stringify(obj, null, 2);
+  const tmp = filePath + '.tmp';
+  writeFileSync(tmp, content, 'utf-8');
+  renameSync(tmp, filePath);
+}
+
+// Path B entry point. Returns true if this payload was a panel.json write
+// (and we handled it — successfully or not). Returns false to fall through
+// to Path A (SubagentStop).
+function handleDroppedPositions(payload) {
+  const panelPath = panelPathFromPayload(payload);
+  if (!panelPath) return false;
+
+  // Kill switch.
+  if (process.env.PRISM_DISABLE_DROPPED_LOG === '1') process.exit(0);
+
+  let panel;
+  try {
+    panel = JSON.parse(readFileSync(panelPath, 'utf-8'));
+  } catch (e) {
+    process.stderr.write(`[panel-guard/A3] cannot read panel.json: ${e.message}\n`);
+    process.exit(0);
+  }
+
+  const positions = panel.positions ?? [];
+  const ts = new Date().toISOString();
+  const newDrops = [];
+
+  for (const position of positions) {
+    const reason = classifyDropReason(position);
+    if (reason === null) continue;
+    newDrops.push({
+      position: position.title ?? position.name ?? '(unnamed)',
+      reason,
+      dropped_at_phase: '0d',
+      ts,
+    });
+  }
+
+  // Write-back ONLY when there are actual drops (self-review: no spurious writes).
+  if (newDrops.length > 0) {
+    if (!Array.isArray(panel.dropped_positions)) panel.dropped_positions = [];
+    panel.dropped_positions.push(...newDrops);
+
+    try {
+      atomicWritePanel(panelPath, panel);
+    } catch (e) {
+      // Fallback: direct write (mirrors prism-phase-0d-oob.mjs atomicWrite fallback).
+      try { writeFileSync(panelPath, JSON.stringify(panel, null, 2), 'utf-8'); } catch {}
+      process.stderr.write(`[panel-guard/A3] atomic write failed, used direct fallback: ${e.message}\n`);
+    }
+
+    appendLog({
+      ts,
+      event: 'panel_guard_dropped',
+      schema_version: 3,
+      panel_path: panelPath,
+      dropped_count: newDrops.length,
+      dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),
+    });
+  }
+
+  process.exit(0);
+}
+
+// ─── Path A: SubagentStop panel-hallucination guard ──────────────────────────
+
 function main() {
   let input;
   try { input = JSON.parse(readFileSync(0, 'utf-8')); }
   catch { process.exit(0); }
+
+  // Dispatch to Path B if this looks like a PostToolUse Write event.
+  // handleDroppedPositions calls process.exit(0) when it handles the event.
+  // It returns false (without exiting) only when the payload is NOT a
+  // panel.json Write, allowing Path A (SubagentStop) to proceed.
+  handleDroppedPositions(input);
 
   const MODE = resolveMode();
   if (MODE === 'off') process.exit(0);
