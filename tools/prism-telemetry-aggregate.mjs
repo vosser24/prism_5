@@ -31,7 +31,7 @@ import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'fs
 import {join, dirname} from 'path';
 
 const args = process.argv.slice(2);
-let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false};
+let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false, agreement: false, routingLog: null};
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--dry-run') opts.dryRun = true;
@@ -39,8 +39,10 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--force') opts.force = true;
   else if (a === '--home') opts.home = args[++i];
   else if (a === '--phase-1-5-agreement') opts.phase15Agreement = true;
+  else if (a === '--agreement') opts.agreement = true;
+  else if (a === '--routing-log') opts.routingLog = args[++i];
   else if (a === '-h' || a === '--help') {
-    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--phase-1-5-agreement] [--home <path>]\n`);
+    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--phase-1-5-agreement] [--agreement] [--routing-log <path>] [--home <path>]\n`);
     process.exit(0);
   }
 }
@@ -54,6 +56,59 @@ if (!HOME) {
 const POLICY = join(HOME, '.claude', 'prism-policy.json');
 const LOG = join(HOME, '.claude', '.prism-routing.jsonl');
 const ROLLUP = join(HOME, '.claude', '.prism-telemetry-rollup.json');
+
+// ── v4.5: --agreement subcommand (reviewer-agreement rate from routing log) ───
+// Reads .prism-routing.jsonl (or --routing-log override), finds phase_1_5_verdict
+// and phase_0d_challenge entries, joins by task_sha, and reports the
+// reviewer-agreement rate between adversarial challenges and final verdicts.
+// Runs before the consent gate because it accepts an arbitrary --routing-log path
+// (used for unit tests) and does not write any system state.
+function runAgreementMode(routingLogPath) {
+  const lines = readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean);
+  const challenges = new Map(); // task_sha → [{ position, challenge_n, evidence_class }]
+  const verdicts = new Map();   // task_sha → { severity, dropped_count, dispatched_specialist }
+  for (const line of lines) {
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e.event === 'phase_0d_challenge') {
+      const arr = challenges.get(e.task_sha) ?? [];
+      arr.push(e);
+      challenges.set(e.task_sha, arr);
+    } else if (e.event === 'phase_1_5_verdict') {
+      verdicts.set(e.task_sha, e);
+    }
+  }
+  let joined = 0;
+  let agreed = 0;
+  let disagreed = 0;
+  for (const [sha, chs] of challenges) {
+    const v = verdicts.get(sha);
+    if (!v) continue;
+    joined++;
+    // Heuristic: if any challenge flagged the specialist that ended up REJECTED, "agreed".
+    const challengedSpecs = new Set(chs.map(c => c.position));
+    if (v.severity === 'REJECTED' && challengedSpecs.has(v.dispatched_specialist)) agreed++;
+    else if (v.severity === 'EVIDENCED' && !challengedSpecs.has(v.dispatched_specialist)) agreed++;
+    else disagreed++;
+  }
+  process.stdout.write(JSON.stringify({
+    mode: 'agreement',
+    joined_pairs: joined,
+    agreed,
+    disagreed,
+    agreement_rate: joined > 0 ? agreed / joined : null,
+  }, null, 2) + '\n');
+  process.exit(0);
+}
+
+if (opts.agreement) {
+  const routingLogPath = opts.routingLog || LOG;
+  if (!existsSync(routingLogPath)) {
+    process.stderr.write(`PRISM telemetry: no routing log at ${routingLogPath}\n`);
+    process.exit(14);
+  }
+  runAgreementMode(routingLogPath);
+}
 
 // ── consent gate ─────────────────────────────────────────────────────
 // Industry-standard opt-out env vars: DO_NOT_TRACK (consoledonottrack.com)
