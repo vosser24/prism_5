@@ -134,6 +134,24 @@
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-agent-write-register.mjs"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-phase-0d-challenges.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $CLAUDE_PROJECT_DIR/hooks/prism-dispatch-cap.mjs"
+          }
+        ]
       }
     ],
     "SubagentStop": [
