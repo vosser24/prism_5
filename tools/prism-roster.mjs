@@ -29,6 +29,7 @@ const MIN_DISPATCHES = 10;
 const args = process.argv.slice(2);
 let mode = null;
 let agentArg = null;
+let modelArg = null;
 const seenModes = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -37,8 +38,10 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--tag-1-5') { mode = 'tag-1-5'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '--untag-1-5') { mode = 'untag-1-5'; agentArg = args[++i]; seenModes.push(a); }
   else if (a === '--skip-next-oob') { mode = 'skip-next-oob'; agentArg = args[++i]; seenModes.push(a); }
+  else if (a === '--clear-pending-upgrade') { mode = 'clear-pending-upgrade'; agentArg = args[++i]; seenModes.push(a); }
+  else if (a === '--set-model') { mode = 'set-model'; agentArg = args[++i]; modelArg = args[++i]; seenModes.push(a); }
   else if (a === '-h' || a === '--help') {
-    process.stdout.write(`Usage: prism-roster [--apply-ratchet | --reset-model <agent> | --tag-1-5 <agent> | --untag-1-5 <agent> | --skip-next-oob <spec>]\n`);
+    process.stdout.write(`Usage: prism-roster [--apply-ratchet | --reset-model <agent> | --tag-1-5 <agent> | --untag-1-5 <agent> | --skip-next-oob <spec> | --clear-pending-upgrade <agent> | --set-model <agent> <model>]\n`);
     process.exit(0);
   }
 }
@@ -162,6 +165,39 @@ if (mode === 'reset-model') {
     writeRoster(roster);
     logToImprovements(agent, `Manual model reset via prism-roster --reset-model.`);
     process.stdout.write(`Reset @${agent}: default_model=null, counters=0.\n`);
+  });
+  process.exit(0);
+}
+
+if (mode === 'clear-pending-upgrade') {
+  if (!agentArg) { process.stderr.write('error: --clear-pending-upgrade requires an agent name\n'); process.exit(2); }
+  const agent = agentArg.replace(/^@/, '');
+  await withRosterLock(ROSTER, async () => {
+    const roster = readRoster();
+    if (!roster.agents || !roster.agents[agent]) { process.stderr.write(`error: agent ${agent} not in roster\n`); process.exit(5); }
+    roster.agents[agent].pending_upgrade = false;
+    if (roster.agents[agent].status === 'upgrade_needed') roster.agents[agent].status = 'active';
+    roster.last_updated = new Date().toISOString();
+    writeRoster(roster);
+    logToImprovements(agent, `pending_upgrade cleared via --clear-pending-upgrade (K3 calibration apply).`);
+    process.stdout.write(`Cleared @${agent}: pending_upgrade=false.\n`);
+  });
+  process.exit(0);
+}
+
+if (mode === 'set-model') {
+  if (!agentArg || !modelArg) { process.stderr.write('error: --set-model requires <agent> <model>\n'); process.exit(2); }
+  const agent = agentArg.replace(/^@/, '');
+  const ALLOWED = ['haiku', 'sonnet', 'opus'];
+  if (!ALLOWED.includes(modelArg)) { process.stderr.write(`error: model must be one of ${ALLOWED.join('|')}\n`); process.exit(2); }
+  await withRosterLock(ROSTER, async () => {
+    const roster = readRoster();
+    if (!roster.agents || !roster.agents[agent]) { process.stderr.write(`error: agent ${agent} not in roster\n`); process.exit(5); }
+    roster.agents[agent].default_model = modelArg;
+    roster.last_updated = new Date().toISOString();
+    writeRoster(roster);
+    logToImprovements(agent, `default_model set to ${modelArg} via --set-model (K2 calibration apply).`);
+    process.stdout.write(`Set @${agent}: default_model=${modelArg}.\n`);
   });
   process.exit(0);
 }
