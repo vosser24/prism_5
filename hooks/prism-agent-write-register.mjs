@@ -30,6 +30,7 @@
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname, sep} from 'node:path';
+import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
@@ -132,50 +133,53 @@ function parseFrontmatter(body) {
   return out;
 }
 
-function registerAgent(agentPath) {
+async function registerAgent(agentPath) {
   const name = agentName(agentPath);
   if (!name) return {registered: false};
 
   const {roster_path, scope} = locateRoster(agentPath);
-  const roster = readRoster(roster_path);
 
-  if (roster.agents[name]) {
-    return {registered: false, alreadyKnown: true, name, roster_label: scope};
-  }
+  return await withRosterLock(roster_path, async () => {
+    const roster = readRoster(roster_path);
 
-  let description = '';
-  try {
-    if (existsSync(agentPath)) {
-      const fm = parseFrontmatter(readFileSync(agentPath, 'utf-8'));
-      description = fm.description || '';
+    if (roster.agents[name]) {
+      return {registered: false, alreadyKnown: true, name, roster_label: scope};
     }
-  } catch { /* ignore */ }
 
-  roster.agents[name] = {
-    created: new Date().toISOString(),
-    version: 1,
-    core_domains: [],
-    tools_known: [],
-    projects_worked: [],
-    total_tasks_completed: 0,
-    total_corrections_received: 0,
-    corrections_since_last_upgrade: 0,
-    consecutive_successful_sonnet_tasks: 0,
-    default_model: null,
-    pending_upgrade: null,
-    team_id: null,
-    description,
-    agent_path: agentPath,
-    auto_registered: true,
-  };
+    let description = '';
+    try {
+      if (existsSync(agentPath)) {
+        const fm = parseFrontmatter(readFileSync(agentPath, 'utf-8'));
+        description = fm.description || '';
+      }
+    } catch { /* ignore */ }
 
-  writeRosterAtomic(roster_path, roster);
-  return {registered: true, name, roster_label: scope};
+    roster.agents[name] = {
+      created: new Date().toISOString(),
+      version: 1,
+      core_domains: [],
+      tools_known: [],
+      projects_worked: [],
+      total_tasks_completed: 0,
+      total_corrections_received: 0,
+      corrections_since_last_upgrade: 0,
+      consecutive_successful_sonnet_tasks: 0,
+      default_model: null,
+      pending_upgrade: null,
+      team_id: null,
+      description,
+      agent_path: agentPath,
+      auto_registered: true,
+    };
+
+    writeRosterAtomic(roster_path, roster);
+    return {registered: true, name, roster_label: scope};
+  });
 }
 
 // ---------- entry point ----------
 
-function main() {
+async function main() {
   if (process.env.PRISM_DISABLE_AGENT_WRITE_HOOK === '1') return;
 
   let input;
@@ -190,7 +194,7 @@ function main() {
 
   const messages = [];
   for (const agentPath of agentWrites) {
-    const result = registerAgent(agentPath);
+    const result = await registerAgent(agentPath);
     if (result.registered) {
       messages.push(`PRISM: registered ${result.name} → ${result.roster_label}`);
     } else if (result.alreadyKnown) {
@@ -201,5 +205,4 @@ function main() {
 }
 
 // Defensive: any throw exits 0. We never want to fail a tool call from this hook.
-try { main(); } catch { /* swallow */ }
-process.exit(0);
+main().catch(e => { process.stderr.write(String(e) + '\n'); }).finally(() => process.exit(0));
