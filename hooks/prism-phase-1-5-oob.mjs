@@ -37,6 +37,23 @@ import {withRosterLock} from '../tools/lib/prism-roster-lock.mjs';
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 
+// H4: resolve the claude executable to an absolute path. On Windows, spawnSync
+// without shell:true does not append PATHEXT (.cmd/.exe), so a bare 'claude'
+// silently fails. Probe PATH for claude(.cmd|.exe). Falls back to 'claude'.
+function resolveClaudeBin() {
+  if (process.env.PRISM_CLAUDE_BIN) return process.env.PRISM_CLAUDE_BIN;
+  const isWin = process.platform === 'win32';
+  const exts = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
+  const pathDirs = (process.env.PATH || '').split(isWin ? ';' : ':');
+  for (const dir of pathDirs) {
+    for (const ext of exts) {
+      const cand = join(dir, 'claude' + ext);
+      try { if (existsSync(cand)) return cand; } catch {}
+    }
+  }
+  return 'claude';
+}
+
 function appendRoutingLog(obj) {
   try {
     mkdirSync(dirname(LOG_PATH), {recursive: true});
@@ -271,21 +288,36 @@ async function invokeReviewerInline(sha, flagLib, useLite = false) {
 
     const userMessage = JSON.stringify(pending);
     const t0 = Date.now();
-    let res;
-    try {
-      res = await invokeReviewerClaudeCode({
-        model: reviewerModel,
-        systemPrompt: reviewerPrompt,
-        userMessage,
-        timeoutMs: 50_000,
-      });
-    } catch (e) {
-      logEvent('reviewer-failed', {sha, error: String(e && e.message), code: e && e.code});
-      return null;
+
+    // H4 mock-verdict short-circuit: if PRISM_PHASE_1_5_MOCK_VERDICT is set,
+    // parse it directly into `parsed` and skip the real spawn. Flows into the
+    // same augment + writeVerdict path below.
+    let parsed;
+    if (process.env.PRISM_PHASE_1_5_MOCK_VERDICT) {
+      try {
+        parsed = JSON.parse(process.env.PRISM_PHASE_1_5_MOCK_VERDICT);
+      } catch {
+        parsed = { schema_version: 1, severity: 'EVIDENCED', headline_finding: 'mock' };
+      }
+      logEvent('verdict-mock-env', {sha});
+    } else {
+      let res;
+      try {
+        res = await invokeReviewerClaudeCode({
+          model: reviewerModel,
+          systemPrompt: reviewerPrompt,
+          userMessage,
+          timeoutMs: 50_000,
+        });
+      } catch (e) {
+        logEvent('reviewer-failed', {sha, error: String(e && e.message), code: e && e.code});
+        return null;
+      }
+      const text = res.content && res.content[0] && res.content[0].text || '';
+      parsed = parseVerdictJson(text);
     }
+
     const latency = Date.now() - t0;
-    const text = res.content && res.content[0] && res.content[0].text || '';
-    const parsed = parseVerdictJson(text);
     if (!parsed) {
       logEvent('parse-failed', {sha});
       flagLib.clearPending(sha);
@@ -326,7 +358,7 @@ async function invokeReviewerClaudeCode({model, systemPrompt, userMessage, timeo
     PRISM_OOB_REVIEWER_PROCESS: '1', // recursion guard for any inner hook fires
   };
 
-  const res = spawnSync('claude', ['-p', '--model', model], {
+  const res = spawnSync(resolveClaudeBin(), ['-p', '--model', model], {
     input: combined,
     encoding: 'utf-8',
     timeout: timeoutMs,
