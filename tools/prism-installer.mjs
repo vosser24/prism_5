@@ -35,6 +35,7 @@ import {tmpdir, homedir} from 'os';
 import {fileURLToPath} from 'url';
 import {createHash} from 'crypto';
 import {spawnSync} from 'child_process';
+import { withRosterLock } from './lib/prism-roster-lock.mjs';
 
 // ─── Path resolution ──────────────────────────────────────────────────────────
 // [[feedback-windows-spawnsync-url-path]]: always use fileURLToPath, never new URL().pathname
@@ -639,12 +640,14 @@ async function install() {
         try { shippedRoster = JSON.parse(readFileSync(shippedRosterPath, 'utf8')); } catch {}
       }
       // After copyDirectories, the roster from the installed dir is already in place.
-      // Now re-merge to restore user agents.
+      // Now re-merge to restore user agents, protected by the roster lock.
       if (existingRoster && shippedRoster) {
-        const mergedRoster = mergeRoster(existingRoster, shippedRoster);
-        const installedRosterPath = rosterPath;
-        ensureDir(dirname(installedRosterPath));
-        atomicWrite(installedRosterPath, JSON.stringify(mergedRoster, null, 2));
+        await withRosterLock(rosterPath, async () => {
+          const mergedRoster = mergeRoster(existingRoster, shippedRoster);
+          const installedRosterPath = rosterPath;
+          ensureDir(dirname(installedRosterPath));
+          atomicWrite(installedRosterPath, JSON.stringify(mergedRoster, null, 2));
+        });
         log(`[prism-installer] Preserved ${Object.keys(existingRoster.agents || {}).length} user agent(s) in roster.`);
       }
     }
