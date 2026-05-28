@@ -30,5 +30,11 @@ check('Q4 agreement reads the verdict JSONL, not phantom event',
 check('Q4 agreement no longer keys on phase_1_5_verdict',
   !/'phase_1_5_verdict'|"phase_1_5_verdict"/.test(agg));
 
+// Schema version bump: both remaining writers must stamp schema_version 4
+const router = readFileSync(join(repoRoot, 'hooks', 'prism-prompt-tier-router.mjs'), 'utf-8');
+check('routing schema_version bumped to 4', /schema_version["\s:]+4/.test(router));
+const ch = readFileSync(join(repoRoot, 'hooks', 'prism-phase-0d-challenges.mjs'), 'utf-8');
+check('phase-0d-challenges schema_version 4', /schema_version:\s*4/.test(ch));
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

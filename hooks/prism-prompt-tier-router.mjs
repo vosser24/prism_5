@@ -197,7 +197,7 @@ async function main() {
         } catch {}
       }
       appendLog({
-        schema_version: 3,
+        schema_version: 4,
         event: 'prompt_tier_router',
         ts: inheritedSentinel.ts,
         session_id: sessionId,
@@ -256,10 +256,10 @@ async function main() {
       } catch {}
     }
 
-    // v4.5: additive event types phase_0d_challenge + dispatch_cap.
+    // v4.6: additive event types phase_0d_challenge + dispatch_cap (actual_parallel, queue_depth).
     // schema_version is the writer's version; readers must ignore unknown fields.
     appendLog({
-      schema_version: 3,
+      schema_version: 4,
       event: 'prompt_tier_router',
       ts: sentinel.ts,
       session_id: sessionId,

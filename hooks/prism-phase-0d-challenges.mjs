@@ -54,7 +54,7 @@ async function main() {
       const entry = {
         ts,
         event: 'phase_0d_challenge',
-        schema_version: 3,
+        schema_version: 4,
         task_sha: taskSha,
         position: position.title ?? position.name ?? '(unknown)',
         challenge_n: i + 1,
