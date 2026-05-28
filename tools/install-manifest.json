@@ -39,6 +39,7 @@
     {"src": "tools/prism-db.mjs", "dst": "tools/prism-db.mjs", "executable": true},
     {"src": "tools/prism-db-migrate.mjs", "dst": "tools/prism-db-migrate.mjs", "executable": true},
     {"src": "tools/prism-deep-dive.mjs", "dst": "tools/prism-deep-dive.mjs", "executable": true},
+    {"src": "tools/prism-installer.mjs", "dst": "tools/prism-installer.mjs", "executable": true},
     {"src": "tools/prism-kb-classify.mjs", "dst": "tools/prism-kb-classify.mjs", "executable": true},
     {"src": "tools/prism-kb-domains.mjs", "dst": "tools/prism-kb-domains.mjs", "executable": true},
     {"src": "tools/prism-kb-indexer.mjs", "dst": "tools/prism-kb-indexer.mjs", "executable": true},
