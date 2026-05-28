@@ -99,7 +99,7 @@ if (verdictFiles.length > 0) {
   // as the shim (no parseable JSON in stdout) so severity is 'ERROR' — both are
   // correct for their respective platforms.
   check('verdict has correct task_sha and kind',
-    v.task_sha === 'abc123' && v.kind === 'phase_0d');
+    v.task_sha === 'abc123' && v.kind === '0d');
 } else {
   // Register the third check as failed so total stays correct
   check('verdict has correct task_sha and kind (no file found)', false);

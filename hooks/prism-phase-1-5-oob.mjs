@@ -202,7 +202,7 @@ async function main() {
 
   // Test-mode short-circuit
   if (process.env.PRISM_OOB_TEST_MOCK_SDK === '1') {
-    flagLib.writeVerdict(sha, {
+    flagLib.writeVerdict('1-5', sha, {
       session_id: sessionId,
       specialist_name: '@' + agentName,
       reviewer_model: 'claude-sonnet-4-6-MOCK',
@@ -327,7 +327,7 @@ async function invokeReviewerInline(sha, flagLib, useLite = false) {
     parsed.specialist_name = pending.specialist_name;
     parsed.reviewer_model = reviewerModel;
     parsed.reviewer_latency_ms = latency;
-    flagLib.writeVerdict(sha, parsed);
+    flagLib.writeVerdict('1-5', sha, parsed);
     flagLib.clearPending(sha);
     logEvent('verdict-written', {sha, latency_ms: latency, summary: parsed.summary});
     return parsed;

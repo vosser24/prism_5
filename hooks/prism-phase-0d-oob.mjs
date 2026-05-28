@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
+import { writeVerdict } from '../tools/lib/prism-verdict-flag.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(__filename));
@@ -43,16 +44,12 @@ function resolveClaudeBin() {
   return 'claude';
 }
 
-// ─── verdict file helpers (Phase 0d owns its own path scheme) ────────────────
+// ─── pending-file helpers (verdict result goes through the shared lib) ───────
 
 function dotClaudeDir() {
   const d = join(homedir(), '.claude');
   try { mkdirSync(d, { recursive: true }); } catch {}
   return d;
-}
-
-function phase0dVerdictPath(sha) {
-  return join(dotClaudeDir(), `.prism-phase-0d-verdicts-${sha}.json`);
 }
 
 function atomicWrite(filePath, content) {
@@ -256,18 +253,19 @@ async function main() {
     };
   }
 
-  // Write result verdict under roster lock (prevents races with parallel panel writes)
-  const verdictPath = phase0dVerdictPath(dispatchSha);
+  // Write result verdict via the shared verdict-flag lib, under roster lock
+  // (prevents races with parallel panel writes). appendLog:false — phase-0d has
+  // no jsonl reader (ISSUE-3); the per-SHA file is the only artifact. The lib's
+  // resultPath('0d', sha) yields the same .prism-phase-0d-verdicts-<sha>.json
+  // filename the SessionStart pickup scans for.
   await withRosterLock(rosterPath, async () => {
     try {
-      atomicWrite(verdictPath, JSON.stringify({
-        kind: 'phase_0d',
+      writeVerdict('0d', dispatchSha, {
         task_sha: taskSha,
         dispatch_sha: dispatchSha,
         panel_path: panelPath,
         verdict,
-        completed_at: new Date().toISOString(),
-      }, null, 2));
+      }, { appendLog: false });
     } catch (e) {
       process.stderr.write(`[phase-0d-oob] verdict write failed: ${e.message}\n`);
     }
