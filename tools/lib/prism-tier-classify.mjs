@@ -72,6 +72,20 @@ export const PANEL_SIGNALS = [
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
 ];
 
+// D1 — high-stakes work: migrations, destructive ops, security, money. These
+// bias toward opus + mandatory panel independent of length-based tier floor.
+const STAKES_SIGNALS = [
+  /\b(migrat(e|ion)|backfill|schema change|alter table)\b/i,
+  /\b(drop (table|database|column)|delete (from|all)|truncate|rm -rf|destructive|irreversible)\b/i,
+  /\b(security|auth(entication|orization)|secret|credential|token|RBAC|threat model|vuln)\b/i,
+  /\b(payment|billing|charge|refund|invoice|money|currency|financial|ledger)\b/i,
+  /\b(production (deploy|release|rollout)|prod (db|database)|customer data|PII)\b/i,
+];
+export function detectStakes(prompt, description) {
+  const hay = `${prompt || ''} ${description || ''}`;
+  return STAKES_SIGNALS.some(r => r.test(hay));
+}
+
 // v2.2.0 fix (P3b.5): allow an object phrase + comma between the two verbs,
 // e.g. "read and analyze this module, then design a refactor".
 // Up to ~60 characters of intervening text; non-greedy. Leading anchor still
@@ -167,6 +181,7 @@ export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
   const hay = `${prompt || ''} ${description || ''}`;
   const panelHit = PANEL_SIGNALS.some(r => r.test(hay));
   if (panelHit) return true;
+  if (detectStakes(prompt, description)) return true;
   // ≥3 opus signals on a single prompt — strong novel-architecture indicator.
   if (Number(o) >= 3) return true;
   // compound verb chain on opus-tier prompt — likely multi-stage novel work.
@@ -209,7 +224,9 @@ export function classifyWithScore(prompt, description) {
   let score = complexityScore(c.h, c.s, c.o);
   const compound = detectCompound(prompt, description);
   if (compound) score += 2;
-  const tier = scoreToTier(score);
+  let tier = scoreToTier(score);
+  const stakes = detectStakes(prompt, description);
+  if (stakes) tier = 'opus';
   const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
-  return {...c, score, compound, tier_by_score: tier, summon_panel};
+  return {...c, score, compound, stakes, tier_by_score: tier, summon_panel};
 }
