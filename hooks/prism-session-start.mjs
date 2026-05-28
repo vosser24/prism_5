@@ -35,7 +35,7 @@
 // ~/.claude/tools/prism-context-audit.mjs once per day and emits a compact
 // one-line notice with the top "disable X to save Yt" recommendation.
 // Output is throttled to once per 24h so it doesn't itself become noise.
-import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync} from 'fs';
+import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync, appendFileSync} from 'fs';
 import {join} from 'path';
 import {spawnSync} from 'child_process';
 import {pathToFileURL} from 'url';
@@ -323,6 +323,35 @@ try {
       }
     }
   } catch {}
+
+  // ── K4 — master-override pickup: drain .prism-override-pending-*.json into the
+  // routing log, count them, and advise. SessionStart cannot hard-block (exit-2
+  // ignored), so PRISM_OVERRIDE_GATE=strict only escalates wording (ISSUE-4).
+  try {
+    const claudeDir = join(H, '.claude');
+    const routingLog = join(claudeDir, '.prism-routing.jsonl');
+    const pend = readdirSync(claudeDir).filter(f => f.startsWith('.prism-override-pending-') && f.endsWith('.json'));
+    let overrides = 0;
+    for (const f of pend) {
+      const fp = join(claudeDir, f);
+      let ev;
+      try { ev = JSON.parse(readFileSync(fp, 'utf8')); } catch { ev = null; }
+      if (ev) {
+        const line = JSON.stringify({ ts: new Date().toISOString(), event: 'master_override', schema_version: 4,
+          verdict_sha: ev.verdict_sha ?? null, kind: ev.kind ?? null, reviewer_severity: ev.reviewer_severity ?? null,
+          master_verdict: ev.master_verdict ?? null, task_sha: ev.task_sha ?? null, specialist_name: ev.specialist_name ?? null }) + '\n';
+        try { appendFileSync(routingLog, line); } catch {}
+        overrides++;
+      }
+      try { unlinkSync(fp); } catch {}
+    }
+    if (overrides > 0) {
+      const strict = process.env.PRISM_OVERRIDE_GATE === 'strict';
+      notices.push(strict
+        ? `[OVERRIDE GATE — strict] You overrode ${overrides} reviewer verdict(s) last session. Review each override and confirm intent before continuing.`
+        : `[Prior turn] You overrode ${overrides} reviewer verdict(s) last session. Logged to .prism-routing.jsonl (event: master_override).`);
+    }
+  } catch (e) { process.stderr.write(`[session-start/override] ${e.message}\n`); }
 
   // ── v4.1 Phase B: daily freshness sweep ──
   // One throttled (24h) pass closes 6 audit questions (plugin drift,

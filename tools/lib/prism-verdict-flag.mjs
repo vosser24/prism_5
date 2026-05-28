@@ -1,26 +1,25 @@
-// PRISM verdict-flag lib (v4.4 Layer B) — per-SHA pending/result files
-// under ~/.claude/, append-only log at ~/.claude/.prism-phase-1-5-verdicts.jsonl.
+// PRISM verdict-flag lib (v4.4 Layer B; v4.6 kind-generalized) — per-SHA
+// pending/result files under ~/.claude/, append-only log per kind.
 //
-// This is a SIBLING of tools/lib/prism-flag-file.mjs but operates on a
-// different naming scheme: per-dispatch SHA (not per-project key). Used
-// exclusively by the v4.4 OOB PHASE 1.5 reviewer hook.
+// Generalized over `kind` (e.g. '1-5' for OOB Phase 1.5, '0d' for OOB Phase 0d):
+//   ~/.claude/.prism-phase-<kind>-pending-<sha>.json    — short-lived; written
+//                                                          by the dispatch hook,
+//                                                          read by the reviewer
+//                                                          child process.
+//   ~/.claude/.prism-phase-<kind>-verdicts-<sha>.json   — verdict result,
+//                                                          read by SessionStart
+//                                                          pickup.
+//   ~/.claude/.prism-phase-<kind>-verdicts.jsonl        — append-only summary
+//                                                          log for ratchet
+//                                                          consumption.
 //
-// File layout:
-//   ~/.claude/.prism-phase-1-5-pending-<sha>.json   — short-lived; written
-//                                                      by SubagentStop hook,
-//                                                      read by SDK reviewer
-//                                                      child process.
-//   ~/.claude/.prism-phase-1-5-verdicts-<sha>.json  — verdict result,
-//                                                      written by SDK
-//                                                      reviewer, read by
-//                                                      SessionStart pickup.
-//   ~/.claude/.prism-phase-1-5-verdicts.jsonl       — append-only log
-//                                                      summarising every
-//                                                      verdict for ratchet
-//                                                      consumption.
+// writeVerdict takes `kind` first — both callers (Phase 1.5 and Phase 0d) always
+// specify it. The read/clear/pending helpers take `kind` LAST, defaulting to
+// '1-5', to preserve the v4.4 Phase-1.5 callers that pass only a sha.
+// Phase-0d passes { appendLog: false } — it has no jsonl reader (ISSUE-3).
 //
 // All writes are atomic (tempfile + rename, fallback to direct write).
-// Reads are fail-open: corrupted file returns null rather than throwing.
+// Reads are fail-open: corrupted/missing file returns null rather than throwing.
 
 import {writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync, readdirSync, appendFileSync} from 'fs';
 import {join} from 'path';
@@ -35,18 +34,21 @@ function dotClaudeDir() {
   return d;
 }
 
-function pendingPath(sha) {
+function assertSha(sha) {
   if (!/^[a-f0-9]{8,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
-  return join(dotClaudeDir(), `.prism-phase-1-5-pending-${sha}.json`);
+  return sha;
 }
 
-function resultPath(sha) {
-  if (!/^[a-f0-9]{8,64}$/i.test(sha)) throw new Error(`invalid sha: ${sha}`);
-  return join(dotClaudeDir(), `.prism-phase-1-5-verdicts-${sha}.json`);
+function pendingPath(sha, kind = '1-5') {
+  return join(dotClaudeDir(), `.prism-phase-${kind}-pending-${assertSha(sha)}.json`);
 }
 
-function logPath() {
-  return join(dotClaudeDir(), '.prism-phase-1-5-verdicts.jsonl');
+function resultPath(kind, sha) {
+  return join(dotClaudeDir(), `.prism-phase-${kind}-verdicts-${assertSha(sha)}.json`);
+}
+
+function logPath(kind = '1-5') {
+  return join(dotClaudeDir(), `.prism-phase-${kind}-verdicts.jsonl`);
 }
 
 function atomicWrite(path, content) {
@@ -66,8 +68,8 @@ function atomicWrite(path, content) {
   }
 }
 
-export function writePending(sha, payload) {
-  const p = pendingPath(sha);
+export function writePending(sha, payload, kind = '1-5') {
+  const p = pendingPath(sha, kind);
   const body = JSON.stringify({
     schema_version: 1,
     sha,
@@ -79,62 +81,67 @@ export function writePending(sha, payload) {
   return p;
 }
 
-export function readPending(sha) {
+export function readPending(sha, kind = '1-5') {
   try {
-    return JSON.parse(readFileSync(pendingPath(sha), 'utf-8'));
+    return JSON.parse(readFileSync(pendingPath(sha, kind), 'utf-8'));
   } catch {
     return null;
   }
 }
 
-export function clearPending(sha) {
-  try { unlinkSync(pendingPath(sha)); } catch {}
+export function clearPending(sha, kind = '1-5') {
+  try { unlinkSync(pendingPath(sha, kind)); } catch {}
 }
 
-export function writeVerdict(sha, payload) {
-  const p = resultPath(sha);
+export function writeVerdict(kind, sha, payload, opts = {}) {
+  const p = resultPath(kind, sha);
   const ts = new Date().toISOString();
   const body = JSON.stringify({
     schema_version: 1,
+    kind,
     sha,
     completed_at: ts,
     ...payload,
   });
   const ok = atomicWrite(p, body);
-  if (!ok) process.stderr.write(`PRISM verdict-flag: writeVerdict failed for sha ${sha} — verdict will not be persisted\n`);
-  // Append summary line to the log
-  const logLine = JSON.stringify({
-    sha,
-    session_id: payload.session_id || null,
-    specialist_name: payload.specialist_name,
-    reviewer_model: payload.reviewer_model,
-    summary: payload.summary,
-    completed_at: ts,
-  }) + '\n';
-  try {
-    appendFileSync(logPath(), logLine);
-  } catch (e) {
-    process.stderr.write(`PRISM verdict-flag: log append failed for sha ${sha}: ${e && e.message}\n`);
+  if (!ok) process.stderr.write(`PRISM verdict-flag: writeVerdict failed for ${kind}/${sha} — verdict will not be persisted\n`);
+  // Append summary line to the per-kind log unless the caller opts out.
+  // Phase-0d passes appendLog:false — it has no jsonl reader (ISSUE-3).
+  if (opts.appendLog !== false) {
+    const logLine = JSON.stringify({
+      kind,
+      sha,
+      session_id: payload.session_id || null,
+      specialist_name: payload.specialist_name,
+      reviewer_model: payload.reviewer_model,
+      summary: payload.summary,
+      completed_at: ts,
+    }) + '\n';
+    try {
+      appendFileSync(logPath(kind), logLine);
+    } catch (e) {
+      process.stderr.write(`PRISM verdict-flag: log append failed for ${kind}/${sha}: ${e && e.message}\n`);
+    }
   }
   return p;
 }
 
-export function readVerdict(sha) {
+export function readVerdict(sha, kind = '1-5') {
   try {
-    return JSON.parse(readFileSync(resultPath(sha), 'utf-8'));
+    return JSON.parse(readFileSync(resultPath(kind, sha), 'utf-8'));
   } catch {
     return null;
   }
 }
 
-export function clearVerdict(sha) {
-  try { unlinkSync(resultPath(sha)); } catch {}
+export function clearVerdict(sha, kind = '1-5') {
+  try { unlinkSync(resultPath(kind, sha)); } catch {}
 }
 
-export function listPendingVerdicts() {
+export function listPendingVerdicts(kind = '1-5') {
   const dir = dotClaudeDir();
   if (!existsSync(dir)) return [];
-  const prefix = '.prism-phase-1-5-pending-';
+  const prefix = `.prism-phase-${kind}-pending-`;
   const suffix = '.json';
   const out = [];
   let entries;
@@ -146,10 +153,10 @@ export function listPendingVerdicts() {
   return out;
 }
 
-export function listCompletedVerdicts() {
+export function listCompletedVerdicts(kind = '1-5') {
   const dir = dotClaudeDir();
   if (!existsSync(dir)) return [];
-  const prefix = '.prism-phase-1-5-verdicts-';
+  const prefix = `.prism-phase-${kind}-verdicts-`;
   const suffix = '.json';
   const out = [];
   let entries;
@@ -161,9 +168,9 @@ export function listCompletedVerdicts() {
   return out;
 }
 
-export function readVerdictLog() {
+export function readVerdictLog(kind = '1-5') {
   try {
-    return readFileSync(logPath(), 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    return readFileSync(logPath(kind), 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
   } catch {
     return [];
   }

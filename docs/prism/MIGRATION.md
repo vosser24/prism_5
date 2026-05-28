@@ -16,10 +16,47 @@ recipe (lines 165-188).
 | v3.8.x | v4.5.0 | Run v3.11.0 sub-phases, then v4.0.0, v4.1.0, v4.2.0, v4.3.0, v4.4, and v4.5 sections in sequence |
 | v3.10.x | v4.5.0 | Same as above starting at v3.11.0 |
 | v3.11.0 | v4.5.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then v4.x sections |
+| v4.5.x | v4.6.0 | This page, [§v4.5 → v4.6](#v45--v46) below |
 | v4.4.x | v4.5.0 | This page, [§v4.4 → v4.5](#v44--v45) below |
 | pre-v3.8 | v4.5.0 | Read CHANGELOG entries for v3.8.x first, then this guide |
 
 ---
+
+## v4.5 → v4.6
+
+### Upgrade — run the installer
+
+```bash
+git pull
+node tools/prism-installer.mjs update
+node tools/prism-installer.mjs verify
+```
+
+If the installer reports `Already at v4.6.0; nothing to do.`, you're done. (If you previously ran a v4.6-dev `--target` testbed, re-run the install to pick up the corrected hook paths — see below.)
+
+### What changed
+
+#### `.prism-routing.jsonl` schema (3 → 4) — additive, no action
+
+v4.6 adds three additive fields/events: `actual_parallel` + `queue_depth` on `dispatch_cap` events, and a new `master_override` event. The bump is additive — v4.5 readers ignore unknown fields, and v4.6 readers default the new fields safely. No migration step; old logs continue to work.
+
+#### New CLI surfaces
+
+- `node tools/prism-telemetry-aggregate.mjs --recommend-calibration` — on-demand calibration engine. Reads your routing + verdict logs and prints threshold-change *recommendations* with the exact apply commands. It NEVER changes a default itself (recommend-then-apply). Degrades to "insufficient data" below 15 samples per knob. Output also written to `~/.claude/.prism-calibration-<date>.json`.
+- `node tools/prism-roster.mjs --set-model <agent> <model>` — set an agent's `default_model` (K2 apply target).
+- `node tools/prism-roster.mjs --clear-pending-upgrade <agent>` — clear a stale `pending_upgrade` flag (K3 apply target).
+
+#### New env var
+
+- `PRISM_OVERRIDE_GATE=strict` — escalates the SessionStart advisory wording when you overrode reviewer verdicts last session. Advisory only (SessionStart cannot hard-block).
+
+#### `--target` installs now behaviorally live (H3)
+
+Prior to v4.6, `installer install --target <dir>` copied files but left the registered hook commands pointing at `~/.claude` (so the target's hooks never fired). v4.6 rewrites the hook-command paths to the target dir. If you maintain a `--target` testbed, re-run the install so its hooks resolve correctly. Default (`~/.claude`) installs are unchanged.
+
+### Rollback
+
+State files (`MEMORY.md`, `roster.json`, `.prism-routing.jsonl`) are preserved across a downgrade. The schema-4 fields are simply ignored by v4.5. Use `node tools/prism-installer.mjs uninstall --restore-backup <v4.5-backup>` to revert.
 
 ## v4.4 → v4.5
 

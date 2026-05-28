@@ -4,6 +4,40 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.6.0] - 2026-05-28
+
+Telemetry-driven calibration (the payoff of v4.5's tooling-only telemetry), preceded by telemetry data-quality fixes, plus structured-output classifiers and the v4.5-review hygiene closeout. Build order inverted from layer numbering (hygiene + data-quality first, calibration last). Backward-compatible: `.prism-routing.jsonl` schema 3 → 4 is additive; v4.5 readers ignore unknown fields.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.5 → v4.6".
+
+### Added (Layer 2 — Telemetry-driven calibration, recommend-then-apply)
+- `tools/prism-telemetry-aggregate.mjs --recommend-calibration` — on-demand engine; reads routing + verdict logs, prints `{knob, current, recommended, evidence, confidence}[]` + apply commands; degrades to "insufficient data (n<15)"; output to stdout + `~/.claude/.prism-calibration-<date>.json`. NO silent writes.
+- K1 cap-retune rule (REPORT-ONLY — the cap is prose in dispatch-shapes.md), K2 escalate-model (ratchet detects via pending_upgrade, K2 recommends; apply `--set-model`), K3 auto-clear pending_upgrade (apply `--clear-pending-upgrade`), K4 master-override gate (advisory; `PRISM_OVERRIDE_GATE=strict`).
+- `tools/prism-roster.mjs --set-model <agent> <model>` + `--clear-pending-upgrade <agent>` apply-writers.
+
+### Added (Layer 1 — Telemetry data-quality)
+- `dispatch_cap` events now carry `actual_parallel` + `queue_depth` (fresh `.prism-task-*` dir count). `.prism-routing.jsonl` schema 3 → 4 (additive).
+- Challenge `evidence_class` classified at panel-write (7-class taxonomy) so telemetry no longer reads `UNCLASSIFIED`.
+- `tests/v3/state/test-installer-coverage.mjs` — manifest-coverage regression guard.
+- Fixed: `--agreement` mode was joining a non-existent `phase_1_5_verdict` event; now reads the real verdict JSONL + phase-0d challenges.
+
+### Added (Layer 3 — Structured-output classifiers)
+- `tools/lib/prism-validation-classify.mjs` (C1), `tools/lib/prism-failure-taxonomy.mjs` (C2), stakes detection in `tools/lib/prism-tier-classify.mjs` (D1 — migrations/deletes/security/money bias to opus + panel; context-anchored to avoid over-firing on everyday dev vocabulary).
+
+### Fixed (Layer 4 — Hygiene closeout)
+- H1 `withRosterLock` now wraps `prism-agent-write-register.mjs`, `prism-uninstall-cleanup.mjs`, `prism-installer.mjs`.
+- H2 `prism-verdict-flag.mjs` `writeVerdict(kind, sha, payload)`; phase-0d + phase-1-5 unified (phase-0d keeps no-jsonl behavior).
+- H3 `--target` installs now rewrite hook commands to the target's paths (were silently no-oping at `~/.claude`).
+- H4 Windows `claude` `.cmd` resolution before `spawnSync`; `PRISM_PHASE_0D_MOCK_VERDICT` + `PRISM_PHASE_1_5_MOCK_VERDICT` test env vars.
+
+### Schema
+- `.prism-routing.jsonl` 3 → 4 (additive: `actual_parallel`, `queue_depth`, `master_override` event). v4.5 readers ignore unknown fields.
+
+### Known limitations / deferred to v4.7
+- K1 apply is report-only (the parallel cap is orchestrator prose, not a code knob).
+- `actual_parallel` is a fresh-dir-count proxy, not true sibling state (Claude Code doesn't expose it).
+- Live hook-refresh requires a version bump to install (re-run `installer update` after upgrading).
+
 ## [4.5.0] - 2026-05-27
 
 Four composing layers: telemetry tooling (no calibration), out-of-band Phase 0d panel reviewer, installer hardening, coverage/hygiene picks. Closes 15 evaluation-flow items from the v4.5 brainstorm across 40 plan tasks. Backward-compatible: all schema changes additive; pre-v4.5 panels and rosters work unchanged.

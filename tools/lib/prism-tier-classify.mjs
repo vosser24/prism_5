@@ -72,6 +72,36 @@ export const PANEL_SIGNALS = [
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
 ];
 
+// D1 — high-stakes work: migrations, destructive ops, security, money. These
+// bias toward opus + mandatory panel independent of length-based tier floor.
+// Each pattern carries a CONTEXT ANCHOR so it fires on genuine high-stakes work,
+// not everyday dev vocabulary: bare "token"/"migrate"/"billing"/"security"
+// over-escalated benign prompts ("parse the JWT token", "migrate this React
+// component", "billing page spinner") — anchors keep those on the normal path.
+const STAKES_SIGNALS = [
+  // DB/schema migrations & data ops (NOT framework/UI "migrations")
+  /\b(database|schema|data|table|db)\s+migrat/i,
+  /\bmigrat\w*\s+(the\s+)?(database|schema|table|db|data)\b/i,
+  /\b(backfill|schema change|alter table)\b/i,
+  // Destructive data operations
+  /\bdrop\b[\w\s]{0,20}\b(table|database|column)\b/i,
+  /\b(delete\s+(from|all)|truncate|rm\s+-rf|wipe\s+(the\s+)?(db|database|data))\b/i,
+  /\b(destructive|irreversible)\b/i,
+  // Security / credentials with action or threat context
+  /\b(security\s+(audit|review|incident|hardening)|threat\s+model|vulnerabilit(y|ies)|\bCVE\b|RBAC|privilege\s+escalation)\b/i,
+  /\b(rotate|revoke|invalidate|leak\w*|expos\w*|hard-?cod\w*)\b[\w\s]{0,25}\b(secret|credential|token|api\s*key|password)s?\b/i,
+  /\b(secret|credential|password)s?\b[\w\s]{0,25}\b(rotat\w*|leak\w*|expos\w*|revoke)\b/i,
+  // Money / payments with action context (NOT mere page/feature names)
+  /\b(charg(e|ing|ed)|refund|payout|chargeback|invoic(e|ing))\b/i,
+  /\b(process\w*\s+(a\s+)?payment|bill\w*\s+(the\s+)?(customer|card)|financial\s+transaction|ledger)\b/i,
+  // Production / sensitive data
+  /\b(production\s+(deploy\w*|release|rollout|incident|outage)|deploy\w*\s+to\s+prod\w*|prod(uction)?\s+(db|database|data)|customer\s+data|\bPII\b|data\s?loss)\b/i,
+];
+export function detectStakes(prompt, description) {
+  const hay = `${prompt || ''} ${description || ''}`;
+  return STAKES_SIGNALS.some(r => r.test(hay));
+}
+
 // v2.2.0 fix (P3b.5): allow an object phrase + comma between the two verbs,
 // e.g. "read and analyze this module, then design a refactor".
 // Up to ~60 characters of intervening text; non-greedy. Leading anchor still
@@ -167,6 +197,7 @@ export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
   const hay = `${prompt || ''} ${description || ''}`;
   const panelHit = PANEL_SIGNALS.some(r => r.test(hay));
   if (panelHit) return true;
+  if (detectStakes(prompt, description)) return true;
   // ≥3 opus signals on a single prompt — strong novel-architecture indicator.
   if (Number(o) >= 3) return true;
   // compound verb chain on opus-tier prompt — likely multi-stage novel work.
@@ -209,7 +240,9 @@ export function classifyWithScore(prompt, description) {
   let score = complexityScore(c.h, c.s, c.o);
   const compound = detectCompound(prompt, description);
   if (compound) score += 2;
-  const tier = scoreToTier(score);
+  let tier = scoreToTier(score);
+  const stakes = detectStakes(prompt, description);
+  if (stakes) tier = 'opus';
   const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
-  return {...c, score, compound, tier_by_score: tier, summon_panel};
+  return {...c, score, compound, stakes, tier_by_score: tier, summon_panel};
 }

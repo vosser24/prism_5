@@ -28,11 +28,11 @@ const aggSrc = readFileSync(aggPath, 'utf-8');
 check('telemetry-aggregate has --agreement mode',
   aggSrc.includes('--agreement') && aggSrc.includes('reviewer-agreement'));
 
-// Schema version is 3
+// Schema version is 4 (v4.6 bumped the routing-log writer 3 -> 4; additive)
 const routerPath = join(repoRoot, 'hooks', 'prism-prompt-tier-router.mjs');
 const routerSrc = readFileSync(routerPath, 'utf-8');
-check('.prism-routing.jsonl schema_version bumped to 3',
-  /schema_version["\s:]+3\b/.test(routerSrc));
+check('.prism-routing.jsonl schema_version bumped to 4',
+  /schema_version["\s:]+4\b/.test(routerSrc));
 
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

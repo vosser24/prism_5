@@ -20,22 +20,36 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
+import { writeVerdict } from '../tools/lib/prism-verdict-flag.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(__filename));
 const PROMPT_PATH = join(repoRoot, 'agents', 'phase-0d-oob-reviewer.md');
 const TRANSCRIPT_WINDOW_LINES = 200;
 
-// ─── verdict file helpers (Phase 0d owns its own path scheme) ────────────────
+// H4: resolve the claude executable to an absolute path. On Windows, spawnSync
+// without shell:true does not append PATHEXT (.cmd/.exe), so a bare 'claude'
+// silently fails. Probe PATH for claude(.cmd|.exe). Falls back to 'claude'.
+function resolveClaudeBin() {
+  if (process.env.PRISM_CLAUDE_BIN) return process.env.PRISM_CLAUDE_BIN;
+  const isWin = process.platform === 'win32';
+  const exts = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
+  const pathDirs = (process.env.PATH || '').split(isWin ? ';' : ':');
+  for (const dir of pathDirs) {
+    for (const ext of exts) {
+      const cand = join(dir, 'claude' + ext);
+      try { if (existsSync(cand)) return cand; } catch {}
+    }
+  }
+  return 'claude';
+}
+
+// ─── pending-file helpers (verdict result goes through the shared lib) ───────
 
 function dotClaudeDir() {
   const d = join(homedir(), '.claude');
   try { mkdirSync(d, { recursive: true }); } catch {}
   return d;
-}
-
-function phase0dVerdictPath(sha) {
-  return join(dotClaudeDir(), `.prism-phase-0d-verdicts-${sha}.json`);
 }
 
 function atomicWrite(filePath, content) {
@@ -185,9 +199,21 @@ async function main() {
     process.stderr.write(`[phase-0d-oob] pending write failed: ${e.message}\n`);
   }
 
+  // H4 mock-verdict short-circuit: if PRISM_PHASE_0D_MOCK_VERDICT is set,
+  // parse it as the verdict and skip the real spawn. Flows into the existing
+  // write block below (same `verdict` variable).
+  let mockVerdict = null;
+  if (process.env.PRISM_PHASE_0D_MOCK_VERDICT) {
+    try {
+      mockVerdict = JSON.parse(process.env.PRISM_PHASE_0D_MOCK_VERDICT);
+    } catch {
+      mockVerdict = { schema_version: 1, severity: 'EVIDENCED', headline_finding: 'mock' };
+    }
+  }
+
   // Spawn the reviewer via `claude -p` (Claude Code subscription auth — no
   // separate ANTHROPIC_API_KEY required per PRISM auth pattern)
-  const child = spawnSync('claude', ['-p', '--model', 'claude-sonnet-4-6'], {
+  const child = mockVerdict ? null : spawnSync(resolveClaudeBin(), ['-p', '--model', 'claude-sonnet-4-6'], {
     input: promptText + '\n\n' + combinedInput,
     env: { ...process.env, PRISM_PHASE_0D_OOB_PROCESS: '1' },
     timeout: 90_000,
@@ -196,7 +222,10 @@ async function main() {
   });
 
   let verdict;
-  if (child.status === 0 && child.stdout) {
+  if (mockVerdict) {
+    // H4: mock-verdict short-circuit — use injected verdict directly
+    verdict = mockVerdict;
+  } else if (child.status === 0 && child.stdout) {
     try {
       const jsonStart = child.stdout.indexOf('{');
       const jsonEnd = child.stdout.lastIndexOf('}');
@@ -224,18 +253,19 @@ async function main() {
     };
   }
 
-  // Write result verdict under roster lock (prevents races with parallel panel writes)
-  const verdictPath = phase0dVerdictPath(dispatchSha);
+  // Write result verdict via the shared verdict-flag lib, under roster lock
+  // (prevents races with parallel panel writes). appendLog:false — phase-0d has
+  // no jsonl reader (ISSUE-3); the per-SHA file is the only artifact. The lib's
+  // resultPath('0d', sha) yields the same .prism-phase-0d-verdicts-<sha>.json
+  // filename the SessionStart pickup scans for.
   await withRosterLock(rosterPath, async () => {
     try {
-      atomicWrite(verdictPath, JSON.stringify({
-        kind: 'phase_0d',
+      writeVerdict('0d', dispatchSha, {
         task_sha: taskSha,
         dispatch_sha: dispatchSha,
         panel_path: panelPath,
         verdict,
-        completed_at: new Date().toISOString(),
-      }, null, 2));
+      }, { appendLog: false });
     } catch (e) {
       process.stderr.write(`[phase-0d-oob] verdict write failed: ${e.message}\n`);
     }

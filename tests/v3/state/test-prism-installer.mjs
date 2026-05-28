@@ -424,6 +424,40 @@ function snapshotFiles(dir) {
   rmSync(sandbox, {recursive: true, force: true});
 }
 
+// H3 --target rewrites hook commands to the install dir's absolute path
+{
+  const sandbox = makeSandbox();
+  const target = join(sandbox, '.claude');
+  mkdirSync(target, {recursive: true});
+  const r = run(['install', '--target', target, '--quiet']);
+  ok('H3: --target install exits 0', r.status === 0);
+  const settingsPath = join(target, 'settings.json');
+  if (existsSync(settingsPath)) {
+    const cmds = JSON.stringify(JSON.parse(readFileSync(settingsPath, 'utf8')).hooks || {});
+    ok('H3: --target rewrites hook commands to the target, not ~/.claude',
+      cmds.includes(target.replace(/\\/g, '/')) && !/~\/\.claude\/hooks\/prism-/.test(cmds));
+  } else {
+    ok('H3: --target rewrites hook commands (settings.json missing)', false);
+  }
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// H3 (R3): default/--home installs keep the canonical ~/.claude prefix (no rewrite)
+{
+  const home = makeSandbox();
+  mkdirSync(join(home, '.claude'), {recursive: true});
+  run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  const settingsPath = join(home, '.claude', 'settings.json');
+  if (existsSync(settingsPath)) {
+    const cmds = JSON.stringify(JSON.parse(readFileSync(settingsPath, 'utf8')).hooks || {});
+    ok('H3: --home install keeps ~/.claude hook commands (R3, no rewrite)',
+      /~\/\.claude\/hooks\/prism-/.test(cmds) && !cmds.includes(join(home, '.claude').replace(/\\/g, '/')));
+  } else {
+    ok('H3: --home install keeps ~/.claude hook commands (settings.json missing)', false);
+  }
+  rmSync(home, {recursive: true, force: true});
+}
+
 // I6 update --dry-run on empty target → "no existing install"
 {
   const sandbox = makeSandbox();

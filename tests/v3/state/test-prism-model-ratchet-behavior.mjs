@@ -149,5 +149,90 @@ if (rosterBefore === rosterAfter && !res3.stdout.includes('Flagged @code-reviewe
   console.log(`FAIL: re-running --apply-ratchet on already-flagged agent caused changes or duplicate log`);
 }
 
+// Test 6: --clear-pending-upgrade clears pending_upgrade and resets status
+total++;
+{
+  const sandboxHome3 = mkdtempSync(join(tmpdir(), 'prism-ratchet-test3-'));
+  process.on('exit', () => { try { rmSync(sandboxHome3, {recursive: true, force: true}); } catch {} });
+  const rosterDir3 = join(sandboxHome3, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir3, {recursive: true});
+  writeFileSync(join(rosterDir3, 'roster.json'), JSON.stringify({
+    schema_version: '4.4.0',
+    agents: {
+      'x': {pending_upgrade: true, status: 'upgrade_needed', default_model: 'sonnet'},
+    },
+  }, null, 2));
+  const r6 = spawnSync('node', [TOOL, '--clear-pending-upgrade', '@x'], {
+    encoding: 'utf-8',
+    env: {...process.env, HOME: sandboxHome3, USERPROFILE: sandboxHome3},
+    timeout: 10000,
+  });
+  if (r6.status !== 0) {
+    console.log(`FAIL T6: --clear-pending-upgrade exited ${r6.status}: ${r6.stderr}`);
+  } else {
+    const cleared = JSON.parse(readFileSync(join(rosterDir3, 'roster.json'), 'utf-8'));
+    if (cleared.agents['x'].pending_upgrade === false && cleared.agents['x'].status === 'active') {
+      pass++;
+    } else {
+      console.log(`FAIL T6: expected pending_upgrade=false status=active, got pending_upgrade=${cleared.agents['x'].pending_upgrade} status=${cleared.agents['x'].status}`);
+    }
+  }
+}
+
+// Test 7: --set-model sets default_model
+total++;
+{
+  const sandboxHome4 = mkdtempSync(join(tmpdir(), 'prism-ratchet-test4-'));
+  process.on('exit', () => { try { rmSync(sandboxHome4, {recursive: true, force: true}); } catch {} });
+  const rosterDir4 = join(sandboxHome4, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir4, {recursive: true});
+  writeFileSync(join(rosterDir4, 'roster.json'), JSON.stringify({
+    schema_version: '4.4.0',
+    agents: {
+      'x': {pending_upgrade: true, status: 'upgrade_needed', default_model: 'sonnet'},
+    },
+  }, null, 2));
+  const r7 = spawnSync('node', [TOOL, '--set-model', '@x', 'opus'], {
+    encoding: 'utf-8',
+    env: {...process.env, HOME: sandboxHome4, USERPROFILE: sandboxHome4},
+    timeout: 10000,
+  });
+  if (r7.status !== 0) {
+    console.log(`FAIL T7: --set-model exited ${r7.status}: ${r7.stderr}`);
+  } else {
+    const setted = JSON.parse(readFileSync(join(rosterDir4, 'roster.json'), 'utf-8'));
+    if (setted.agents['x'].default_model === 'opus') {
+      pass++;
+    } else {
+      console.log(`FAIL T7: expected default_model=opus, got ${setted.agents['x'].default_model}`);
+    }
+  }
+}
+
+// Test 8: --set-model with invalid model exits 2
+total++;
+{
+  const sandboxHome5 = mkdtempSync(join(tmpdir(), 'prism-ratchet-test5-'));
+  process.on('exit', () => { try { rmSync(sandboxHome5, {recursive: true, force: true}); } catch {} });
+  const rosterDir5 = join(sandboxHome5, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir5, {recursive: true});
+  writeFileSync(join(rosterDir5, 'roster.json'), JSON.stringify({
+    schema_version: '4.4.0',
+    agents: {
+      'x': {pending_upgrade: false, default_model: 'sonnet'},
+    },
+  }, null, 2));
+  const r8 = spawnSync('node', [TOOL, '--set-model', '@x', 'gpt4'], {
+    encoding: 'utf-8',
+    env: {...process.env, HOME: sandboxHome5, USERPROFILE: sandboxHome5},
+    timeout: 10000,
+  });
+  if (r8.status === 2) {
+    pass++;
+  } else {
+    console.log(`FAIL T8: expected exit 2 for invalid model, got ${r8.status}`);
+  }
+}
+
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

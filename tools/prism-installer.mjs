@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Installer v4.5.0
+// PRISM Installer v4.6.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
@@ -35,6 +35,7 @@ import {tmpdir, homedir} from 'os';
 import {fileURLToPath} from 'url';
 import {createHash} from 'crypto';
 import {spawnSync} from 'child_process';
+import { withRosterLock } from './lib/prism-roster-lock.mjs';
 
 // ─── Path resolution ──────────────────────────────────────────────────────────
 // [[feedback-windows-spawnsync-url-path]]: always use fileURLToPath, never new URL().pathname
@@ -173,6 +174,18 @@ function isPrismHookCommand(cmd) {
   return typeof cmd === 'string' &&
     (cmd.includes('prism-exec.sh') || cmd.includes('prism-exec.cmd')) &&
     cmd.includes('prism-');
+}
+
+// H3: the fragment's hook commands hard-code the `~/.claude/` prefix. When
+// installing to a non-default location (--target), rewrite that prefix to the
+// actual install dir (hookRoot === CLAUDE_DIR) so the hooks resolve — otherwise
+// a --target install silently registers commands pointing at ~/.claude. Default
+// and --home installs pass hookRoot=null and keep the ~/.claude prefix (R3).
+// The rewrite preserves the `prism-exec`/`prism-` substrings, so the rewritten
+// command still satisfies isPrismHookCommand (dedupe + strip keep working).
+function rewriteHookCommand(cmd, hookRoot) {
+  if (!hookRoot || typeof cmd !== 'string') return cmd;
+  return cmd.split('~/.claude/').join(hookRoot.replace(/\\/g, '/') + '/');
 }
 
 // ─── Lock file ───────────────────────────────────────────────────────────────
@@ -399,7 +412,7 @@ function removeOldPrismFiles(manifest, dryRun) {
 }
 
 // ─── Settings merge ──────────────────────────────────────────────────────────
-function mergeSettings(existing, fragment, dryRun) {
+function mergeSettings(existing, fragment, dryRun, hookRoot = null) {
   // Deep merge: for each event in fragment.hooks, ensure PRISM entries exist exactly once
   const merged = JSON.parse(JSON.stringify(existing)); // deep clone
   delete merged._fresh; // remove internal marker
@@ -425,18 +438,21 @@ function mergeSettings(existing, fragment, dryRun) {
       // A fragment group contributes one or more hook entries
       for (const fragHook of (fragGroup.hooks || [])) {
         if (!isPrismHookCommand(fragHook.command)) continue;
+        // H3: rewrite the command to the install dir for --target (no-op otherwise).
+        // Dedupe must compare the REWRITTEN command, so rewrite before the scan.
+        const command = rewriteHookCommand(fragHook.command, hookRoot);
 
         // Check if this exact command already exists in any group for this event
         let found = false;
         for (const existingGroup of merged.hooks[event]) {
           for (const existingHook of (existingGroup.hooks || [])) {
-            if (existingHook.command === fragHook.command) { found = true; break; }
+            if (existingHook.command === command) { found = true; break; }
           }
           if (found) break;
         }
         if (!found) {
           // Add new group containing this hook
-          const newGroup = {hooks: [{type: fragHook.type, command: fragHook.command}]};
+          const newGroup = {hooks: [{type: fragHook.type, command}]};
           if (fragGroup.matcher !== undefined) newGroup.matcher = fragGroup.matcher;
           merged.hooks[event].push(newGroup);
         }
@@ -639,19 +655,24 @@ async function install() {
         try { shippedRoster = JSON.parse(readFileSync(shippedRosterPath, 'utf8')); } catch {}
       }
       // After copyDirectories, the roster from the installed dir is already in place.
-      // Now re-merge to restore user agents.
+      // Now re-merge to restore user agents, protected by the roster lock.
       if (existingRoster && shippedRoster) {
-        const mergedRoster = mergeRoster(existingRoster, shippedRoster);
-        const installedRosterPath = rosterPath;
-        ensureDir(dirname(installedRosterPath));
-        atomicWrite(installedRosterPath, JSON.stringify(mergedRoster, null, 2));
+        await withRosterLock(rosterPath, async () => {
+          const mergedRoster = mergeRoster(existingRoster, shippedRoster);
+          const installedRosterPath = rosterPath;
+          ensureDir(dirname(installedRosterPath));
+          atomicWrite(installedRosterPath, JSON.stringify(mergedRoster, null, 2));
+        });
         log(`[prism-installer] Preserved ${Object.keys(existingRoster.agents || {}).length} user agent(s) in roster.`);
       }
     }
 
     // Step 7: merge settings.json
     if (!flags.dryRun) {
-      const mergedSettings = mergeSettings(existingSettings, fragment, flags.dryRun);
+      // H3: rewrite hook-command paths to the install dir only for --target;
+      // default and --home installs keep the canonical ~/.claude prefix (R3).
+      const hookRoot = flags.target ? CLAUDE_DIR : null;
+      const mergedSettings = mergeSettings(existingSettings, fragment, flags.dryRun, hookRoot);
       ensureDir(CLAUDE_DIR);
       atomicWrite(settingsPath, JSON.stringify(mergedSettings, null, 2));
       log(`[prism-installer] settings.json merged.`);

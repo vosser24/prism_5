@@ -31,7 +31,7 @@ import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'fs
 import {join, dirname} from 'path';
 
 const args = process.argv.slice(2);
-let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false, agreement: false, routingLog: null};
+let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false, agreement: false, routingLog: null, recommendCalibration: false};
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--dry-run') opts.dryRun = true;
@@ -41,8 +41,9 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--phase-1-5-agreement') opts.phase15Agreement = true;
   else if (a === '--agreement') opts.agreement = true;
   else if (a === '--routing-log') opts.routingLog = args[++i];
+  else if (a === '--recommend-calibration') opts.recommendCalibration = true;
   else if (a === '-h' || a === '--help') {
-    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--phase-1-5-agreement] [--agreement] [--routing-log <path>] [--home <path>]\n`);
+    process.stdout.write(`Usage: prism-telemetry-aggregate [--dry-run] [--tuning] [--force] [--phase-1-5-agreement] [--agreement] [--recommend-calibration] [--routing-log <path>] [--home <path>]\n`);
     process.exit(0);
   }
 }
@@ -57,46 +58,44 @@ const POLICY = join(HOME, '.claude', 'prism-policy.json');
 const LOG = join(HOME, '.claude', '.prism-routing.jsonl');
 const ROLLUP = join(HOME, '.claude', '.prism-telemetry-rollup.json');
 
-// ── v4.5: --agreement subcommand (reviewer-agreement rate from routing log) ───
-// Reads .prism-routing.jsonl (or --routing-log override), finds phase_1_5_verdict
-// and phase_0d_challenge entries, joins by task_sha, and reports the
-// reviewer-agreement rate between adversarial challenges and final verdicts.
-// Runs before the consent gate because it accepts an arbitrary --routing-log path
-// (used for unit tests) and does not write any system state.
+// ── v4.6: --agreement subcommand (per-spec UN-CITED rate from verdict JSONL) ─
+// Phase-0d challenge substance from the routing log + per-spec UN-CITED rate
+// from ~/.claude/.prism-phase-1-5-verdicts.jsonl (the real reviewer-agreement
+// proxy). A cross-event join keyed on task_sha is impossible because verdict
+// JSONL entries carry specialist_name/summary but no task_sha.
+// Runs before the consent gate because it accepts an arbitrary --routing-log
+// path (used for unit tests) and does not write any system state.
 function runAgreementMode(routingLogPath) {
-  const lines = readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean);
-  const challenges = new Map(); // task_sha → [{ position, challenge_n, evidence_class }]
-  const verdicts = new Map();   // task_sha → { severity, dropped_count, dispatched_specialist }
-  for (const line of lines) {
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (e.event === 'phase_0d_challenge') {
-      const arr = challenges.get(e.task_sha) ?? [];
-      arr.push(e);
-      challenges.set(e.task_sha, arr);
-    } else if (e.event === 'phase_1_5_verdict') {
-      verdicts.set(e.task_sha, e);
+  // Phase-0d challenge substance, grouped (from routing log).
+  const challengeRows = [];
+  if (existsSync(routingLogPath)) {
+    for (const line of readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean)) {
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      if (e.event === 'phase_0d_challenge') challengeRows.push(e);
     }
   }
-  let joined = 0;
-  let agreed = 0;
-  let disagreed = 0;
-  for (const [sha, chs] of challenges) {
-    const v = verdicts.get(sha);
-    if (!v) continue;
-    joined++;
-    // Heuristic: if any challenge flagged the specialist that ended up REJECTED, "agreed".
-    const challengedSpecs = new Set(chs.map(c => c.position));
-    if (v.severity === 'REJECTED' && challengedSpecs.has(v.dispatched_specialist)) agreed++;
-    else if (v.severity === 'EVIDENCED' && !challengedSpecs.has(v.dispatched_specialist)) agreed++;
-    else disagreed++;
+  // Phase-1.5 per-spec UN-CITED rate (the real reviewer-agreement proxy).
+  const verdictLog = join(HOME, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  const perSpec = {};
+  if (existsSync(verdictLog)) {
+    for (const line of readFileSync(verdictLog, 'utf-8').split('\n').filter(Boolean)) {
+      let v; try { v = JSON.parse(line); } catch { continue; }
+      const a = String(v.specialist_name || '').replace(/^@/, '');
+      if (!a) continue;
+      perSpec[a] ??= { dispatches: 0, total: 0, un_cited: 0 };
+      perSpec[a].dispatches++;
+      perSpec[a].total += (v.summary?.total) || 0;
+      perSpec[a].un_cited += ((v.summary?.un_cited) || 0) + ((v.summary?.rejected) || 0);
+    }
   }
+  const rows = Object.entries(perSpec).map(([spec, s]) => ({
+    spec, dispatches: s.dispatches,
+    un_cited_rate: s.total > 0 ? s.un_cited / s.total : null,
+  })).sort((a, b) => (b.un_cited_rate ?? 0) - (a.un_cited_rate ?? 0));
   process.stdout.write(JSON.stringify({
     mode: 'agreement',
-    joined_pairs: joined,
-    agreed,
-    disagreed,
-    agreement_rate: joined > 0 ? agreed / joined : null,
+    phase_0d_challenges: challengeRows.length,
+    per_spec_uncited: rows,
   }, null, 2) + '\n');
   process.exit(0);
 }
@@ -108,6 +107,127 @@ if (opts.agreement) {
     process.exit(14);
   }
   runAgreementMode(routingLogPath);
+}
+
+// ── v4.6: calibration engine helpers ─────────────────────────────────
+const MIN_N = 15;
+
+function readRosterSafe() {
+  const candidates = [
+    join(HOME, '.claude', 'skills', 'prism-plan', 'references', 'roster.json'),
+    join(HOME, '.claude', 'roster.json'),
+  ];
+  for (const p of candidates) { if (existsSync(p)) { try { return JSON.parse(readFileSync(p, 'utf-8')); } catch {} } }
+  return { agents: {} };
+}
+
+function insufficient(knob, n) {
+  return { knob, status: 'insufficient_data', evidence: `insufficient data (n=${n}, need >=${MIN_N}); keeping current`, confidence: 'none' };
+}
+
+// K1: dispatch cap (REPORT-ONLY)
+function recommendCap(events, out) {
+  const caps = events.filter(e => e.event === 'dispatch_cap');
+  if (caps.length < MIN_N) { out.push(insufficient('dispatch_cap', caps.length)); return; }
+  const cap = caps[caps.length - 1].cap ?? 4;
+  const hitWithQueue = caps.filter(e => (e.actual_parallel ?? 0) >= cap && (e.queue_depth ?? 0) > 0).length;
+  const rarelyNear = caps.filter(e => (e.actual_parallel ?? 0) < cap - 1).length;
+  const hitRate = hitWithQueue / caps.length;
+  const lowRate = rarelyNear / caps.length;
+  if (hitRate >= 0.5) {
+    out.push({ knob: 'dispatch_cap', current: cap, recommended: cap + 2, confidence: hitRate >= 0.7 ? 'high' : 'medium',
+      evidence: `${hitWithQueue}/${caps.length} dispatches hit cap with queue>0`,
+      apply: `REPORT-ONLY (D2): edit skills/master-orchestrator/references/dispatch-shapes.md:44 cap to ${cap + 2}` });
+  } else if (lowRate >= 0.8 && cap > 2) {
+    out.push({ knob: 'dispatch_cap', current: cap, recommended: cap - 1, confidence: 'medium',
+      evidence: `${rarelyNear}/${caps.length} dispatches stayed >=2 under cap`,
+      apply: `REPORT-ONLY (D2): edit dispatch-shapes.md:44 cap to ${cap - 1}` });
+  }
+}
+
+// K2: escalate model
+function recommendEscalateModel(verdicts, roster, out) {
+  const perSpec = {};
+  for (const v of verdicts) {
+    const a = String(v.specialist_name || '').replace(/^@/, '');
+    if (!a) continue;
+    perSpec[a] ??= { dispatches: 0, total: 0, bad: 0 };
+    perSpec[a].dispatches++;
+    perSpec[a].total += (v.summary?.total) || 0;
+    perSpec[a].bad += ((v.summary?.un_cited) || 0) + ((v.summary?.rejected) || 0);
+  }
+  const agents = roster.agents || {};
+  for (const [spec, s] of Object.entries(perSpec)) {
+    if (s.dispatches < MIN_N) { out.push(insufficient(`model:${spec}`, s.dispatches)); continue; }
+    const rate = s.total > 0 ? s.bad / s.total : 0;
+    const flagged = agents[spec]?.pending_upgrade === true;
+    const current = agents[spec]?.default_model || 'sonnet';
+    if (flagged && rate >= 0.30 && current !== 'opus') {
+      out.push({ knob: `model:${spec}`, current, recommended: 'opus', confidence: 'high',
+        evidence: `pending_upgrade set by ratchet; UN-CITED ${(rate * 100).toFixed(0)}% over ${s.dispatches} dispatches`,
+        apply: `node tools/prism-roster.mjs --set-model ${spec} opus` });
+    }
+  }
+}
+
+// K3: auto-clear pending_upgrade
+function recommendAutoClear(verdicts, roster, out) {
+  const perSpec = {};
+  for (const v of verdicts) {
+    const a = String(v.specialist_name || '').replace(/^@/, '');
+    if (!a) continue;
+    perSpec[a] ??= { dispatches: 0, total: 0, bad: 0 };
+    perSpec[a].dispatches++;
+    perSpec[a].total += (v.summary?.total) || 0;
+    perSpec[a].bad += ((v.summary?.un_cited) || 0) + ((v.summary?.rejected) || 0);
+  }
+  const agents = roster.agents || {};
+  for (const [spec, a] of Object.entries(agents)) {
+    if (a?.pending_upgrade !== true) continue;
+    const s = perSpec[spec];
+    if (!s || s.dispatches < MIN_N) continue;
+    const rate = s.total > 0 ? s.bad / s.total : 0;
+    if (rate < 0.10) {
+      out.push({ knob: `clear:${spec}`, current: 'pending_upgrade=true', recommended: 'pending_upgrade=false', confidence: 'high',
+        evidence: `UN-CITED ${(rate * 100).toFixed(0)}% < 10% over ${s.dispatches} dispatches`,
+        apply: `node tools/prism-roster.mjs --clear-pending-upgrade ${spec}` });
+    }
+  }
+}
+
+// K4: override gate
+function recommendOverrideGate(events, out) {
+  const ovr = events.filter(e => e.event === 'master_override').length;
+  if (ovr >= 5) {
+    out.push({ knob: 'override_gate', current: 'advisory', recommended: 'strict', confidence: 'medium',
+      evidence: `${ovr} master overrides logged`,
+      apply: `set PRISM_OVERRIDE_GATE=strict in your environment` });
+  }
+}
+
+// ── v4.6: --recommend-calibration dispatch ────────────────────────────
+if (opts.recommendCalibration) {
+  const routingLogPath = opts.routingLog || LOG;
+  const recommendations = [];
+  const events = existsSync(routingLogPath)
+    ? readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+    : [];
+  const verdictLogPath = join(HOME, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  const verdicts = existsSync(verdictLogPath)
+    ? readFileSync(verdictLogPath, 'utf-8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+    : [];
+  const roster = readRosterSafe();
+  recommendCap(events, recommendations);                      // K1
+  recommendEscalateModel(verdicts, roster, recommendations);  // K2
+  recommendAutoClear(verdicts, roster, recommendations);      // K3
+  recommendOverrideGate(events, recommendations);             // K4
+  const out = { mode: 'recommend-calibration', generated_at: new Date().toISOString(), events_read: events.length, verdicts_read: verdicts.length, recommendations };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  try {
+    const stamp = new Date().toISOString().slice(0, 10);
+    writeFileSync(join(HOME, '.claude', `.prism-calibration-${stamp}.json`), JSON.stringify(out, null, 2) + '\n');
+  } catch (e) { process.stderr.write(`[calibration] file write failed: ${e.message}\n`); }
+  process.exit(0);
 }
 
 // ── consent gate ─────────────────────────────────────────────────────
@@ -227,6 +347,7 @@ function emptyRollup() {
     force_opus_uses: 0,
     subagent_bypasses: {parent_tool_use_id: 0, env: 0, 'sentinel.dispatched': 0},
     panel_summons: {true: 0, false: 0},
+    master_overrides: 0,
     tuning_candidates: [],
   };
 }
@@ -248,6 +369,7 @@ function aggregate(events) {
     if (e.force_opus) r.force_opus_uses++;
     if (e.subagent_bypass && r.subagent_bypasses[e.subagent_bypass] !== undefined) r.subagent_bypasses[e.subagent_bypass]++;
     if (e.panel_summon !== undefined) r.panel_summons[String(Boolean(e.panel_summon))]++;
+    if (e.event === 'master_override') r.master_overrides++;
   }
 
   // Tuning candidates: any guard that denies > 25% of its triggering events.

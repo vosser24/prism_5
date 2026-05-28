@@ -48,7 +48,7 @@ async function run() {
 
   // Test 3: writeVerdict writes result + appends to log
   total++;
-  mod.writeVerdict(sha, {
+  mod.writeVerdict('1-5', sha, {
     specialist_name: '@claude-master',
     reviewer_model: 'claude-sonnet-4-6',
     verdicts: [{claim_id: 'c1', class: 'correctness', verdict: 'EVIDENCED', taxonomy_row: 'Correctness', evidence_required: '', reasoning: 'cited test'}],
@@ -110,7 +110,7 @@ async function run() {
 
   // Test 9: listCompletedVerdicts returns previously written verdict SHAs (before clear; re-write one to test)
   total++;
-  mod.writeVerdict('bbbbbbbb', {
+  mod.writeVerdict('1-5', 'bbbbbbbb', {
     session_id: 'sess-c',
     specialist_name: '@code-reviewer',
     reviewer_model: 'claude-sonnet-4-6',

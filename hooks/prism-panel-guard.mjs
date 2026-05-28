@@ -339,6 +339,33 @@ function atomicWritePanel(filePath, obj) {
   renameSync(tmp, filePath);
 }
 
+// Q2: classify a challenge's evidence into the 7-class taxonomy at panel-write.
+// Cheap keyword/regex heuristic — single source of truth read by the A1 reviewer
+// AND by prism-phase-0d-challenges.mjs telemetry (which reads c.evidence_class).
+function classifyEvidenceClass(challenge) {
+  const t = String(challenge?.text ?? challenge?.claim ?? challenge ?? '');
+  if (/\b[a-f0-9]{7,40}\b|\.(mjs|js|ts|md|json):\d+|\bfile\b.*\bline\b/i.test(t)) return 'PRECEDENT';
+  if (/\b(\d+(\.\d+)?\s*(ms|s|%|x|reqs?|ops?)|benchmark|measured|test (passed|result)|log line)\b/i.test(t)) return 'MEASUREMENT';
+  if (/\b(spec|requirement|design (doc|constraint)|MUST|SHALL|per the (design|spec))\b/i.test(t)) return 'SPEC';
+  if (/[""][^""]{8,}[""]|\bquot(e|ed)\b/i.test(t)) return 'QUOTE';
+  if (/\b(demo|working (artifact|example)|reproduce|repro steps|see (the )?(branch|PR))\b/i.test(t)) return 'DEMO';
+  if (/\b(theater|no evidence|hand-?wav|vague|unsubstantiated)\b/i.test(t)) return 'CHALLENGE-SUBSTANCE';
+  return 'REASONED-INFERENCE'; // logically derived, no citation
+}
+
+function classifyPanelEvidence(panel) {
+  let mutated = false;
+  for (const position of panel.positions ?? []) {
+    for (const c of position.challenges ?? []) {
+      if (c && typeof c === 'object' && !c.evidence_class) {
+        c.evidence_class = classifyEvidenceClass(c);
+        mutated = true;
+      }
+    }
+  }
+  return mutated;
+}
+
 // Path B entry point. Returns true if this payload was a panel.json write
 // (and we handled it — successfully or not). Returns false to fall through
 // to Path A (SubagentStop).
@@ -363,6 +390,9 @@ function handleDroppedPositions(payload) {
   // T32 — G2 alternatives-considered shape validation.
   checkAlternatives(panel);
 
+  // Q2 — classify challenge evidence_class at panel-write (single source of truth).
+  const evidenceMutated = classifyPanelEvidence(panel);
+
   const positions = panel.positions ?? [];
   const ts = new Date().toISOString();
   const newDrops = [];
@@ -378,11 +408,14 @@ function handleDroppedPositions(payload) {
     });
   }
 
-  // Write-back ONLY when there are actual drops (self-review: no spurious writes).
+  // Push dropped_positions only when there ARE drops (no spurious empty pushes).
   if (newDrops.length > 0) {
     if (!Array.isArray(panel.dropped_positions)) panel.dropped_positions = [];
     panel.dropped_positions.push(...newDrops);
+  }
 
+  // Write-back when drops occurred OR evidence_class was classified (Q2).
+  if (newDrops.length > 0 || evidenceMutated) {
     try {
       atomicWritePanel(panelPath, panel);
     } catch (e) {
@@ -390,11 +423,13 @@ function handleDroppedPositions(payload) {
       try { writeFileSync(panelPath, JSON.stringify(panel, null, 2), 'utf-8'); } catch {}
       process.stderr.write(`[panel-guard/A3] atomic write failed, used direct fallback: ${e.message}\n`);
     }
+  }
 
+  if (newDrops.length > 0) {
     appendLog({
       ts,
       event: 'panel_guard_dropped',
-      schema_version: 3,
+      schema_version: 4,
       panel_path: panelPath,
       dropped_count: newDrops.length,
       dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),

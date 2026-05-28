@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "4.5.0",
+  "prism_version": "4.6.0",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
@@ -62,6 +62,8 @@
     {"src": "tools/lib/prism-state.mjs", "dst": "tools/lib/prism-state.mjs", "executable": true},
     {"src": "tools/lib/prism-state.ps1", "dst": "tools/lib/prism-state.ps1", "executable": false},
     {"src": "tools/lib/prism-tier-classify.mjs", "dst": "tools/lib/prism-tier-classify.mjs", "executable": true},
+    {"src": "tools/lib/prism-failure-taxonomy.mjs", "dst": "tools/lib/prism-failure-taxonomy.mjs", "executable": true},
+    {"src": "tools/lib/prism-validation-classify.mjs", "dst": "tools/lib/prism-validation-classify.mjs", "executable": true},
     {"src": "tools/lib/prism-verdict-flag.mjs", "dst": "tools/lib/prism-verdict-flag.mjs", "executable": true},
     {"src": "agents/agent-factory.md", "dst": "agents/agent-factory.md", "executable": false},
     {"src": "agents/claude-master.md", "dst": "agents/claude-master.md", "executable": false},
