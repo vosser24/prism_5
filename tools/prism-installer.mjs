@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Installer v4.5.0
+// PRISM Installer v4.6.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
