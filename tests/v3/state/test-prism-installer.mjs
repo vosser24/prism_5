@@ -390,5 +390,197 @@ function snapshotFiles(dir) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// v4.5: I4/I5/I6/I7 installer additions
+// ─────────────────────────────────────────────────────────────────────────────
+
+// I7 --target flag — basic detect against empty .claude/
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  const r = run(['detect', '--target', targetClaude]);
+  ok('I7: detect --target empty dir exits 0', r.status === 0);
+  // detect prints JSON — parse it and check claude_dir
+  let detectJson = null;
+  try { detectJson = JSON.parse(r.stdout); } catch {}
+  ok('I7: detect --target stdout is valid JSON', detectJson !== null);
+  ok('I7: detect --target claude_dir matches', detectJson && detectJson.claude_dir && detectJson.claude_dir.includes(targetClaude.split(/[\\/]/).pop()));
+  ok('I7: detect --target reports installed:false', detectJson && detectJson.installed === false);
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I7 --target with nonexistent dir errors with code 2
+{
+  const r = run(['detect', '--target', '/does/not/exist-xyzzy-prism-test']);
+  ok('I7: --target nonexistent exits 2', r.status === 2);
+  ok('I7: --target nonexistent stderr mentions --target', (r.stderr || '').toLowerCase().includes('target'));
+}
+
+// I7 --home and --target mutually exclusive
+{
+  const sandbox = makeSandbox();
+  const r = run(['detect', '--home', sandbox, '--target', join(sandbox, '.claude')]);
+  ok('I7: --home + --target mutually exclusive exits 2', r.status === 2);
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I6 update --dry-run on empty target → "no existing install"
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  const r = run(['update', '--target', targetClaude, '--dry-run']);
+  ok('I6: update --dry-run empty exits 0', r.status === 0);
+  const combined = (r.stdout || '') + (r.stderr || '');
+  ok('I6: update --dry-run mentions "no existing install" or "fresh install"', /no existing install|fresh install/i.test(combined));
+  ok('I6: update --dry-run mentions "would install"', /would install/i.test(combined));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I6 update on already-current install → "Already at vX; nothing to do."
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  // Seed install
+  const r1 = run(['install', '--target', targetClaude, '--quiet']);
+  ok('I6: seed install exits 0', r1.status === 0);
+  ok('I6: seed install wrote .prism-version', existsSync(join(targetClaude, '.prism-version')));
+  // Now update
+  const r2 = run(['update', '--target', targetClaude]);
+  ok('I6: update on current install exits 0', r2.status === 0);
+  const combined2 = (r2.stdout || '') + (r2.stderr || '');
+  ok('I6: update on current emits "Already at"', /already at/i.test(combined2));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I6 update with missing .prism-version marker → "version unknown"
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  run(['install', '--target', targetClaude, '--quiet']);
+  // Delete the marker
+  rmSync(join(targetClaude, '.prism-version'), {force: true});
+  const r = run(['update', '--target', targetClaude, '--dry-run']);
+  ok('I6: update with missing marker exits 0', r.status === 0);
+  const combined = (r.stdout || '') + (r.stderr || '');
+  ok('I6: update with missing marker mentions "unknown"', /unknown/i.test(combined));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I4 --purge-state --yes removes state files
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  // Seed install + state files
+  run(['install', '--target', targetClaude, '--quiet']);
+  writeFileSync(join(targetClaude, 'MEMORY.md'), 'test memory');
+  writeFileSync(join(targetClaude, '.prism-routing.jsonl'), '{"t":1}');
+  writeFileSync(join(targetClaude, 'prism-policy.json'), '{"p":1}');
+  // Uninstall WITHOUT --purge-state → state preserved
+  run(['uninstall', '--target', targetClaude, '--quiet']);
+  ok('I4: uninstall (no purge) preserves MEMORY.md', existsSync(join(targetClaude, 'MEMORY.md')));
+  ok('I4: uninstall (no purge) preserves .prism-routing.jsonl', existsSync(join(targetClaude, '.prism-routing.jsonl')));
+  ok('I4: uninstall (no purge) preserves prism-policy.json', existsSync(join(targetClaude, 'prism-policy.json')));
+
+  // Re-install then uninstall WITH --purge-state --yes
+  run(['install', '--target', targetClaude, '--quiet']);
+  writeFileSync(join(targetClaude, 'MEMORY.md'), 'test memory 2');
+  writeFileSync(join(targetClaude, '.prism-routing.jsonl'), '{"t":2}');
+  const r = run(['uninstall', '--target', targetClaude, '--purge-state', '--yes', '--quiet']);
+  ok('I4: uninstall --purge-state --yes exits 0', r.status === 0);
+  ok('I4: --purge-state removed MEMORY.md', !existsSync(join(targetClaude, 'MEMORY.md')));
+  ok('I4: --purge-state removed .prism-routing.jsonl', !existsSync(join(targetClaude, '.prism-routing.jsonl')));
+  ok('I4: --purge-state removed prism-policy.json', !existsSync(join(targetClaude, 'prism-policy.json')));
+
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// I5 expanded backup captures shipped dirs + user state
+{
+  const sandbox = makeSandbox();
+  const targetClaude = join(sandbox, '.claude');
+  mkdirSync(targetClaude, {recursive: true});
+  // First install (no prior install to back up, so no backup expected)
+  run(['install', '--target', targetClaude, '--quiet']);
+  // Add user state
+  writeFileSync(join(targetClaude, 'MEMORY.md'), 'memory');
+  writeFileSync(join(targetClaude, '.prism-routing.jsonl'), '{"r":1}');
+  // Second install → backup of prior install + user state
+  const r = run(['install', '--target', targetClaude, '--quiet']);
+  ok('I5: re-install exits 0', r.status === 0);
+  const backups = readdirSync(targetClaude).filter(d => d.startsWith('.prism-install-backup-')).sort();
+  ok('I5: backup directory created', backups.length > 0);
+  if (backups.length > 0) {
+    // Use the LAST (most recent) backup — first install also creates one (empty)
+    const backupDir = join(targetClaude, backups[backups.length - 1]);
+    ok('I5: backup contains settings.json', existsSync(join(backupDir, 'settings.json')));
+    ok('I5: backup contains agents/ dir', existsSync(join(backupDir, 'agents')));
+    ok('I5: backup contains hooks/ dir', existsSync(join(backupDir, 'hooks')));
+    ok('I5: backup contains tools/ dir', existsSync(join(backupDir, 'tools')));
+    ok('I5: backup contains commands/ dir', existsSync(join(backupDir, 'commands')));
+    ok('I5: backup contains skills/prism-plan/', existsSync(join(backupDir, 'skills', 'prism-plan')));
+    ok('I5: backup contains MEMORY.md', existsSync(join(backupDir, 'MEMORY.md')));
+    ok('I5: backup contains .prism-routing.jsonl', existsSync(join(backupDir, '.prism-routing.jsonl')));
+    // backup-metadata.json should list >3 files
+    const meta = readJson(join(backupDir, 'backup-metadata.json'));
+    ok('I5: backup-metadata.json present', meta !== null);
+    ok('I5: files_backed_up count > 3', meta && Array.isArray(meta.files_backed_up) && meta.files_backed_up.length > 3);
+  }
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4.5 regression tests: F1 + F5 + F8
+// ─────────────────────────────────────────────────────────────────────────────
+
+// v4.5 regression: F1 — malformed roster.json under --target should give recovery instructions, not crash
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  const rosterDir = join(claudeDir, 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir, {recursive: true});
+  writeFileSync(join(rosterDir, 'roster.json'), '{ invalid json');
+  const r = run(['install', '--target', claudeDir, '--quiet']);
+  ok('F1: malformed roster + --target exits non-zero', r.status !== 0);
+  ok('F1: malformed roster + --target does NOT crash with HOME ReferenceError',
+     !((r.stderr || '') + (r.stdout || '')).includes('HOME is not defined'));
+  ok('F1: malformed roster error mentions roster.json',
+     ((r.stderr || '') + (r.stdout || '')).includes('roster.json'));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// v4.5 regression: F5 — update on already-current version must not create a backup dir
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  run(['install', '--target', claudeDir, '--quiet']);
+  // Count backups after install (install always creates one)
+  const before = readdirSync(claudeDir).filter(d => d.startsWith('.prism-install-backup-')).length;
+  // Update with matching version → "Already at vX" — no backup, no writes
+  const r = run(['update', '--target', claudeDir, '--quiet']);
+  ok('F5: update no-op exits 0', r.status === 0);
+  const after = readdirSync(claudeDir).filter(d => d.startsWith('.prism-install-backup-')).length;
+  ok('F5: update no-op does not create new backup', before === after);
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// v4.5 regression: F8 — --purge-state --quiet without --yes must fail fast, not hang on hidden prompt
+{
+  const sandbox = makeSandbox();
+  const claudeDir = join(sandbox, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  run(['install', '--target', claudeDir, '--quiet']);
+  // No --yes, --quiet — should fail with exit 2, not hang
+  const r = run(['uninstall', '--target', claudeDir, '--purge-state', '--quiet']);
+  ok('F8: --purge-state --quiet without --yes exits 2', r.status === 2);
+  ok('F8: --purge-state --quiet without --yes stderr explains', /requires --yes/i.test(r.stderr || ''));
+  rmSync(sandbox, {recursive: true, force: true});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

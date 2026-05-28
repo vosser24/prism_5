@@ -35,7 +35,7 @@
 // ~/.claude/tools/prism-context-audit.mjs once per day and emits a compact
 // one-line notice with the top "disable X to save Yt" recommendation.
 // Output is throttled to once per 24h so it doesn't itself become noise.
-import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync} from 'fs';
+import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync} from 'fs';
 import {join} from 'path';
 import {spawnSync} from 'child_process';
 import {pathToFileURL} from 'url';
@@ -227,6 +227,12 @@ try {
   // ── v4.4 Layer B: OOB PHASE 1.5 verdict pickup ──
   // Reads completed verdict files and surfaces UN-CITED/REJECTED items as
   // [Prior turn] prefixed notices. Severity-filtered: all-EVIDENCED is silent.
+  // Supports two schemas:
+  //   • Legacy (v4.4): {verdicts:[{verdict,class,reasoning}], specialist_name}
+  //   • New (v4.5):    {verdict:{severity,headline_finding}, task_sha}
+  // Strategy: try verdictLib first (handles legacy schema via SHA registry);
+  // fall through to direct filesystem scan for new-schema files in either case.
+  const phase1_5Cleared = new Set();  // track SHAs already cleared to avoid double-delete
   try {
     const verdictLib = await import(pathToFileURL(join(H, '.claude', 'tools', 'lib', 'prism-verdict-flag.mjs')).href).catch(() => null);
     if (verdictLib) {
@@ -234,13 +240,86 @@ try {
       for (const sha of completed.slice(0, 5)) {  // cap surface area
         const v = verdictLib.readVerdict(sha);
         if (!v) continue;
-        const flagged = (v.verdicts || []).filter(c => c.verdict === 'UN-CITED' || c.verdict === 'REJECTED');
-        if (flagged.length > 0) {
-          const sample = flagged.slice(0, 3).map(c => `${c.verdict} (${c.class}): ${c.reasoning.slice(0, 80)}`).join('; ');
-          const more = flagged.length > 3 ? ` (+${flagged.length - 3} more)` : '';
-          notices.push(`[Prior turn] OOB PHASE 1.5 reviewer flagged ${flagged.length} claim${flagged.length === 1 ? '' : 's'} on ${v.specialist_name}: ${sample}${more}. Verdict: ~/.claude/.prism-phase-1-5-verdicts-${sha}.json. Master should reconcile per phase-1-5-senior-review.md.`);
+        if (Array.isArray(v.verdicts)) {
+          // Legacy schema: verdicts[] array
+          const flagged = v.verdicts.filter(c => c.verdict === 'UN-CITED' || c.verdict === 'REJECTED');
+          if (flagged.length > 0) {
+            const sample = flagged.slice(0, 3).map(c => `${c.verdict} (${c.class}): ${c.reasoning.slice(0, 80)}`).join('; ');
+            const more = flagged.length > 3 ? ` (+${flagged.length - 3} more)` : '';
+            notices.push(`[Prior turn] OOB PHASE 1.5 reviewer flagged ${flagged.length} claim${flagged.length === 1 ? '' : 's'} on ${v.specialist_name}: ${sample}${more}. Verdict: ~/.claude/.prism-phase-1-5-verdicts-${sha}.json. Master should reconcile per phase-1-5-senior-review.md.`);
+          }
+        } else if (v.verdict && v.verdict.severity) {
+          // New schema: single verdict object with severity + headline_finding
+          const sev = v.verdict.severity;
+          if (sev === 'UN-CITED' || sev === 'REJECTED') {
+            const taskRef = v.task_sha ? ` on task ${v.task_sha}` : '';
+            const detail = v.verdict.headline_finding ? ` — ${v.verdict.headline_finding.slice(0, 120)}` : '';
+            notices.push(`[Prior turn] OOB PHASE 1.5 reviewer flagged${taskRef}: ${sev}${detail}. Verdict: ~/.claude/.prism-phase-1-5-verdicts-${sha}.json. Master should reconcile per phase-1-5-senior-review.md.`);
+          }
         }
         verdictLib.clearVerdict(sha);  // clear after pickup
+        phase1_5Cleared.add(sha);
+      }
+    }
+  } catch {}
+
+  // ── v4.5 Layer 2: direct scan for phase_1_5 new-schema verdict files ──
+  // Handles cases where verdictLib is absent (sandbox, fresh install) or the
+  // file uses the new single-verdict schema not covered by the lib's enumeration.
+  try {
+    const claudeDir15 = join(H, '.claude');
+    if (existsSync(claudeDir15)) {
+      let entries15 = [];
+      try { entries15 = readdirSync(claudeDir15); } catch {}
+      const phase1_5Files = entries15
+        .filter(f => f.startsWith('.prism-phase-1-5-verdicts-') && f.endsWith('.json'))
+        .slice(0, 5);
+      for (const f of phase1_5Files) {
+        const sha = f.slice('.prism-phase-1-5-verdicts-'.length, f.length - '.json'.length);
+        if (phase1_5Cleared.has(sha)) continue;  // already handled by verdictLib
+        const filePath = join(claudeDir15, f);
+        let v = null;
+        try { v = JSON.parse(readFileSync(filePath, 'utf-8')); } catch {}
+        if (!v) { try { unlinkSync(filePath); } catch {} continue; }
+        // Only handle new-schema files here; legacy verdicts[] is covered by verdictLib above
+        if (v.verdict && v.verdict.severity && !Array.isArray(v.verdicts)) {
+          const sev = v.verdict.severity;
+          if (sev === 'UN-CITED' || sev === 'REJECTED') {
+            const taskRef = v.task_sha ? ` on task ${v.task_sha}` : '';
+            const detail = v.verdict.headline_finding ? ` — ${v.verdict.headline_finding.slice(0, 120)}` : '';
+            notices.push(`[Prior turn] OOB PHASE 1.5 reviewer flagged${taskRef}: ${sev}${detail}. Verdict: ~/.claude/${f}. Master should reconcile per phase-1-5-senior-review.md.`);
+          }
+        }
+        try { unlinkSync(filePath); } catch {}  // clear after pickup
+      }
+    }
+  } catch {}
+
+  // ── v4.5 Layer 2: OOB PHASE 0d verdict pickup ──
+  // Reads completed phase-0d verdict files written by prism-phase-0d-oob.mjs
+  // and surfaces REJECTED/ERROR items as [Prior turn] prefixed notices.
+  // Schema: {kind:'phase_0d', verdict:{severity, headline_finding}, ...}
+  // Fail-open: any error skips this block entirely.
+  try {
+    const claudeDir = join(H, '.claude');
+    if (existsSync(claudeDir)) {
+      let entries = [];
+      try { entries = readdirSync(claudeDir); } catch {}
+      const phase0dFiles = entries
+        .filter(f => f.startsWith('.prism-phase-0d-verdicts-') && f.endsWith('.json'))
+        .slice(0, 5);  // cap surface area
+      for (const f of phase0dFiles) {
+        const filePath = join(claudeDir, f);
+        let v = null;
+        try { v = JSON.parse(readFileSync(filePath, 'utf-8')); } catch {}
+        if (!v) { try { unlinkSync(filePath); } catch {} continue; }
+        const severity = v.verdict && v.verdict.severity;
+        const headline = v.verdict && v.verdict.headline_finding;
+        if (severity === 'REJECTED' || severity === 'ERROR') {
+          const taskRef = v.task_sha ? ` (task ${v.task_sha})` : '';
+          notices.push(`[Prior turn] OOB PHASE 0d reviewer flagged${taskRef}: ${severity}${headline ? ' — ' + headline.slice(0, 120) : ''}. Verdict: ~/.claude/${f}. Master should reconcile before continuing.`);
+        }
+        try { unlinkSync(filePath); } catch {}  // clear after pickup
       }
     }
   } catch {}
@@ -262,6 +341,12 @@ try {
     } catch {}
   }
 
-  if (notices.length) process.stdout.write(notices.join('\n'));
+  if (notices.length) {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        additionalContext: notices.join('\n'),
+      },
+    }));
+  }
 } catch {}
 process.exit(0);

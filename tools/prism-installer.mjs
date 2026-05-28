@@ -1,19 +1,22 @@
 #!/usr/bin/env node
-// PRISM Installer v4.4.0
+// PRISM Installer v4.5.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
 //   install  — full install/upgrade. Idempotent.
+//   update   — detect → (idempotency check) → backup → install; respects --dry-run
 //   uninstall — reverse the install
 //   verify   — check every manifest file is present + hooks wired (exit 0 ok, 1 fail)
 //   --help   — usage
 //
 // Common flags:
 //   --home <path>   sandbox HOME override (mirrors prism-telemetry-aggregate.mjs)
+//   --target <dir>  point directly at a .claude/ directory (mutually exclusive with --home)
 //   --src  <path>   source repo override (default: derived from import.meta.url)
 //   --dry-run       (install only) simulate, no filesystem changes
 //   --no-backup     (install only) skip backup step
 //   --quiet         suppress progress output
+//   --purge-state   (uninstall only) wipe state files; --yes skip confirm
 //
 // Fail-loud: any unrecoverable error exits non-zero with a clear message.
 // Fail-safe: --dry-run, lock-file, atomic writes (tempfile+rename).
@@ -45,20 +48,26 @@ const [subcommand, ...restArgs] = rawArgs;
 function parseFlags(args) {
   const flags = {
     home: null,
+    target: null,
     src: null,
     dryRun: false,
     noBackup: false,
     quiet: false,
     restoreBackup: null,
+    purgeState: false,
+    yes: false,
   };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--home') flags.home = args[++i];
+    else if (a === '--target') flags.target = args[++i];
     else if (a === '--src') flags.src = args[++i];
     else if (a === '--dry-run') flags.dryRun = true;
     else if (a === '--no-backup') flags.noBackup = true;
     else if (a === '--quiet') flags.quiet = true;
     else if (a === '--restore-backup') flags.restoreBackup = args[++i];
+    else if (a === '--purge-state') flags.purgeState = true;
+    else if (a === '--yes' || a === '-y') flags.yes = true;
   }
   return flags;
 }
@@ -66,8 +75,22 @@ function parseFlags(args) {
 const flags = parseFlags(restArgs);
 
 // ─── Paths ───────────────────────────────────────────────────────────────────
-const HOME = flags.home || process.env.HOME || process.env.USERPROFILE || homedir();
-const CLAUDE_DIR = join(HOME, '.claude');
+if (flags.home && flags.target) {
+  console.error('[prism-installer] ERROR: --home and --target are mutually exclusive');
+  process.exit(2);
+}
+let CLAUDE_DIR;
+if (flags.target) {
+  const abs = resolve(flags.target);
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+    console.error(`[prism-installer] ERROR: --target does not exist or is not a directory: ${abs}`);
+    process.exit(2);
+  }
+  CLAUDE_DIR = abs;
+} else {
+  const HOME = flags.home || process.env.HOME || process.env.USERPROFILE || homedir();
+  CLAUDE_DIR = join(HOME, '.claude');
+}
 const REPO_ROOT = flags.src || resolve(__dirname, '..');
 const MANIFEST_PATH = join(REPO_ROOT, 'tools', 'install-manifest.json');
 const LOCK_PATH = join(CLAUDE_DIR, '.prism-install.lock');
@@ -111,6 +134,16 @@ function safeUnlink(path) {
     unlinkSync(path);
     return true;
   } catch { return false; }
+}
+
+function readLineFromStdin() {
+  try {
+    const buf = readFileSync(0, 'utf-8');  // 0 = stdin fd
+    const line = buf.split(/\r?\n/)[0] ?? '';
+    return line.trim();
+  } catch {
+    return '';  // stdin closed / EOF → treat as no
+  }
 }
 
 function loadManifest() {
@@ -168,7 +201,7 @@ function releaseLock(dryRun) {
 }
 
 // ─── detect ──────────────────────────────────────────────────────────────────
-function detect() {
+function detectInternal() {
   const manifest = (() => {
     try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')); } catch { return null; }
   })();
@@ -218,7 +251,7 @@ function detect() {
   const totalFiles = manifest ? manifest.files.length : 0;
   const partial = installed && (filesFound < totalFiles || hooksRegistered === 0);
 
-  const result = {
+  return {
     installed,
     partial,
     files_found: filesFound,
@@ -229,7 +262,10 @@ function detect() {
     prism_version: manifest ? manifest.prism_version : null,
     claude_dir: CLAUDE_DIR,
   };
+}
 
+function detect() {
+  const result = detectInternal();
   console.log(JSON.stringify(result, null, 2));
   // detect always exits 0
 }
@@ -260,47 +296,59 @@ function makeBackup() {
   const backupDir = join(CLAUDE_DIR, `.prism-install-backup-${ts}`);
   mkdirSync(backupDir, {recursive: true});
 
-  const candidateNames = ['settings.json', 'roster.json', 'prism-policy.json'];
-  const candidates = [
-    join(CLAUDE_DIR, 'settings.json'),
-    join(CLAUDE_DIR, 'skills', 'prism-plan', 'references', 'roster.json'),
-    join(CLAUDE_DIR, 'prism-policy.json'),
-  ];
+  // Load manifest once
+  const manifest = (() => {
+    try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')); } catch { return null; }
+  })();
+  if (!manifest) die('failed to load install-manifest.json for backup');
+
+  // Build the union of paths to back up (relative to CLAUDE_DIR)
+  const filePaths = (manifest.files || []).map(f => f.dst);
+  const dirPaths = (manifest.directories || []).map(d => d.dst);
+  const extraPaths = manifest.backup_paths || [];
 
   const backupFailures = [];
-  for (let i = 0; i < candidates.length; i++) {
-    const src = candidates[i];
-    const name = candidateNames[i];
-    if (existsSync(src)) {
-      const rel = src.slice(CLAUDE_DIR.length + 1);
-      const dst = join(backupDir, rel);
-      mkdirSync(dirname(dst), {recursive: true});
-      try {
+  const filesBackedUp = [];
+
+  // Helper: copy one path (file or dir) preserving relative structure
+  const backupOne = (relPath) => {
+    const src = join(CLAUDE_DIR, relPath);
+    if (!existsSync(src)) return;
+    const dst = join(backupDir, relPath);
+    mkdirSync(dirname(dst), {recursive: true});
+    try {
+      const st = lstatSync(src);
+      if (st.isDirectory()) {
+        cpSync(src, dst, {recursive: true});
+      } else {
         cpSync(src, dst);
-      } catch (e) {
-        backupFailures.push({file: name, error: e.message});
       }
+      filesBackedUp.push(relPath);
+    } catch (e) {
+      backupFailures.push({file: relPath, error: e.message});
     }
-  }
+  };
+
+  for (const p of filePaths) backupOne(p);
+  for (const p of dirPaths) backupOne(p);
+  for (const p of extraPaths) backupOne(p);
 
   if (backupFailures.length > 0) {
     console.warn(`[prism-installer] WARNING: ${backupFailures.length} file(s) failed to back up:`);
     for (const f of backupFailures) console.warn(`  - ${f.file}: ${f.error}`);
+    // Existing settings.json refusal logic — keep it
     if (backupFailures.some(f => f.file === 'settings.json')) {
       die(`settings.json backup failed; refusing to proceed (pass --no-backup to override).`, 3);
     }
   }
 
-  // I1: write backup-metadata.json with source repo SHA + recovery note
-  const manifest = (() => {
-    try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8')); } catch { return null; }
-  })();
+  // I1: backup-metadata.json — update files_backed_up to the real list
   const metadata = {
     timestamp,
     installed_prism_version: getInstalledPrismVersion(),
-    installer_version: manifest ? manifest.prism_version : '4.4.0',
+    installer_version: manifest.prism_version,
     source_repo_sha: getSourceRepoSha(),
-    files_backed_up: candidateNames,
+    files_backed_up: filesBackedUp,   // now the actual list, not the legacy 3
     recovery_note: 'To rollback hook/tool code: git checkout <source_repo_sha> in your PRISM clone and re-run install.',
   };
   try {
@@ -543,7 +591,11 @@ async function install() {
         if (!flags.dryRun && backupDir) {
           try { cpSync(rosterPath, corruptBackupPath); } catch {}
         }
-        const invocation = `node tools/prism-installer.mjs install --home ${HOME}`;
+        const invocation = flags.target
+          ? `node tools/prism-installer.mjs install --target ${flags.target}`
+          : flags.home
+          ? `node tools/prism-installer.mjs install --home ${flags.home}`
+          : `node tools/prism-installer.mjs install`;
         die([
           'roster.json at ' + rosterPath + ' is malformed; refusing to overwrite.',
           'Inspect the file (backup at ' + corruptBackupPath + ') and either:',
@@ -619,11 +671,12 @@ async function install() {
       }
     }
 
-    // Step 10: summary
+    // Step 10: write version marker + summary
     if (flags.dryRun) {
       log(`[prism-installer] DRY-RUN complete. No changes made.`);
       log(`[prism-installer] Would install ${manifest.files.length} files + ${manifest.directories.length} directories.`);
     } else {
+      atomicWrite(join(CLAUDE_DIR, '.prism-version'), manifest.prism_version);
       log(`[prism-installer] PRISM ${manifest.prism_version} install complete.`);
       if (backupDir) log(`[prism-installer] Backup: ${backupDir}`);
     }
@@ -666,16 +719,122 @@ async function uninstall() {
       log(`[prism-installer] Stripped PRISM hooks from settings.json.`);
     }
 
-    // State files are always preserved — we never delete .prism-*.jsonl, prism-policy.json, etc.
-    // To fully clean, manually delete ~/.claude/.prism-* files after uninstall.
+    // Remove version marker
     if (!flags.dryRun) {
-      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.). To fully clean, manually delete ~/.claude/.prism-* files.`);
+      safeUnlink(join(CLAUDE_DIR, '.prism-version'));
+    }
+
+    // State files are preserved by default — .prism-*.jsonl, prism-policy.json, etc.
+    // Pass --purge-state to remove them.
+    if (!flags.purgeState && !flags.dryRun) {
+      log(`[prism-installer] State files preserved (prism-policy.json, .prism-*.jsonl, etc.). Use --purge-state to remove them.`);
+    }
+
+    if (flags.purgeState) {
+      if (!flags.yes) {
+        if (flags.quiet) {
+          console.error('[uninstall] --purge-state requires --yes when --quiet');
+          process.exit(2);
+        }
+        // Interactive confirm
+        process.stdout.write('[uninstall] --purge-state will DELETE: roster.json, MEMORY.md, .prism-routing.jsonl, .prism-spend.jsonl, .prism-phase-1-5-verdicts.jsonl, .prism-telemetry-rollup.json, prism-policy.json, .prism-flags/, .prism-task-*/. Continue? [y/N] ');
+        const answer = readLineFromStdin();
+        if (answer.toLowerCase() !== 'y') {
+          log('[uninstall] --purge-state aborted by user; state preserved.');
+          return;
+        }
+      }
+      // Purge: build full list from manifest user_state_paths_preserved + extras
+      // Note: globPattern(base, pattern) treats patterns ending with '/' as exact dir matches,
+      // not as globs. We strip trailing '/' before calling it so '.prism-task-*/' correctly
+      // hits the wildcard branch (and '.prism-flags/' hits the exact-dir branch).
+      const preserved = manifest.user_state_paths_preserved || [];
+      const extras = ['MEMORY.md', 'skills/prism-plan/references/roster.json'];
+      const purgeList = [...preserved, ...extras];
+      let purged = 0;
+      for (const pattern of purgeList) {
+        if (flags.dryRun) {
+          log(`[uninstall] --dry-run: would purge ${pattern}`);
+          continue;
+        }
+        // Strip trailing '/' before passing to globPattern so the wildcard branch is reached
+        // for patterns like '.prism-task-*/' — globPattern's directory branch does a literal
+        // existsSync and would never match a glob with '*' in the name.
+        const strippedPattern = pattern.replace(/\/$/, '');
+        const matches = globPattern(CLAUDE_DIR, strippedPattern);
+        if (matches.length === 0 && !strippedPattern.includes('*')) {
+          // Non-glob file/dir that doesn't exist — skip silently
+          continue;
+        }
+        for (const m of matches) {
+          try {
+            const st = lstatSync(m);
+            if (st.isDirectory()) {
+              rmSync(m, {recursive: true, force: true});
+            } else {
+              safeUnlink(m);
+            }
+            const rel = m.replace(CLAUDE_DIR + '/', '').replace(CLAUDE_DIR + '\\', '');
+            log(`[uninstall] purged: ${rel}`);
+            purged++;
+          } catch {}
+        }
+      }
+      log(`[uninstall] --purge-state removed ${purged} state item(s).`);
     }
 
     log(`[prism-installer] Uninstall complete.`);
 
   } finally {
     releaseLock(flags.dryRun);
+  }
+}
+
+// ─── update ───────────────────────────────────────────────────────────────────
+async function runUpdate() {
+  // Step 1: read manifest for shipped version
+  const manifest = loadManifest();
+  const shippedVersion = manifest.prism_version;
+
+  // Step 2: detect current install state (without printing to stdout)
+  const detection = detectInternal();
+
+  // Step 3: read installed version from marker file
+  const versionMarkerPath = join(CLAUDE_DIR, '.prism-version');
+  let installedVersion = 'unknown';
+  if (existsSync(versionMarkerPath)) {
+    try {
+      installedVersion = readFileSync(versionMarkerPath, 'utf8').trim();
+    } catch {
+      installedVersion = 'unknown';
+    }
+  }
+
+  // Step 4: decide
+  if (!detection.installed) {
+    log(`[update] no existing install at ${CLAUDE_DIR}; running fresh install.`);
+    if (flags.dryRun) {
+      log(`[update] --dry-run: would install v${shippedVersion}.`);
+      return 0;
+    }
+    await install();
+    return 0;
+  } else if (installedVersion === shippedVersion) {
+    log(`[update] Already at v${shippedVersion}; nothing to do.`);
+    return 0;
+  } else {
+    // mismatch or unknown
+    if (installedVersion === 'unknown') {
+      log(`[update] installed version unknown (no .prism-version marker); upgrading to v${shippedVersion}.`);
+    } else {
+      log(`[update] Upgrading from v${installedVersion} → v${shippedVersion}.`);
+    }
+    if (flags.dryRun) {
+      log(`[update] --dry-run: would back up and install.`);
+      return 0;
+    }
+    await install();
+    return 0;
   }
 }
 
@@ -761,7 +920,7 @@ function verify() {
 // ─── help ─────────────────────────────────────────────────────────────────────
 function help() {
   console.log(`
-PRISM Installer v4.4.0
+PRISM Installer v4.5.0
 
 Usage:
   node tools/prism-installer.mjs <subcommand> [flags]
@@ -769,37 +928,47 @@ Usage:
 Subcommands:
   detect               Print JSON of current install state (no changes, exit 0 always)
   install              Full install/upgrade. Idempotent.
+  update               detect → idempotency check → backup → install; respects --dry-run
   uninstall            Remove PRISM files and hooks
   verify               Check all manifest files are present and hooks are wired
   --help               Show this help
 
 Common flags:
   --home <path>        Override HOME directory (for testing/sandbox)
+  --target <dir>       Point directly at a .claude/ directory (mutually exclusive with --home)
   --src  <path>        Override source repo root (default: derived from installer location)
   --quiet              Suppress progress output
 
-install flags:
-  --dry-run            Simulate install; print what would happen, no changes
+install / update flags:
+  --dry-run            Simulate install/update; print what would happen, no changes
   --no-backup          Skip backup of existing settings/roster
 
 uninstall flags:
   --restore-backup <path>  Restore settings/roster from a backup directory
+  --purge-state        Also delete preserved state files (roster.json, MEMORY.md,
+                       .prism-*.jsonl, prism-policy.json, .prism-flags/, .prism-task-*/)
+  --yes / -y           Skip confirmation prompt for --purge-state
   --quiet              Suppress progress output
-  (State files — .prism-*.jsonl, prism-policy.json, etc. — are always preserved.
-   To fully clean, manually delete ~/.claude/.prism-* files after uninstall.)
+  (State files — .prism-*.jsonl, prism-policy.json, etc. — are preserved by default.
+   Pass --purge-state to remove them; add --yes to skip the confirmation prompt.)
 
 Examples:
   node tools/prism-installer.mjs install
   node tools/prism-installer.mjs install --dry-run
   node tools/prism-installer.mjs install --home /tmp/sandbox
+  node tools/prism-installer.mjs install --target /path/to/.claude
+  node tools/prism-installer.mjs update
+  node tools/prism-installer.mjs update --dry-run
+  node tools/prism-installer.mjs update --target /path/to/.claude
   node tools/prism-installer.mjs verify
   node tools/prism-installer.mjs uninstall --restore-backup ~/.claude/.prism-install-backup-2026-05-27_12-00-00
+  node tools/prism-installer.mjs uninstall --purge-state --yes
   node tools/prism-installer.mjs detect
 
 Exit codes:
   0   Success (or detect, which always exits 0)
   1   Verify failed / general error
-  2   settings.json malformed (refused to proceed)
+  2   Usage error / settings.json malformed (refused to proceed)
 `.trim());
 }
 
@@ -816,6 +985,9 @@ async function main() {
       break;
     case 'install':
       await install();
+      break;
+    case 'update':
+      process.exit(await runUpdate());
       break;
     case 'uninstall':
       await uninstall();

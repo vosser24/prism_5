@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
-  "prism_version": "4.4.0",
+  "prism_version": "4.5.0",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
     {"src": "hooks/prism-clean-nudge-flag.mjs", "dst": "hooks/prism-clean-nudge-flag.mjs", "executable": true},
     {"src": "hooks/prism-config-guard.mjs", "dst": "hooks/prism-config-guard.mjs", "executable": true},
+    {"src": "hooks/prism-dispatch-cap.mjs", "dst": "hooks/prism-dispatch-cap.mjs", "executable": true},
     {"src": "hooks/prism-git-clean-nudge.mjs", "dst": "hooks/prism-git-clean-nudge.mjs", "executable": true},
     {"src": "hooks/prism-hook.mjs", "dst": "hooks/prism-hook.mjs", "executable": true},
     {"src": "hooks/prism-kb-autosync.mjs", "dst": "hooks/prism-kb-autosync.mjs", "executable": true},
@@ -14,6 +15,8 @@
     {"src": "hooks/prism-panel-guard.mjs", "dst": "hooks/prism-panel-guard.mjs", "executable": true},
     {"src": "hooks/prism-parallel-guard.mjs", "dst": "hooks/prism-parallel-guard.mjs", "executable": true},
     {"src": "hooks/prism-parent-dispatch-guard.mjs", "dst": "hooks/prism-parent-dispatch-guard.mjs", "executable": true},
+    {"src": "hooks/prism-phase-0d-challenges.mjs", "dst": "hooks/prism-phase-0d-challenges.mjs", "executable": true},
+    {"src": "hooks/prism-phase-0d-oob.mjs", "dst": "hooks/prism-phase-0d-oob.mjs", "executable": true},
     {"src": "hooks/prism-phase-1-5-oob.mjs", "dst": "hooks/prism-phase-1-5-oob.mjs", "executable": true},
     {"src": "hooks/prism-precompact-nudge-flag.mjs", "dst": "hooks/prism-precompact-nudge-flag.mjs", "executable": true},
     {"src": "hooks/prism-prepush-review.mjs", "dst": "hooks/prism-prepush-review.mjs", "executable": true},
@@ -55,6 +58,7 @@
     {"src": "tools/prism-uninstall-cleanup.mjs", "dst": "tools/prism-uninstall-cleanup.mjs", "executable": true},
     {"src": "tools/prism-validate-plugins.mjs", "dst": "tools/prism-validate-plugins.mjs", "executable": true},
     {"src": "tools/lib/prism-flag-file.mjs", "dst": "tools/lib/prism-flag-file.mjs", "executable": true},
+    {"src": "tools/lib/prism-roster-lock.mjs", "dst": "tools/lib/prism-roster-lock.mjs", "executable": true},
     {"src": "tools/lib/prism-state.mjs", "dst": "tools/lib/prism-state.mjs", "executable": true},
     {"src": "tools/lib/prism-state.ps1", "dst": "tools/lib/prism-state.ps1", "executable": false},
     {"src": "tools/lib/prism-tier-classify.mjs", "dst": "tools/lib/prism-tier-classify.mjs", "executable": true},
@@ -62,7 +66,9 @@
     {"src": "agents/agent-factory.md", "dst": "agents/agent-factory.md", "executable": false},
     {"src": "agents/claude-master.md", "dst": "agents/claude-master.md", "executable": false},
     {"src": "agents/master-orchestrator.md", "dst": "agents/master-orchestrator.md", "executable": false},
+    {"src": "agents/phase-0d-oob-reviewer.md", "dst": "agents/phase-0d-oob-reviewer.md", "executable": false},
     {"src": "agents/phase-1-5-oob-reviewer.md", "dst": "agents/phase-1-5-oob-reviewer.md", "executable": false},
+    {"src": "agents/phase-1-5-oob-reviewer-lite.md", "dst": "agents/phase-1-5-oob-reviewer-lite.md", "executable": false},
     {"src": "agents/prism-updater.md", "dst": "agents/prism-updater.md", "executable": false},
     {"src": "commands/prism-app-expert.md", "dst": "commands/prism-app-expert.md", "executable": false},
     {"src": "commands/prism-archive.md", "dst": "commands/prism-archive.md", "executable": false},
@@ -118,6 +124,8 @@
     "tools/prism-*.mjs",
     "tools/lib/prism-*.mjs",
     "agents/phase-1-5-oob-reviewer.md",
+    "agents/phase-1-5-oob-reviewer-lite.md",
+    "agents/phase-0d-oob-reviewer.md",
     "agents/master-orchestrator.md",
     "agents/agent-factory.md",
     "agents/claude-master.md",
@@ -136,6 +144,15 @@
     ".prism-phase-1-5-verdicts.jsonl",
     ".prism-flags/",
     ".prism-task-*/",
+    ".prism-telemetry-rollup.json"
+  ],
+  "backup_paths": [
+    "settings.json",
+    "prism-policy.json",
+    "MEMORY.md",
+    ".prism-routing.jsonl",
+    ".prism-spend.jsonl",
+    ".prism-phase-1-5-verdicts.jsonl",
     ".prism-telemetry-rollup.json"
   ]
 }

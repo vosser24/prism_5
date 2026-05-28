@@ -13,10 +13,94 @@ recipe (lines 165-188).
 
 | You are on | You want | Read |
 |---|---|---|
-| v3.8.x | v4.0.0 | Both sections below in sequence — v3.11.0 sub-phases run first |
-| v3.10.x | v4.0.0 | Both sections below in sequence |
-| v3.11.0 | v4.0.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master) |
-| pre-v3.8 | v4.0.0 | Read CHANGELOG entries for v3.8.x first, then this guide |
+| v3.8.x | v4.5.0 | Run v3.11.0 sub-phases, then v4.0.0, v4.1.0, v4.2.0, v4.3.0, v4.4, and v4.5 sections in sequence |
+| v3.10.x | v4.5.0 | Same as above starting at v3.11.0 |
+| v3.11.0 | v4.5.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then v4.x sections |
+| v4.4.x | v4.5.0 | This page, [§v4.4 → v4.5](#v44--v45) below |
+| pre-v3.8 | v4.5.0 | Read CHANGELOG entries for v3.8.x first, then this guide |
+
+---
+
+## v4.4 → v4.5
+
+**Additive only.** No breaking changes. Existing rosters, panels, and routing logs work unchanged.
+
+### Upgrade — use the new `update` subcommand
+
+The v4.5 installer ships an `update` subcommand that chains `detect → backup → install` with version-equal idempotency. Recommended over bare `install` for upgrades.
+
+**Windows (PowerShell):**
+```powershell
+git pull
+node tools/prism-installer.mjs update
+```
+
+**Mac / Linux / git-bash:**
+```bash
+git pull
+node tools/prism-installer.mjs update
+```
+
+Append `--dry-run` to preview without writing. Append `--target /path/to/.claude` to upgrade an install other than `~/.claude/`.
+
+If the installer reports `Already at v4.5.0; nothing to do.`, you're done.
+
+### What changed
+
+#### Roster schema (4.4.0 → 4.5.0)
+
+Two new per-agent fields (both optional, default false):
+- `phase_1_5_lite_oob` — opt agent into LITE-mode Phase 1.5 OOB review (cheaper variant). When `true`, the OOB hook loads the shorter `agents/phase-1-5-oob-reviewer-lite.md` prompt instead of the full reviewer prompt (and propagates `PRISM_OOB_USE_LITE=1` to the async worker). Falls back to the FULL prompt silently if the lite file is absent.
+- `skip_next_oob` — ephemeral; auto-cleared after one SubagentStop. Set via `node tools/prism-roster.mjs --skip-next-oob <spec>` when you need to bypass OOB review for one specific dispatch.
+
+Existing rosters work unchanged. The `update` subcommand merges the new schema without overwriting your user agents.
+
+#### `.prism-routing.jsonl` schema (2 → 3)
+
+Two new event types added (both additive):
+- `phase_0d_challenge` — emitted by `prism-phase-0d-challenges.mjs` on PostToolUse Write to panel.json.
+- `dispatch_cap` — emitted by `prism-dispatch-cap.mjs` on PostToolUse Agent (parallel-dispatch utilization).
+
+v4.4 readers (drift-guard, telemetry-aggregate) ignore unknown fields; existing log entries with `schema_version: 2` remain valid forever.
+
+#### `panel.json` schema
+
+Two new optional fields:
+- `dropped_positions[]` — auto-populated by `prism-panel-guard.mjs` Path B when positions have zero challenges or missing specialists.
+- `rationale.alternatives_considered[]` — populated by the master at end of Phase 0d; format `[{approach, why_not}]` (both fields must be non-empty strings).
+
+Masters running pre-v4.5 panel-guard simply don't write these fields; the A1 OOB reviewer (`prism-phase-0d-oob.mjs`) handles their absence per OQ-5 (treats absent as "alternatives not logged" without penalizing).
+
+#### Installer flags + subcommands
+
+- `--target <dir>` — point installer at a `.claude/` directory other than `~/.claude/`. Available on `install`, `update`, `uninstall`, `verify`, `detect`. Mutually exclusive with `--home`.
+- `update` — `detect && backup && install` chained. Idempotent (`Already at vX; nothing to do.` on no-op).
+- `uninstall --purge-state` — additionally wipes `MEMORY.md`, `roster.json`, `prism-policy.json`, `.prism-routing.jsonl`, `.prism-spend.jsonl`, `.prism-phase-1-5-verdicts.jsonl`, `.prism-telemetry-rollup.json`, `.prism-flags/`, `.prism-task-*/`. Interactive prompt unless `--yes`. `--quiet --purge-state` without `--yes` exits 2 (don't surprise-delete user data in scripts).
+- Backup is now wider: every install creates `<target>/.prism-install-backup-<timestamp>/` capturing shipped files (`agents/`, `hooks/`, `tools/`, `commands/`, `skills/`) **plus** user state. Restore via `uninstall --restore-backup <dir>` (unchanged from v4.4).
+
+#### SCOPE GUARD (advisory)
+
+`hooks/prism-panel-guard.mjs` now emits a `SCOPE GUARD: position "<title>" appears outside panel scope "<scope>"` warning on stderr when a position's title shares no keywords with the panel scope phrase. Advisory by default — exits 0. Set `PRISM_SCOPE_GUARD=strict` to make it blocking (exit 2). Kill via `PRISM_DISABLE_SCOPE_GUARD=1`.
+
+The heuristic is intentionally loose (keyword overlap on 4+ char tokens). Real adversarial panels often use vocabulary not in the scope phrase, so blocking would over-fire. v4.6 may upgrade the heuristic.
+
+### Rollback
+
+If you need to roll back to v4.4:
+
+```bash
+# Find the v4.4 backup created by the v4.5 update
+ls ~/.claude/.prism-install-backup-*
+
+# Uninstall v4.5 (preserves state)
+node tools/prism-installer.mjs uninstall
+
+# Restore the v4.4 backup manually OR git checkout v4.4.0 and re-run install
+git checkout v4.4.0
+node tools/prism-installer.mjs install
+```
+
+State files (`MEMORY.md`, `roster.json`, `.prism-routing.jsonl`) are preserved across the down-grade. The roster's new v4.5 fields (`phase_1_5_lite_oob`, `skip_next_oob`) are simply ignored by v4.4 — no migration on rollback.
 
 ---
 

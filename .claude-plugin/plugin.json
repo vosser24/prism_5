@@ -1,7 +1,7 @@
 {
   "name": "prism",
-  "version": "4.4.0",
-  "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 16 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
+  "version": "4.5.0",
+  "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 25 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
   "author": {
     "name": "vosser24",
     "url": "https://github.com/vosser24"
@@ -161,6 +161,32 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-agent-write-register.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-phase-0d-challenges.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-phase-0d-oob.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-panel-guard.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-dispatch-cap.mjs\""
           }
         ]
       }
