@@ -16,5 +16,12 @@ check('Q1 dispatch-cap emits queue_depth', dc.includes('queue_depth'));
 check('Q1 dispatch-cap schema_version 4', /schema_version:\s*4/.test(dc));
 check('Q1 counts fresh .prism-task dirs (mtime filter)', /mtime|statSync|freshness/i.test(dc));
 
+// Q2: panel-guard classifies challenge evidence_class at panel-write
+const pg = readFileSync(join(repoRoot, 'hooks', 'prism-panel-guard.mjs'), 'utf-8');
+check('Q2 panel-guard has classifyEvidenceClass', pg.includes('classifyEvidenceClass'));
+check('Q2 uses 7-class taxonomy names',
+  pg.includes('PRECEDENT') && pg.includes('MEASUREMENT') && pg.includes('REASONED-INFERENCE'));
+check('Q2 writes evidence_class back onto challenges', /\.evidence_class\s*=/.test(pg));
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);
