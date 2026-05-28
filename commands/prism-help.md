@@ -8,7 +8,7 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 This is the user-facing index for PRISM as of v4.5. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.5** — out-of-band Phase 0d panel reviewer + installer hardening (`--target`, `update`, `--purge-state`, expanded backup) + telemetry tooling (no calibration) + SCOPE GUARD + alternatives-considered schema. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v4.6** — telemetry-driven calibration (`--recommend-calibration`, recommend-then-apply) + structured-output classifiers (C1/C2/D1) + Layer 4 hygiene closeout (H1–H4) + Layer 1 data-quality (schema 3 → 4). Builds on v4.5's out-of-band Phase 0d reviewer + installer hardening. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -85,7 +85,10 @@ These are CLI tools (not slash commands). Run directly from the terminal or via 
 - `node ~/.claude/tools/prism-roster.mjs --untag-1-5 @<agent>` — remove OOB PHASE 1.5 review from agent.
 - `node ~/.claude/tools/prism-roster.mjs --reset-model @<agent>` — manual deescalation reset (clears `default_model` + counters).
 - `node ~/.claude/tools/prism-roster.mjs --skip-next-oob @<agent>` *(v4.5)* — set one-shot OOB skip on a specialist; the next SubagentStop bypasses Phase 1.5 review for that agent only.
+- `node ~/.claude/tools/prism-roster.mjs --set-model @<agent> <haiku|sonnet|opus>` *(v4.6)* — set an agent's `default_model` (K2 calibration apply target).
+- `node ~/.claude/tools/prism-roster.mjs --clear-pending-upgrade @<agent>` *(v4.6)* — clear a stale `pending_upgrade` flag (K3 calibration apply target).
 - `node ~/.claude/tools/prism-telemetry-aggregate.mjs --phase-1-5-agreement` — per-agent reviewer agreement signal (requires telemetry opt-in).
+- `node ~/.claude/tools/prism-telemetry-aggregate.mjs --recommend-calibration` *(v4.6)* — on-demand calibration engine: reads routing + verdict logs, prints threshold-change recommendations (K1 cap report-only, K2 escalate-model, K3 auto-clear, K4 override gate) + apply commands. Recommend-then-apply — never mutates a default. Degrades to "insufficient data" below 15 samples; output also to `~/.claude/.prism-calibration-<date>.json`. Env `PRISM_OVERRIDE_GATE=strict` escalates the SessionStart override advisory.
 
 ## Lifecycle
 
