@@ -27,6 +27,13 @@ const COVERED = [
   { dir: 'agents',         re: /-reviewer.*\.md$/ },
 ];
 
+// Intentionally NOT self-shipped: prism-installer.mjs is the bootstrap — it runs
+// from the plugin/repo root (`node tools/prism-installer.mjs`) and is the thing
+// that copies files INTO ~/.claude, so it does not install a copy of itself.
+const SHIP_EXEMPT = new Set([
+  'tools/prism-installer.mjs',
+]);
+
 test('every shipped file on disk is in manifest.files[]', () => {
   const missing = [];
   for (const { dir, re } of COVERED) {
@@ -35,6 +42,7 @@ test('every shipped file on disk is in manifest.files[]', () => {
     for (const name of readdirSync(abs)) {
       if (!re.test(name)) continue;
       const rel = `${dir}/${name}`;
+      if (SHIP_EXEMPT.has(rel)) continue;
       if (!srcSet.has(rel)) missing.push(rel);
     }
   }
