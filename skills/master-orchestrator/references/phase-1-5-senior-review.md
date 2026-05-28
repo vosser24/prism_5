@@ -102,7 +102,12 @@ When the reviewer's verdict arrives (next turn for async; this turn for block-mo
 
 ### Disagreement logging
 
-Every master-override-of-reviewer (cases 2 and 4 above) is logged to `~/.claude/.prism-routing.jsonl` with `phase_1_5.verdict_pre` (reviewer) + `verdict_post` (master). v4.5 will use this signal to decide whether to introduce a user-confirmation gate on overrides.
+**Logging your override (REQUIRED for cases 2 and 4).** When you proceed despite a reviewer's UN-CITED or REJECTED verdict, write an override-event file so PRISM can surface it next session. Use the Write tool:
+
+  Path: `~/.claude/.prism-override-pending-<verdict_sha>.json`
+  Body: {"event":"master_override","verdict_sha":"<sha>","kind":"phase_1_5","reviewer_severity":"REJECTED","master_verdict":"EVIDENCED","task_sha":"<task_sha>","specialist_name":"<name>","rationale":"<one line>","ts":"<ISO>"}
+
+This is the only record of your intent — no hook can infer that you chose to proceed despite a rejection. The next SessionStart logs it to `.prism-routing.jsonl` and reminds you of your override count.
 
 ### LITE variant (v4.4 NEW — closes D2 FULL-ROUTINE coverage)
 
