@@ -25,10 +25,10 @@ check('Q2 writes evidence_class back onto challenges', /\.evidence_class\s*=/.te
 
 // Q4: --agreement no longer joins the non-existent phase_1_5_verdict event
 const agg = readFileSync(join(repoRoot, 'tools', 'prism-telemetry-aggregate.mjs'), 'utf-8');
-check('Q4 agreement reads the verdict JSONL, not phantom event',
-  agg.includes('.prism-phase-1-5-verdicts.jsonl') || agg.includes('phase_1_5_oob'));
-check('Q4 agreement no longer keys on phase_1_5_verdict',
-  !/'phase_1_5_verdict'|"phase_1_5_verdict"/.test(agg));
+check('Q4 agreement reads the real verdict JSONL',
+  agg.includes('.prism-phase-1-5-verdicts.jsonl'));
+check('Q4 agreement no longer references the phantom phase_1_5_verdict event anywhere',
+  !/phase_1_5_verdict/.test(agg));
 
 // Schema version bump: both remaining writers must stamp schema_version 4
 const router = readFileSync(join(repoRoot, 'hooks', 'prism-prompt-tier-router.mjs'), 'utf-8');

@@ -429,7 +429,7 @@ function handleDroppedPositions(payload) {
     appendLog({
       ts,
       event: 'panel_guard_dropped',
-      schema_version: 3,
+      schema_version: 4,
       panel_path: panelPath,
       dropped_count: newDrops.length,
       dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),
