@@ -74,12 +74,28 @@ export const PANEL_SIGNALS = [
 
 // D1 — high-stakes work: migrations, destructive ops, security, money. These
 // bias toward opus + mandatory panel independent of length-based tier floor.
+// Each pattern carries a CONTEXT ANCHOR so it fires on genuine high-stakes work,
+// not everyday dev vocabulary: bare "token"/"migrate"/"billing"/"security"
+// over-escalated benign prompts ("parse the JWT token", "migrate this React
+// component", "billing page spinner") — anchors keep those on the normal path.
 const STAKES_SIGNALS = [
-  /\b(migrat(e|ion)|backfill|schema change|alter table)\b/i,
-  /\b(drop (table|database|column)|delete (from|all)|truncate|rm -rf|destructive|irreversible)\b/i,
-  /\b(security|auth(entication|orization)|secret|credential|token|RBAC|threat model|vuln)\b/i,
-  /\b(payment|billing|charge|refund|invoice|money|currency|financial|ledger)\b/i,
-  /\b(production (deploy|release|rollout)|prod (db|database)|customer data|PII)\b/i,
+  // DB/schema migrations & data ops (NOT framework/UI "migrations")
+  /\b(database|schema|data|table|db)\s+migrat/i,
+  /\bmigrat\w*\s+(the\s+)?(database|schema|table|db|data)\b/i,
+  /\b(backfill|schema change|alter table)\b/i,
+  // Destructive data operations
+  /\bdrop\b[\w\s]{0,20}\b(table|database|column)\b/i,
+  /\b(delete\s+(from|all)|truncate|rm\s+-rf|wipe\s+(the\s+)?(db|database|data))\b/i,
+  /\b(destructive|irreversible)\b/i,
+  // Security / credentials with action or threat context
+  /\b(security\s+(audit|review|incident|hardening)|threat\s+model|vulnerabilit(y|ies)|\bCVE\b|RBAC|privilege\s+escalation)\b/i,
+  /\b(rotate|revoke|invalidate|leak\w*|expos\w*|hard-?cod\w*)\b[\w\s]{0,25}\b(secret|credential|token|api\s*key|password)s?\b/i,
+  /\b(secret|credential|password)s?\b[\w\s]{0,25}\b(rotat\w*|leak\w*|expos\w*|revoke)\b/i,
+  // Money / payments with action context (NOT mere page/feature names)
+  /\b(charg(e|ing|ed)|refund|payout|chargeback|invoic(e|ing))\b/i,
+  /\b(process\w*\s+(a\s+)?payment|bill\w*\s+(the\s+)?(customer|card)|financial\s+transaction|ledger)\b/i,
+  // Production / sensitive data
+  /\b(production\s+(deploy\w*|release|rollout|incident|outage)|deploy\w*\s+to\s+prod\w*|prod(uction)?\s+(db|database|data)|customer\s+data|\bPII\b|data\s?loss)\b/i,
 ];
 export function detectStakes(prompt, description) {
   const hay = `${prompt || ''} ${description || ''}`;
