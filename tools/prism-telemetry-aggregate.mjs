@@ -57,46 +57,44 @@ const POLICY = join(HOME, '.claude', 'prism-policy.json');
 const LOG = join(HOME, '.claude', '.prism-routing.jsonl');
 const ROLLUP = join(HOME, '.claude', '.prism-telemetry-rollup.json');
 
-// ── v4.5: --agreement subcommand (reviewer-agreement rate from routing log) ───
-// Reads .prism-routing.jsonl (or --routing-log override), finds phase_1_5_verdict
-// and phase_0d_challenge entries, joins by task_sha, and reports the
-// reviewer-agreement rate between adversarial challenges and final verdicts.
-// Runs before the consent gate because it accepts an arbitrary --routing-log path
-// (used for unit tests) and does not write any system state.
+// ── v4.6: --agreement subcommand (per-spec UN-CITED rate from verdict JSONL) ─
+// Phase-0d challenge substance from the routing log + per-spec UN-CITED rate
+// from ~/.claude/.prism-phase-1-5-verdicts.jsonl (the real reviewer-agreement
+// proxy). A cross-event join keyed on task_sha is impossible because verdict
+// JSONL entries carry specialist_name/summary but no task_sha.
+// Runs before the consent gate because it accepts an arbitrary --routing-log
+// path (used for unit tests) and does not write any system state.
 function runAgreementMode(routingLogPath) {
-  const lines = readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean);
-  const challenges = new Map(); // task_sha → [{ position, challenge_n, evidence_class }]
-  const verdicts = new Map();   // task_sha → { severity, dropped_count, dispatched_specialist }
-  for (const line of lines) {
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (e.event === 'phase_0d_challenge') {
-      const arr = challenges.get(e.task_sha) ?? [];
-      arr.push(e);
-      challenges.set(e.task_sha, arr);
-    } else if (e.event === 'phase_1_5_verdict') {
-      verdicts.set(e.task_sha, e);
+  // Phase-0d challenge substance, grouped (from routing log).
+  const challengeRows = [];
+  if (existsSync(routingLogPath)) {
+    for (const line of readFileSync(routingLogPath, 'utf-8').split('\n').filter(Boolean)) {
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      if (e.event === 'phase_0d_challenge') challengeRows.push(e);
     }
   }
-  let joined = 0;
-  let agreed = 0;
-  let disagreed = 0;
-  for (const [sha, chs] of challenges) {
-    const v = verdicts.get(sha);
-    if (!v) continue;
-    joined++;
-    // Heuristic: if any challenge flagged the specialist that ended up REJECTED, "agreed".
-    const challengedSpecs = new Set(chs.map(c => c.position));
-    if (v.severity === 'REJECTED' && challengedSpecs.has(v.dispatched_specialist)) agreed++;
-    else if (v.severity === 'EVIDENCED' && !challengedSpecs.has(v.dispatched_specialist)) agreed++;
-    else disagreed++;
+  // Phase-1.5 per-spec UN-CITED rate (the real reviewer-agreement proxy).
+  const verdictLog = join(HOME, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  const perSpec = {};
+  if (existsSync(verdictLog)) {
+    for (const line of readFileSync(verdictLog, 'utf-8').split('\n').filter(Boolean)) {
+      let v; try { v = JSON.parse(line); } catch { continue; }
+      const a = String(v.specialist_name || '').replace(/^@/, '');
+      if (!a) continue;
+      perSpec[a] ??= { dispatches: 0, total: 0, un_cited: 0 };
+      perSpec[a].dispatches++;
+      perSpec[a].total += (v.summary?.total) || 0;
+      perSpec[a].un_cited += ((v.summary?.un_cited) || 0) + ((v.summary?.rejected) || 0);
+    }
   }
+  const rows = Object.entries(perSpec).map(([spec, s]) => ({
+    spec, dispatches: s.dispatches,
+    un_cited_rate: s.total > 0 ? s.un_cited / s.total : null,
+  })).sort((a, b) => (b.un_cited_rate ?? 0) - (a.un_cited_rate ?? 0));
   process.stdout.write(JSON.stringify({
     mode: 'agreement',
-    joined_pairs: joined,
-    agreed,
-    disagreed,
-    agreement_rate: joined > 0 ? agreed / joined : null,
+    phase_0d_challenges: challengeRows.length,
+    per_spec_uncited: rows,
   }, null, 2) + '\n');
   process.exit(0);
 }
