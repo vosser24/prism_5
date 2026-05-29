@@ -362,13 +362,36 @@ try {
     try {
       const sweep = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-freshness-sweep.mjs')).href).catch(() => null);
       if (sweep && typeof sweep.runFreshnessSweep === 'function') {
-        const r = sweep.runFreshnessSweep({home: H});
+        // cwd lets the C3 version-lag check compare the installed version
+        // against a PRISM clone when the session opens inside one.
+        const r = sweep.runFreshnessSweep({home: H, cwd: process.cwd()});
         if (r && Array.isArray(r.notices)) {
           for (const n of r.notices) notices.push(n);
         }
       }
     } catch {}
   }
+
+  // ── v4.7 K1: surface an OVERRIDDEN parallel-dispatch cap to the orchestrator ──
+  // The dispatch-cap hook LOGS the cap, but the orchestrator (running as the
+  // model, reading dispatch-shapes.md) only obeys what it sees in context. At
+  // the default (4) the prose already says 4, so we inject nothing — no
+  // per-session token noise. Only when PRISM_PARALLEL_CAP overrides the default
+  // do we inject the active value, so telemetry and doctrine stay in sync.
+  // Fail-open: if the resolver can't load, skip silently (orchestrator keeps
+  // the prose default).
+  try {
+    const capRaw = process.env.PRISM_PARALLEL_CAP;
+    if (capRaw != null && String(capRaw).trim() !== '') {
+      const capLib = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-cap.mjs')).href).catch(() => null);
+      if (capLib && typeof capLib.resolveParallelCap === 'function') {
+        const cap = capLib.resolveParallelCap();
+        if (cap !== capLib.DEFAULT_PARALLEL_CAP) {
+          notices.push(`PRISM: active parallel-dispatch cap is ${cap} (overridden via PRISM_PARALLEL_CAP; default ${capLib.DEFAULT_PARALLEL_CAP}). Honor this cap — not the doc default — when batching parallel Agent() dispatches.`);
+        }
+      }
+    }
+  } catch {}
 
   if (notices.length) {
     process.stdout.write(JSON.stringify({

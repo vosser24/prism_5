@@ -41,9 +41,12 @@ Before executing, classify each step pair AND choose dispatch shape:
     "Research Redis vs Memcached vs Dragonfly" → 3 `Agent(model:'sonnet')`
      in one message, each with one technology → synthesis afterward
 
-  Cap: 4 parallel `Agent()` calls per message. Beyond that, coordination
-  cost (merge, contention, context prep) starts to dominate. If you need
-  more, stage them as successive parallel batches.
+  Cap: 4 parallel `Agent()` calls per message (the default). Beyond that,
+  coordination cost (merge, contention, context prep) starts to dominate. If
+  you need more, stage them as successive parallel batches.
+  The cap is a knob: set `PRISM_PARALLEL_CAP` to override it. When it is
+  overridden, SessionStart announces the active cap in context — honor THAT
+  value, not this default-4 prose.
 
 ## SPLIT-AND-MERGE
 

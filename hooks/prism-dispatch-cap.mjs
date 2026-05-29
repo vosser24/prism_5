@@ -7,9 +7,13 @@
 import { appendFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { resolveParallelCap } from './lib/prism-cap.mjs';
 
 const ROUTING_LOG = join(homedir(), '.claude', '.prism-routing.jsonl');
-const DEFAULT_CAP = 4; // v4.4 default; v4.6 may retune
+// v4.7 K1: the cap is now a real knob (env PRISM_PARALLEL_CAP, default 4),
+// resolved through the shared lib so the LOGGED cap matches the cap the
+// orchestrator is told to obey at SessionStart. Resolved per-invocation.
+const DEFAULT_CAP = resolveParallelCap();
 
 async function readHookPayload() {
   const chunks = [];
