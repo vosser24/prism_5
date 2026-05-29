@@ -21,16 +21,12 @@ const FLAG_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-flag-file.mjs');
 
 let pass = 0, fail = 0;
 
-function test(name, fn) {
-  try {
-    fn();
-    pass++;
-    process.stdout.write(`  ok  ${name}\n`);
-  } catch (e) {
-    fail++;
-    process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`);
-  }
-}
+// Async-aware runner: collect tests, then AWAIT each one. The previous
+// harness called fn() synchronously and incremented pass++ before any
+// post-`await` assertion ran — async tests false-passed. Tests are now
+// queued and awaited in order (see runner at bottom).
+const tests = [];
+function test(name, fn) { tests.push([name, fn]); }
 
 function assert(cond, msg) { if (!cond) throw new Error('assert: ' + (msg || '')); }
 function assertEq(a, b, msg) {
@@ -65,6 +61,24 @@ function makeHome() {
 
 function writeJson(path, obj) {
   writeFileSync(path, JSON.stringify(obj, null, 2));
+}
+
+// v4.7 C3: a fake PRISM clone (cwd) carrying a repo install-manifest.json
+// with the given available version. The version-lag check compares this
+// against the installed ~/.claude/.prism-version marker.
+function makeRepo(prismVersion) {
+  const repo = mkdtempSync(join(tmpdir(), 'prism-repo-'));
+  mkdirSync(join(repo, 'tools'), {recursive: true});
+  writeJson(join(repo, 'tools', 'install-manifest.json'), {
+    schema_version: 4,
+    prism_version: prismVersion,
+    files: [],
+  });
+  return repo;
+}
+
+function setInstalledVersion(home, version) {
+  writeFileSync(join(home, '.claude', '.prism-version'), version);
 }
 
 function touch(path, content = '') {
@@ -298,6 +312,189 @@ test('Q11 tools-registry rotation: no notice when mtime unchanged', async () => 
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+// ── C3: version-aware upgrade nudge ───────────────────────────────────
+test('C3 version lag: installed < repo manifest → nudges installer update', async () => {
+  const home = makeHome();
+  const repo = makeRepo('4.7.0');
+  try {
+    setInstalledVersion(home, '4.6.0');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, cwd: repo, force: true});
+    const n = r.notices.find((x) => /upgrade|version/i.test(x) && /installer/i.test(x));
+    assert(n, 'expected version-lag notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-installer.mjs update');
+    assertContains(n, '4.6.0');
+    assertContains(n, '4.7.0');
+  } finally { rmSync(home, {recursive: true, force: true}); rmSync(repo, {recursive: true, force: true}); }
+});
+
+test('C3 version lag: installed == repo → no nudge', async () => {
+  const home = makeHome();
+  const repo = makeRepo('4.7.0');
+  try {
+    setInstalledVersion(home, '4.7.0');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, cwd: repo, force: true});
+    assert(!r.notices.some((x) => /prism-installer\.mjs update/.test(x)), 'no nudge at parity; got: ' + JSON.stringify(r.notices));
+  } finally { rmSync(home, {recursive: true, force: true}); rmSync(repo, {recursive: true, force: true}); }
+});
+
+test('C3 version lag: installed > repo (dev ahead) → no nudge', async () => {
+  const home = makeHome();
+  const repo = makeRepo('4.6.0');
+  try {
+    setInstalledVersion(home, '4.7.0');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, cwd: repo, force: true});
+    assert(!r.notices.some((x) => /prism-installer\.mjs update/.test(x)), 'no nudge when ahead');
+  } finally { rmSync(home, {recursive: true, force: true}); rmSync(repo, {recursive: true, force: true}); }
+});
+
+test('C3 version lag: no .prism-version marker → no nudge (fail-open)', async () => {
+  const home = makeHome();
+  const repo = makeRepo('4.7.0');
+  try {
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, cwd: repo, force: true});
+    assert(!r.notices.some((x) => /prism-installer\.mjs update/.test(x)), 'no marker → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); rmSync(repo, {recursive: true, force: true}); }
+});
+
+test('C3 version lag: cwd is not a PRISM repo → no nudge', async () => {
+  const home = makeHome();
+  const notRepo = mkdtempSync(join(tmpdir(), 'not-prism-'));
+  try {
+    setInstalledVersion(home, '4.6.0');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, cwd: notRepo, force: true});
+    assert(!r.notices.some((x) => /prism-installer\.mjs update/.test(x)), 'no manifest in cwd → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); rmSync(notRepo, {recursive: true, force: true}); }
+});
+
+// ── E1: KB-index staleness vs PRISM source docs ───────────────────────
+test('E1 KB stale: a source doc newer than index source_mtime_max → nudge rebuild', async () => {
+  const home = makeHome();
+  try {
+    // Index claims its sources maxed out 7 days ago.
+    writeJson(join(home, '.claude', '.prism-kb-index.json'), {
+      version: 2,
+      source_mtime_max: Math.floor((Date.now() - 7 * 86400000) / 1000),
+      entry_count: 10,
+    });
+    // But an agent doc was touched just now.
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'fresh.md'), '# fresh agent\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /KB index/i.test(x));
+    assert(n, 'expected KB-stale notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-kb-rebuild');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('E1 KB stale: sources older than index → no nudge', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-kb-index.json'), {
+      version: 2,
+      source_mtime_max: Math.floor(Date.now() / 1000),
+      entry_count: 10,
+    });
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    const old = join(home, '.claude', 'agents', 'old.md');
+    touch(old, '# old\n');
+    backdateMs(old, 10);  // 10 days old
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /KB index/i.test(x)), 'index newer than sources → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('E1 KB stale: no index file → no nudge (KB not in use)', async () => {
+  const home = makeHome();
+  try {
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'a.md'), '# a\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /KB index/i.test(x)), 'no index → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── E2: tools-registry.md ↔ roster index-sync ─────────────────────────
+test('E2 registry sync: registry modified after last_indexed → nudge /prism-index', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {
+      index_meta: {last_indexed: new Date(Date.now() - 2 * 86400000).toISOString()},
+      tools: {},
+    });
+    const reg = join(refs, 'tools-registry.md');
+    touch(reg, '# registry\n## 1. new-tool\n');  // mtime = now (after last_indexed)
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /registry/i.test(x) && /prism-index/i.test(x));
+    assert(n, 'expected registry-sync notice; got: ' + JSON.stringify(r.notices));
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('E2 registry sync: registry older than last_indexed → no nudge', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {
+      index_meta: {last_indexed: new Date().toISOString()},
+      tools: {},
+    });
+    const reg = join(refs, 'tools-registry.md');
+    touch(reg, '# registry\n');
+    backdateMs(reg, 3);  // registry 3d old, indexed just now
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /registry/i.test(x) && /prism-index/i.test(x)), 'indexed after registry → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('E2 registry sync: never indexed (last_indexed null) → no nudge', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {index_meta: {last_indexed: null}, tools: {}});
+    touch(join(refs, 'tools-registry.md'), '# registry\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /registry/i.test(x) && /prism-index/i.test(x)), 'never indexed → no nag (bootstrap covers it)');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── G1: on-demand staleness preview (CLI --preview) ───────────────────
+test('G1 preview: --preview prints current signals, writes NO snapshot', () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', 'skills', 'prism-plan', 'references', 'update-log.json'), {
+      last_check: new Date(Date.now() - 60 * 86400000).toISOString(),
+    });
+    const r = spawnSync(process.execPath, [SWEEP_REPO, '--preview'], {
+      cwd: home, encoding: 'utf-8', env: {...process.env, HOME: home, USERPROFILE: home}, timeout: 10000,
+    });
+    assertEq(r.status, 0, r.stderr);
+    assertContains(r.stdout, '/prism-update');
+    assert(!existsSync(join(home, '.claude', '.prism-freshness-last.json')), 'preview must not write the throttle snapshot');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('G1 preview: clean tree → explicit no-signals line', () => {
+  const home = makeHome();
+  try {
+    const r = spawnSync(process.execPath, [SWEEP_REPO, '--preview'], {
+      cwd: home, encoding: 'utf-8', env: {...process.env, HOME: home, USERPROFILE: home}, timeout: 10000,
+    });
+    assertEq(r.status, 0, r.stderr);
+    assert(/no staleness signals/i.test(r.stdout), 'expected no-signals line; got: ' + JSON.stringify(r.stdout));
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 test('session-start: invokes sweep and surfaces notices in stdout', () => {
   const home = makeHome();
   try {
@@ -328,5 +525,11 @@ test('session-start: off-switch PRISM_DISABLE_FRESHNESS_SWEEP suppresses sweep',
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
-process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
+(async () => {
+  for (const [name, fn] of tests) {
+    try { await fn(); pass++; process.stdout.write(`  ok  ${name}\n`); }
+    catch (e) { fail++; process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`); }
+  }
+  process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
+  process.exit(fail ? 1 : 0);
+})();

@@ -38,6 +38,12 @@ const UPDATE_LOG_AGE_DAYS = 15;
 const CLAUDE_MD_AGE_DAYS = 60;
 
 const SNAPSHOT_REL = ['.claude', '.prism-freshness-last.json'];
+const VERSION_MARKER_REL = ['.claude', '.prism-version'];
+const KB_INDEX_REL = ['.claude', '.prism-kb-index.json'];
+// KB source roots under ~/.claude. plugins/cache is deliberately excluded —
+// plugin churn is already surfaced by Q1 (plugin drift), and walking the
+// plugin cache would dominate the sweep's cost.
+const KB_SOURCE_DIRS = ['agents', 'commands', 'skills', 'rules'];
 const PLUGINS_REL = ['.claude', 'plugins'];
 const UPDATE_LOG_REL = ['.claude', 'skills', 'prism-plan', 'references', 'update-log.json'];
 const CLAUDE_MD_REL = ['.claude', 'CLAUDE.md'];
@@ -161,8 +167,103 @@ function checkToolsRegistryRotations(home, snapshot) {
   };
 }
 
+// ── Check C3: installed-version lag vs a PRISM clone (cwd) ─────────────
+// Compares the installed marker (~/.claude/.prism-version) against the
+// prism_version in the clone's tools/install-manifest.json. When the clone
+// ships a NEWER version than what's installed (the classic "git pull, forgot
+// to re-run the installer" case), surface the one command that fixes it.
+// No network: the "available" version is whatever the current working
+// directory's clone declares. Silent unless cwd is genuinely a PRISM repo.
+function parseVersion(s) {
+  if (typeof s !== 'string') return null;
+  const m = s.trim().match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+}
+
+function compareVersions(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+function checkVersionLag(home, cwd) {
+  if (!cwd) return null;
+  const installedRaw = safeRead(join(home, ...VERSION_MARKER_REL));
+  const installed = parseVersion(installedRaw);
+  if (!installed) return null;  // not installed / unreadable marker → silent
+  const manifest = readJsonSafe(join(cwd, 'tools', 'install-manifest.json'));
+  if (!manifest || !manifest.prism_version) return null;  // cwd isn't a PRISM clone
+  const available = parseVersion(manifest.prism_version);
+  if (!available) return null;
+  if (compareVersions(installed, available) >= 0) return null;  // parity or dev-ahead
+  const inS = installedRaw.trim();
+  const avS = String(manifest.prism_version).trim();
+  return `PRISM FRESHNESS: installed PRISM is v${inS} but this clone ships v${avS}. Run \`node tools/prism-installer.mjs update\` to upgrade your ~/.claude install.`;
+}
+
+// ── Check E1: KB index staleness vs PRISM source docs ─────────────────
+// The KB autosync hook handles in-session edits (dirty-flag → Stop rebuild),
+// but OUT-OF-BAND changes (git pull bringing new agents/skills, a Stop that
+// didn't drain) leave the index behind. The index records source_mtime_max
+// (seconds) at build time; if any source .md is now newer, recall is stale.
+// Silent when no index exists (KB simply not in use). Bounded walk.
+function walkMdMaxMtimeSec(root, budget) {
+  let max = 0;
+  const stack = [root];
+  while (stack.length && budget.n > 0) {
+    const d = stack.pop();
+    let entries;
+    try { entries = readdirSync(d, {withFileTypes: true}); } catch { continue; }
+    for (const e of entries) {
+      if (budget.n <= 0) break;
+      const full = join(d, e.name);
+      if (e.isDirectory()) { stack.push(full); continue; }
+      if (!e.name.endsWith('.md')) continue;
+      budget.n--;
+      try { const m = Math.floor(statSync(full).mtimeMs / 1000); if (m > max) max = m; } catch {}
+    }
+  }
+  return max;
+}
+
+function checkKbIndexStale(home) {
+  const index = readJsonSafe(join(home, ...KB_INDEX_REL));
+  if (!index || typeof index.source_mtime_max !== 'number') return null;  // no index / pre-v2 schema
+  const budget = {n: 4000};  // hard ceiling on files walked per sweep
+  let newest = 0;
+  for (const sub of KB_SOURCE_DIRS) {
+    const root = join(home, '.claude', sub);
+    if (!existsSync(root)) continue;
+    const m = walkMdMaxMtimeSec(root, budget);
+    if (m > newest) newest = m;
+  }
+  if (newest <= index.source_mtime_max) return null;
+  return 'PRISM FRESHNESS: KB index is behind its source docs (a skill/agent/command/rule changed since the last build). Run `node ~/.claude/tools/prism-kb-rebuild.mjs --sync` to refresh semantic recall (/prism-recall).';
+}
+
+// ── Check E2: tools-registry.md ↔ roster index-sync ───────────────────
+// Q11 catches "registry changed since the last SWEEP". E2 catches the
+// stickier gap: registry changed after the last actual /prism-index run, so
+// roster.tools is behind regardless of how recently the sweep looked. Silent
+// when the roster was never indexed (bootstrap/init owns first-time indexing).
+function checkToolsRegistrySync(home) {
+  const roster = readJsonSafe(join(home, ...ROSTER_REL));
+  if (!roster) return null;
+  const lastIndexed = roster.index_meta && roster.index_meta.last_indexed;
+  if (!lastIndexed) return null;
+  let indexedMs;
+  try { indexedMs = new Date(lastIndexed).getTime(); } catch { return null; }
+  if (!indexedMs || Number.isNaN(indexedMs)) return null;
+  const regMtime = safeMtime(join(home, ...TOOLS_REGISTRY_REL));
+  if (regMtime === null) return null;
+  if (regMtime <= indexedMs) return null;
+  return 'PRISM FRESHNESS: tools-registry.md changed after the last /prism-index — roster.tools may be out of sync. Run /prism-index to resolve registry changes into the roster.';
+}
+
 // ── Main entry point ───────────────────────────────────────────────────
-export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), force = false} = {}) {
+export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), force = false, cwd = undefined} = {}) {
   if (!home) return {notices: [], snapshot: null, skipped: true};
 
   const snapshotPath = join(home, ...SNAPSHOT_REL);
@@ -208,13 +309,31 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
     if (r.notice) notices.push(r.notice);
   } catch {}
 
+  // C3 — version lag (only when cwd is a PRISM clone)
+  try {
+    const n = checkVersionLag(home, cwd);
+    if (n) notices.push(n);
+  } catch {}
+
+  // E1 — KB index staleness
+  try {
+    const n = checkKbIndexStale(home);
+    if (n) notices.push(n);
+  } catch {}
+
+  // E2 — tools-registry ↔ roster index sync
+  try {
+    const n = checkToolsRegistrySync(home);
+    if (n) notices.push(n);
+  } catch {}
+
   atomicWrite(snapshotPath, JSON.stringify(newSnapshot));
   return {notices, snapshot: newSnapshot, skipped: false};
 }
 
 // Dry-run alias for tests / introspection — runs all checks, returns
 // notices, does NOT write the snapshot file.
-export function freshnessSweepDryRun({home, now = Date.now()} = {}) {
+export function freshnessSweepDryRun({home, now = Date.now(), cwd = undefined} = {}) {
   if (!home) return {notices: [], snapshot: null};
   const snapshotPath = join(home, ...SNAPSHOT_REL);
   const prior = readJsonSafe(snapshotPath);
@@ -231,8 +350,34 @@ export function freshnessSweepDryRun({home, now = Date.now()} = {}) {
     const r = checkToolsRegistryRotations(home, prior);
     if (r.notice) notices.push(r.notice);
   } catch {}
+  try { const n = checkVersionLag(home, cwd); if (n) notices.push(n); } catch {}
+  try { const n = checkKbIndexStale(home); if (n) notices.push(n); } catch {}
+  try { const n = checkToolsRegistrySync(home); if (n) notices.push(n); } catch {}
 
   return {notices, snapshot: prior};
 }
 
 export const THRESHOLDS = {STALE_AGENT_DAYS, UPDATE_LOG_AGE_DAYS, CLAUDE_MD_AGE_DAYS};
+
+// ── G1: on-demand staleness preview (CLI) ──────────────────────────────
+// `node ~/.claude/hooks/lib/prism-freshness-sweep.mjs --preview` prints the
+// CURRENT staleness signals without touching the 24h throttle snapshot, so
+// the orchestrator can run a pre-PROPOSAL check mid-session (the daily
+// SessionStart sweep may have already consumed today's throttle window).
+// Uses the dry-run path: all checks, no snapshot write. Importing this module
+// (session-start does) never triggers this block — argv[1] won't end with
+// this filename.
+const invokedDirectly =
+  import.meta.url === `file://${(process.argv[1] || '').replace(/\\/g, '/')}` ||
+  (process.argv[1] || '').endsWith('prism-freshness-sweep.mjs');
+
+if (invokedDirectly) {
+  const HOME = process.env.HOME || process.env.USERPROFILE;
+  const {notices} = freshnessSweepDryRun({home: HOME, cwd: process.cwd()});
+  if (notices.length) {
+    process.stdout.write(`PRISM staleness preview — ${notices.length} signal(s):\n`);
+    for (const n of notices) process.stdout.write(`  • ${n}\n`);
+  } else {
+    process.stdout.write('PRISM staleness preview: no staleness signals — sources, registry, KB index, and installed version look current.\n');
+  }
+}
