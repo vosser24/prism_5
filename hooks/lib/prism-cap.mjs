@@ -14,18 +14,24 @@
 // never silently diverge (the "half-knob" trap).
 
 export const DEFAULT_PARALLEL_CAP = 4;
+// Sane upper bound. Beyond this, coordination/merge/context cost dominates and
+// a large value is almost certainly a typo (e.g. "40" for "4"). Values above
+// the ceiling fall back to the default rather than authorizing a runaway —
+// that keeps the anti-typo contract honest (a fat-fingered cap never widens).
+export const MAX_PARALLEL_CAP = 16;
 
 // Resolve the active parallel cap from the environment.
-// Strict parse: only a bare positive integer is honored. Anything else
-// (empty, whitespace, non-numeric, partial-numeric like "8x", zero, negative)
-// falls back to DEFAULT_PARALLEL_CAP so a typo never silently widens the cap.
-// Accepts an explicit env bag for testability; defaults to process.env.
+// Strict parse: only a bare positive integer in [1, MAX_PARALLEL_CAP] is
+// honored. Anything else — empty, whitespace, non-numeric, partial-numeric
+// like "8x", zero, negative, or above the ceiling — falls back to
+// DEFAULT_PARALLEL_CAP so a typo never silently widens the cap. Accepts an
+// explicit env bag for testability; defaults to process.env.
 export function resolveParallelCap(env = process.env) {
   const raw = env && env.PRISM_PARALLEL_CAP;
   if (raw == null) return DEFAULT_PARALLEL_CAP;
   const s = String(raw).trim();
   if (!/^\d+$/.test(s)) return DEFAULT_PARALLEL_CAP;
   const n = parseInt(s, 10);
-  if (!Number.isInteger(n) || n < 1) return DEFAULT_PARALLEL_CAP;
+  if (!Number.isInteger(n) || n < 1 || n > MAX_PARALLEL_CAP) return DEFAULT_PARALLEL_CAP;
   return n;
 }

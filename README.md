@@ -100,7 +100,7 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
 
-## Status — works / half-works / known-gaps (v4.6.0)
+## Status — works / half-works / known-gaps (v4.7.0)
 
 | Journey | State | Notes |
 |---|---|---|
@@ -141,7 +141,11 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 
 See `tests/v3/plan.md` for the comprehensive user-journey test grid and
-`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0 and v4.5 → v4.6).
+`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0, v4.5 → v4.6, and v4.6 → v4.7).
+
+### v4.7 — Deferred-backlog cleanup + the parallel cap becomes a knob
+
+A stepping-stone minor (no v5.0 lift). **K1**: the parallel-dispatch cap is now the `PRISM_PARALLEL_CAP` env knob (default still 4) — overriding it injects the active cap into orchestrator context so telemetry and doctrine can't diverge. Three new silent-unless-stale SessionStart nudges: **C3** (installed version behind your clone → run the installer update), **E1** (KB index behind its source docs → rebuild), **E2** (`tools-registry.md` changed after the last `/prism-index`). **G1**: `prism-freshness-sweep.mjs --preview` prints staleness signals on demand without touching the 24h throttle. Installer polish: **I3** aligned completion summary, **I8** opt-in local install/upgrade telemetry (reuses the existing consent; honors `DISABLE_TELEMETRY`/`DO_NOT_TRACK`). Also fixed an async-blind test harness that had been silently skipping post-`await` assertions in two suites.
 
 ### v4.6 — Telemetry-driven calibration + classifiers + hygiene closeout
 
@@ -180,9 +184,9 @@ Tag any rostered specialist with `requires_phase_1_5: true` to enable an indepen
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.6.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.6 upgrade recipes
-- `/prism-help` (in Claude Code) — curated v4.6 slash-command index
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.7.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.7 upgrade recipes
+- `/prism-help` (in Claude Code) — curated v4.7 slash-command index
 - [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack

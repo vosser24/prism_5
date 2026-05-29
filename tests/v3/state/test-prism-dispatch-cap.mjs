@@ -97,6 +97,9 @@ test('resolver: default is 4 and guards reject bad values', async () => {
   assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: '-2'}), 4, 'negative rejected');
   assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: 'abc'}), 4, 'non-numeric rejected');
   assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: '8x'}), 4, 'partial-numeric rejected (strict)');
+  assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: '16'}), 16, 'ceiling value honored');
+  assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: '17'}), 4, 'above ceiling rejected');
+  assertEq(resolveParallelCap({PRISM_PARALLEL_CAP: '40'}), 4, 'fat-finger typo (40 for 4) rejected, not widened');
 });
 
 test('dispatch-cap hook: logs default cap 4 when unset', () => {

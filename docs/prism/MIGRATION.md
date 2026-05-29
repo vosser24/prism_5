@@ -13,12 +13,53 @@ recipe (lines 165-188).
 
 | You are on | You want | Read |
 |---|---|---|
-| v3.8.x | v4.5.0 | Run v3.11.0 sub-phases, then v4.0.0, v4.1.0, v4.2.0, v4.3.0, v4.4, and v4.5 sections in sequence |
-| v3.10.x | v4.5.0 | Same as above starting at v3.11.0 |
-| v3.11.0 | v4.5.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then v4.x sections |
-| v4.5.x | v4.6.0 | This page, [§v4.5 → v4.6](#v45--v46) below |
-| v4.4.x | v4.5.0 | This page, [§v4.4 → v4.5](#v44--v45) below |
-| pre-v3.8 | v4.5.0 | Read CHANGELOG entries for v3.8.x first, then this guide |
+| v3.8.x | v4.7.0 | Run v3.11.0 sub-phases, then the v4.0.0 → v4.7 sections in sequence |
+| v3.10.x | v4.7.0 | Same as above starting at v3.11.0 |
+| v3.11.0 | v4.7.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then the v4.x sections through v4.7 |
+| v4.6.x | v4.7.0 | This page, [§v4.6 → v4.7](#v46--v47) below |
+| v4.5.x | v4.7.0 | [§v4.5 → v4.6](#v45--v46) then [§v4.6 → v4.7](#v46--v47) below |
+| v4.4.x | v4.7.0 | [§v4.4 → v4.5](#v44--v45), then v4.5→v4.6, then v4.6→v4.7 |
+| pre-v3.8 | v4.7.0 | Read CHANGELOG entries for v3.8.x first, then this guide in sequence |
+
+---
+
+## v4.6 → v4.7
+
+### Upgrade — run the installer
+
+```bash
+git pull
+node tools/prism-installer.mjs update
+node tools/prism-installer.mjs verify
+```
+
+If the installer reports `Already at v4.7.0; nothing to do.`, you're done. The completion summary is now an aligned block (Version / Target / Files / Backup).
+
+### What changed — all additive, no required action
+
+#### `PRISM_PARALLEL_CAP` — new optional knob (K1)
+The orchestrator's parallel-dispatch cap (how many `Agent()` calls batch into one message) was a hardcoded `4`. It's now a knob:
+
+```bash
+export PRISM_PARALLEL_CAP=6   # default is 4; unset = 4
+```
+
+Default is **unchanged at 4** — do nothing and behavior is identical. When you set it, SessionStart announces the active cap in context so the orchestrator obeys it (not just the telemetry log). Bad values (zero, negative, non-numeric) fall back to 4.
+
+#### New SessionStart freshness nudges (C3 / E1 / E2)
+The daily freshness sweep gained three checks. All are silent unless the condition holds, all reuse the existing 24h throttle, and all fail open:
+- **C3** — if your installed PRISM version is behind the clone you're working in, it nudges `node tools/prism-installer.mjs update`.
+- **E1** — if the KB index is behind its source docs, it nudges a `prism-kb-rebuild --sync`.
+- **E2** — if `tools-registry.md` changed after your last `/prism-index`, it nudges `/prism-index`.
+
+#### Staleness preview (G1)
+```bash
+node hooks/lib/prism-freshness-sweep.mjs --preview
+```
+Prints current staleness signals on demand (no effect on the throttle). Useful mid-session before committing to a plan.
+
+#### `.prism-routing.jsonl` — new `install_outcome` event (I8), opt-in
+If — and only if — you've opted into telemetry (`prism-policy.json` `telemetry.opt_in: true`, the same consent the aggregator uses), install/update now appends a local `install_outcome` record (`schema_version: 5` on that line). Honors `DISABLE_TELEMETRY` / `DO_NOT_TRACK`. No network. Default off → nothing is written. Older log readers ignore the unknown event kind.
 
 ---
 

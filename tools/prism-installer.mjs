@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Installer v4.6.0
+// PRISM Installer v4.7.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
@@ -112,7 +112,10 @@ function die(msg, code = 1) {
 // DISABLE_TELEMETRY / DO_NOT_TRACK opt-out even when policy says opt-in.
 // Default OFF — nothing is written unless the user explicitly opted in.
 function installTelemetryConsented() {
-  if (process.env.DISABLE_TELEMETRY === '1' || process.env.DO_NOT_TRACK === '1') return false;
+  // Honor the industry-standard opt-outs: ANY non-empty, non-"0" value counts
+  // (DO_NOT_TRACK=1, =true, =yes all mean "don't track" per consoledonottrack.com).
+  const dt = process.env.DISABLE_TELEMETRY, nt = process.env.DO_NOT_TRACK;
+  if ((dt && dt !== '0') || (nt && nt !== '0')) return false;
   try {
     const p = JSON.parse(readFileSync(join(CLAUDE_DIR, 'prism-policy.json'), 'utf8'));
     return Boolean(p && p.telemetry && p.telemetry.opt_in === true);
@@ -987,7 +990,7 @@ function verify() {
 // ─── help ─────────────────────────────────────────────────────────────────────
 function help() {
   console.log(`
-PRISM Installer v4.5.0
+PRISM Installer v4.7.0
 
 Usage:
   node tools/prism-installer.mjs <subcommand> [flags]
