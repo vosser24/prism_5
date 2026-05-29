@@ -5,7 +5,8 @@
 // race that occurs when parallel master-<slug> sessions write the same
 // roster.json from PRISM hooks.
 
-import { writeFileSync, unlinkSync, readFileSync, existsSync, openSync, closeSync } from 'node:fs';
+import { writeFileSync, unlinkSync, readFileSync, existsSync, openSync, closeSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const LOCK_TIMEOUT_MS = 30_000;
 const STALE_LOCK_THRESHOLD_MS = 60_000;
@@ -46,6 +47,10 @@ function releaseStale(lockPath) {
  */
 export async function withRosterLock(rosterPath, fn) {
   const lockPath = rosterPath + '.lock';
+  // On first-ever roster creation the parent dir may not exist yet, and
+  // openSync(lockPath, 'wx') would throw ENOENT (not EEXIST) and crash the
+  // caller (e.g. first agent auto-registration). mkdir -p is idempotent.
+  try { mkdirSync(dirname(lockPath), { recursive: true }); } catch {}
   const ownerInfo = {
     pid: process.pid,
     created_at: new Date().toISOString(),
