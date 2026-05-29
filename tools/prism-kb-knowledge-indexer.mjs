@@ -21,7 +21,7 @@
 
 import {
   readFileSync, writeFileSync, readdirSync, statSync, existsSync,
-  mkdirSync, renameSync, realpathSync,
+  mkdirSync, renameSync, realpathSync, unlinkSync,
 } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
@@ -85,6 +85,36 @@ export function readShareMarker(projectRoot) {
     shared_types: parsed.shared_types,
     shared_at: parsed.shared_at,
   };
+}
+
+// ── writeShareMarker ────────────────────────────────────────────────────────────
+// Writes <projectRoot>/.prism-kb-share.json opting this project into cross-project
+// sharing for the given corpus types (F4 §4.1 per-corpus-type opt-in).
+//   types: array; empty/undefined ⇒ default to all SHAREABLE_TYPES.
+//          each entry validated against SHAREABLE_TYPES (unknowns silently dropped).
+// Atomic write (tmp + renameSync; Windows/SMB safe). Returns the written object.
+export function writeShareMarker(projectRoot, types) {
+  let list = Array.isArray(types) ? types.filter(t => SHAREABLE_TYPES.includes(t)) : [];
+  if (list.length === 0) list = SHAREABLE_TYPES.slice();
+  const obj = {
+    version: 1,
+    shared_types: list,
+    shared_at: new Date().toISOString(),
+  };
+  const p = join(projectRoot, '.prism-kb-share.json');
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, JSON.stringify(obj));
+  renameSync(tmp, p);
+  return obj;
+}
+
+// ── removeShareMarker ───────────────────────────────────────────────────────────
+// Unlinks <projectRoot>/.prism-kb-share.json. Returns true if removed, false if
+// absent. Never throws.
+export function removeShareMarker(projectRoot) {
+  const p = join(projectRoot, '.prism-kb-share.json');
+  if (!existsSync(p)) return false;
+  try { unlinkSync(p); return true; } catch { return false; }
 }
 
 // ── scanSecrets ────────────────────────────────────────────────────────────────
