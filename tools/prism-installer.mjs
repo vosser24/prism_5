@@ -27,7 +27,7 @@
 //   [[feedback-default-flip-prose-sweep]]   — all doc surfaces updated in separate commits
 
 import {
-  readFileSync, writeFileSync, existsSync, mkdirSync, renameSync,
+  readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, renameSync,
   unlinkSync, readdirSync, statSync, chmodSync, cpSync, rmSync, lstatSync,
 } from 'fs';
 import {join, dirname, resolve, basename} from 'path';
@@ -104,6 +104,19 @@ function log(...args) {
 function die(msg, code = 1) {
   console.error(`[prism-installer] ERROR: ${msg}`);
   process.exit(code);
+}
+
+// I8 — local install/upgrade telemetry consent. Reuses the SAME consent the
+// telemetry aggregator uses (prism-policy.json `telemetry.opt_in === true`)
+// so there is one opt-in surface, not two. Honors the industry-standard
+// DISABLE_TELEMETRY / DO_NOT_TRACK opt-out even when policy says opt-in.
+// Default OFF — nothing is written unless the user explicitly opted in.
+function installTelemetryConsented() {
+  if (process.env.DISABLE_TELEMETRY === '1' || process.env.DO_NOT_TRACK === '1') return false;
+  try {
+    const p = JSON.parse(readFileSync(join(CLAUDE_DIR, 'prism-policy.json'), 'utf8'));
+    return Boolean(p && p.telemetry && p.telemetry.opt_in === true);
+  } catch { return false; }
 }
 
 function atomicWrite(path, content) {
@@ -692,14 +705,47 @@ async function install() {
       }
     }
 
-    // Step 10: write version marker + summary
+    // Step 10: write version marker + aligned summary (I3) + opt-in telemetry (I8)
     if (flags.dryRun) {
       log(`[prism-installer] DRY-RUN complete. No changes made.`);
       log(`[prism-installer] Would install ${manifest.files.length} files + ${manifest.directories.length} directories.`);
     } else {
-      atomicWrite(join(CLAUDE_DIR, '.prism-version'), manifest.prism_version);
+      // Capture the prior version BEFORE overwriting the marker, so the
+      // summary + telemetry can distinguish a fresh install from an upgrade.
+      const versionMarker = join(CLAUDE_DIR, '.prism-version');
+      let fromVersion = null;
+      try { if (existsSync(versionMarker)) fromVersion = (readFileSync(versionMarker, 'utf8').trim() || null); } catch {}
+      atomicWrite(versionMarker, manifest.prism_version);
+
+      const action = (fromVersion && fromVersion !== manifest.prism_version) ? 'update'
+        : (fromVersion === manifest.prism_version ? 'reinstall' : 'install');
+
+      // I3 — aligned completion summary. Fixed-width label column keeps long
+      // target paths readable: the path is always the VALUE, never the label,
+      // so it can be any length without breaking alignment.
+      const lbl = (s) => (s + '       ').slice(0, 7);
       log(`[prism-installer] PRISM ${manifest.prism_version} install complete.`);
-      if (backupDir) log(`[prism-installer] Backup: ${backupDir}`);
+      log(`  ${lbl('Version')}: ${(fromVersion && fromVersion !== manifest.prism_version) ? `${fromVersion} → ` : ''}${manifest.prism_version}`);
+      log(`  ${lbl('Target')}: ${CLAUDE_DIR}`);
+      log(`  ${lbl('Files')}: ${manifest.files.length} files, ${manifest.directories.length} dirs`);
+      log(`  ${lbl('Backup')}: ${backupDir || '— (none)'}`);
+
+      // I8 — local-only install/upgrade outcome telemetry, opt-in. No network.
+      try {
+        if (installTelemetryConsented()) {
+          const rec = {
+            ts: new Date().toISOString(),
+            event: 'install_outcome',
+            schema_version: 5,
+            action,
+            result: 'success',
+            prism_version: manifest.prism_version,
+            from_version: fromVersion,
+            files: manifest.files.length,
+          };
+          appendFileSync(join(CLAUDE_DIR, '.prism-routing.jsonl'), JSON.stringify(rec) + '\n');
+        }
+      } catch {}
     }
 
   } finally {
