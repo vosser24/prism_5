@@ -49,7 +49,8 @@ Steps, pros, risks, mitigation. Still generate task-id. WAIT for approval.
 
 Before executing, classify each step pair and choose dispatch shape — see
 `dispatch-shapes.md` for the SEQUENTIAL / PARALLEL / SPLIT-AND-MERGE /
-AGENT TEAMS decision tree, cap rules (max 4 parallel Agent() per message),
+AGENT TEAMS decision tree, cap rules (default max 4 parallel Agent() per
+message; override with the PRISM_PARALLEL_CAP env var),
 anti-patterns (never one-Agent-per-message when a batch is possible), and
 the Windows note on Agent Teams.
 

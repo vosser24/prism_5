@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "4.6.0",
+  "prism_version": "4.7.0",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
@@ -29,6 +29,7 @@
     {"src": "hooks/prism-task-tier-advisor.mjs", "dst": "hooks/prism-task-tier-advisor.mjs", "executable": true},
     {"src": "hooks/lib/prism-exec.sh", "dst": "hooks/lib/prism-exec.sh", "executable": true},
     {"src": "hooks/lib/prism-exec.cmd", "dst": "hooks/lib/prism-exec.cmd", "executable": false},
+    {"src": "hooks/lib/prism-cap.mjs", "dst": "hooks/lib/prism-cap.mjs", "executable": false},
     {"src": "hooks/lib/prism-freshness-sweep.mjs", "dst": "hooks/lib/prism-freshness-sweep.mjs", "executable": true},
     {"src": "hooks/lib/prism-opus-classifier.mjs", "dst": "hooks/lib/prism-opus-classifier.mjs", "executable": true},
     {"src": "hooks/lib/prism-router.mjs", "dst": "hooks/lib/prism-router.mjs", "executable": true},

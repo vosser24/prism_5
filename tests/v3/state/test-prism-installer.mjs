@@ -615,6 +615,57 @@ function snapshotFiles(dir) {
   rmSync(sandbox, {recursive: true, force: true});
 }
 
+// ─── I3: aligned completion summary banner ──────────────────────────────────
+{
+  const home = makeSandbox();
+  const r = run(['install'], {HOME: home, USERPROFILE: home});  // no --quiet: want the summary
+  ok('I3: summary has aligned "Target" label', /\n\s+Target\s+:\s/.test(r.stdout));
+  ok('I3: summary has aligned "Files" label', /\n\s+Files\s+:\s/.test(r.stdout));
+  ok('I3: summary prints the (long) target path verbatim', r.stdout.includes(join(home, '.claude')));
+  rmSync(home, {recursive: true, force: true});
+}
+
+// ─── I8: local install/upgrade telemetry, opt-in ────────────────────────────
+{
+  // Default: no consent → nothing written.
+  const home = makeSandbox();
+  run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  const logPath = join(home, '.claude', '.prism-routing.jsonl');
+  const wrote = existsSync(logPath) && readFileSync(logPath, 'utf8').includes('install_outcome');
+  ok('I8: no telemetry without opt-in (default off)', !wrote);
+  rmSync(home, {recursive: true, force: true});
+}
+{
+  // Opt-in via prism-policy.json telemetry.opt_in → install_outcome appended.
+  const home = makeSandbox();
+  const claudeDir = join(home, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  writeFileSync(join(claudeDir, 'prism-policy.json'), JSON.stringify({telemetry: {opt_in: true}}));
+  run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  const logPath = join(home, '.claude', '.prism-routing.jsonl');
+  ok('I8: routing log exists after opt-in install', existsSync(logPath));
+  const recs = (existsSync(logPath) ? readFileSync(logPath, 'utf8').trim().split('\n') : [])
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean);
+  const rec = recs.find((e) => e.event === 'install_outcome');
+  ok('I8: install_outcome event written on opt-in', !!rec);
+  ok('I8: event records success + action=install', !!rec && rec.result === 'success' && rec.action === 'install');
+  ok('I8: event carries prism_version', !!rec && typeof rec.prism_version === 'string');
+  rmSync(home, {recursive: true, force: true});
+}
+{
+  // Industry-standard opt-out (DISABLE_TELEMETRY) overrides policy opt-in.
+  const home = makeSandbox();
+  const claudeDir = join(home, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  writeFileSync(join(claudeDir, 'prism-policy.json'), JSON.stringify({telemetry: {opt_in: true}}));
+  run(['install', '--quiet'], {HOME: home, USERPROFILE: home, DISABLE_TELEMETRY: '1'});
+  const logPath = join(home, '.claude', '.prism-routing.jsonl');
+  const wrote = existsSync(logPath) && readFileSync(logPath, 'utf8').includes('install_outcome');
+  ok('I8: DISABLE_TELEMETRY opt-out honored despite policy opt-in', !wrote);
+  rmSync(home, {recursive: true, force: true});
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

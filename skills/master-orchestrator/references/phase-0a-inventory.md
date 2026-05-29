@@ -76,4 +76,23 @@ If the request needs a domain that has an orphan notebook:
   If [n]: continue with current inventory; note the missed opportunity in the
           panel composition's 'Resource gaps' notes.
 
+## Staleness preview (v4.7 G1 — before you commit to a plan)
+
+The daily SessionStart freshness sweep is throttled (once/24h), so on a long
+session its signals may be hours stale by the time you assemble a plan. Before
+emitting a plan/proposal for **stale-prone work** (anything that depends on the
+roster, the tools-registry, the KB index, or the installed PRISM version —
+e.g. "which specialist handles X", "what tools do we have", migrations that
+reference indexed knowledge), run the on-demand preview:
+
+```
+node ~/.claude/hooks/lib/prism-freshness-sweep.mjs --preview
+```
+
+It prints the CURRENT staleness signals (plugin drift, stale agents, KB-index
+lag, registry-vs-index drift, version lag) without disturbing the 24h throttle.
+If it surfaces signals that bear on the request, resolve or call them out in the
+plan's "Resource gaps" notes BEFORE finalizing — don't plan on top of a stale
+index.
+
 Now proceed to stakes + team assembly with this inventory as ground truth.

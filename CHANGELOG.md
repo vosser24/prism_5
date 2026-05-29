@@ -4,6 +4,25 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [4.7.0] - 2026-05-29
+
+Stepping-stone minor that clears the small deferred backlog (no v5.0 lift) and turns the parallel-dispatch cap into a real configurable knob. Purely additive — no topology change, no new agents or slash commands, no default flips. `.prism-routing.jsonl` gains a new `install_outcome` event (schema_version 5 on that line only; sibling events stay 4 — additive, older readers ignore unknown event kinds).
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.6 → v4.7".
+
+### Added
+- **K1 — `PRISM_PARALLEL_CAP` knob.** The parallel-dispatch cap was a hardcoded `4` in both the `dispatch-cap` telemetry hook and the orchestrator prose. New `hooks/lib/prism-cap.mjs` (`resolveParallelCap`, strict guards) is the single source of truth; `prism-dispatch-cap.mjs` logs the resolved cap; `prism-session-start.mjs` injects the active cap into context **only when overridden** (closes the "half-knob" trap — telemetry can't diverge from doctrine). Default stays **4** (no default flip). `dispatch-shapes.md` + `phase-1-execution.md` reference the knob.
+- **C3 — version-aware upgrade nudge.** SessionStart freshness sweep now compares the installed `~/.claude/.prism-version` against the `prism_version` in the current clone's manifest; when the clone is ahead (the "git pull, forgot to re-run the installer" case) it nudges the exact `node tools/prism-installer.mjs update` command. No network, no auto-apply.
+- **E1 — KB-index staleness check.** Nudges a rebuild when a source `.md` under `agents/commands/skills/rules` is newer than the index's `source_mtime_max`. Catches out-of-band changes the autosync dirty-flag misses (git pull, a Stop that didn't drain). `plugins/cache` excluded (covered by Q1). Per-project scope — the cross-project semantic index remains a v5.0 item (F4).
+- **E2 — tools-registry ↔ roster index-sync check.** Nudges `/prism-index` when `tools-registry.md` changed *after* the last index (`roster.index_meta.last_indexed`). Distinct from Q11 (prior-sweep comparison); silent when never indexed.
+- **G1 — staleness preview.** `node hooks/lib/prism-freshness-sweep.mjs --preview` prints current staleness signals without touching the 24h throttle snapshot, so the orchestrator can run a pre-plan check mid-session. Wired into `phase-0a-inventory.md` doctrine for stale-prone work.
+- **I3 — aligned install summary.** Fixed-width label column (Version/Target/Files/Backup); long target paths stay readable (path is always the value). Shows `from → to` on upgrades.
+- **I8 — opt-in install/upgrade telemetry (local-only).** On install/update, appends an `install_outcome` record to `.prism-routing.jsonl` **only** when opted in via `prism-policy.json` `telemetry.opt_in` (the same consent the aggregator uses — one opt-in surface). Honors `DISABLE_TELEMETRY` / `DO_NOT_TRACK`. No network.
+
+### Fixed
+- **Roster lock crashed on first-ever roster creation** (pre-existing, surfaced during v4.7 review). `withRosterLock` opened `roster.json.lock` with `openSync(..., 'wx')` but never ensured the roster's parent directory existed; on the first agent auto-registration (no `skills/prism-plan/references/` dir yet) it threw `ENOENT` and crashed the hook, so the agent was never registered. `withRosterLock` now `mkdir -p`s the lock's parent first. `test-prism-agent-write-register.mjs` goes from 6/9 to 9/9.
+- **Test harness — async-blind runner.** `test-prism-freshness-sweep.mjs` and `test-prism-git-hygiene.mjs` ran async tests with a synchronous runner that counted `pass++` before post-`await` assertions executed — assertions were silently skipped. Converted both to an async-aware runner. This surfaced 4 genuinely-failing git-hygiene tests (all test-environment artifacts — HOME captured at flag-helper module-eval, and a commitless temp repo breaking branch detection; no production bugs). All now genuinely pass.
+
 ## [4.6.0] - 2026-05-28
 
 Telemetry-driven calibration (the payoff of v4.5's tooling-only telemetry), preceded by telemetry data-quality fixes, plus structured-output classifiers and the v4.5-review hygiene closeout. Build order inverted from layer numbering (hygiene + data-quality first, calibration last). Backward-compatible: `.prism-routing.jsonl` schema 3 → 4 is additive; v4.5 readers ignore unknown fields.
