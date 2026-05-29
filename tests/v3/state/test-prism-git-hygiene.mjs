@@ -32,16 +32,11 @@ const FLAG_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-flag-file.mjs');
 
 let pass = 0, fail = 0;
 
-function test(name, fn) {
-  try {
-    fn();
-    pass++;
-    process.stdout.write(`  ok  ${name}\n`);
-  } catch (e) {
-    fail++;
-    process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`);
-  }
-}
+// Async-aware runner: collect tests, then AWAIT each. The previous harness
+// ran fn() synchronously and counted pass++ before any post-`await`
+// assertion executed, so async tests false-passed. (v4.7 harness fix.)
+const tests = [];
+function test(name, fn) { tests.push([name, fn]); }
 
 function assert(cond, msg) { if (!cond) throw new Error('assert: ' + (msg || '')); }
 function assertEq(a, b, msg) {
@@ -72,6 +67,11 @@ function makeGitDir(label) {
   spawnSync('git', ['checkout', '-qB', 'main'], {cwd: root});
   spawnSync('git', ['config', 'user.email', 'test@example.com'], {cwd: root});
   spawnSync('git', ['config', 'user.name', 'test'], {cwd: root});
+  // An initial commit is required so `git rev-parse --abbrev-ref HEAD`
+  // resolves a born branch (it exits 128 on an unborn branch, which would
+  // make the prepush hook's gate-mode branch lookup fail-open to ''). This
+  // also matches reality — you cannot push a commitless repo.
+  spawnSync('git', ['commit', '--allow-empty', '-qm', 'init'], {cwd: root});
   return root;
 }
 
@@ -430,6 +430,9 @@ test('prepush-review: review-done gate-mode flag suppresses the ask', async () =
   const cwd = makeGitDir('pp-3');
   try {
     // Pre-seed review-done flag for the current branch (main).
+    // HOME must point at the temp home BEFORE importing the helper — it
+    // captures HOME at module-eval, and the spawned hook reads the same home.
+    process.env.HOME = home; process.env.USERPROFILE = home;
     const url = pathToFileURL(join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs')).href;
     const h = await import(url);
     h.writeFlag('review-done', cwd, {branch: 'main'});
@@ -468,6 +471,7 @@ test('session-start: picks up clean-nudge flag and emits notice', async () => {
   const home = makeHome();
   const cwd = makeGitDir('ss-1');
   try {
+    process.env.HOME = home; process.env.USERPROFILE = home;
     const url = pathToFileURL(join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs')).href;
     const h = await import(url);
     h.writeFlag('clean-nudge', cwd, {reason: 'clear'});
@@ -487,6 +491,7 @@ test('session-start: picks up git-dirty flag and emits count + sample', async ()
   const home = makeHome();
   const cwd = makeGitDir('ss-2');
   try {
+    process.env.HOME = home; process.env.USERPROFILE = home;
     const url = pathToFileURL(join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs')).href;
     const h = await import(url);
     h.writeFlag('git-dirty', cwd, {count: 4, sample: ['M src/a.ts', '?? notes.md']});
@@ -504,6 +509,7 @@ test('session-start: precompact reason produces "context compaction" wording', a
   const home = makeHome();
   const cwd = makeGitDir('ss-3');
   try {
+    process.env.HOME = home; process.env.USERPROFILE = home;
     const url = pathToFileURL(join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs')).href;
     const h = await import(url);
     h.writeFlag('clean-nudge', cwd, {reason: 'precompact'});
@@ -533,5 +539,11 @@ test('session-start: silent when no flags pending', () => {
 
 // ─────────────────────────────── summary ────────────────────────────────────
 
-process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
+(async () => {
+  for (const [name, fn] of tests) {
+    try { await fn(); pass++; process.stdout.write(`  ok  ${name}\n`); }
+    catch (e) { fail++; process.stdout.write(`  FAIL ${name}\n        ${e.stack || e.message}\n`); }
+  }
+  process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
+  process.exit(fail ? 1 : 0);
+})();
