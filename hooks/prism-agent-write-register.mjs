@@ -125,10 +125,37 @@ function parseFrontmatter(body) {
   if (!body.startsWith('---')) return out;
   const end = body.indexOf('\n---', 3);
   if (end === -1) return out;
-  const block = body.slice(3, end).split('\n');
-  for (const line of block) {
-    const m = line.match(/^\s*(name|description)\s*:\s*(.*?)\s*$/);
-    if (m) out[m[1]] = m[2];
+  const lines = body.slice(3, end).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)(name|description)\s*:\s*(.*?)\s*$/);
+    if (!m) continue;
+    const indent = m[1].length;
+    let val = m[3];
+    // YAML block scalar: `>`/`>-`/`>+` (folded) or `|`/`|-`/`|+` (literal),
+    // optionally with an indentation-indicator digit. The real value lives on
+    // the more-indented continuation lines, NOT on the key line. Without this,
+    // the literal indicator (e.g. ">-") was stored as the description.
+    const blk = val.match(/^([>|])[0-9]*[+-]?\s*$/);
+    if (blk) {
+      const folded = blk[1] === '>';
+      const collected = [];
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        if (lines[j].trim() === '') { collected.push(''); continue; }
+        const clIndent = lines[j].match(/^(\s*)/)[1].length;
+        if (clIndent <= indent) break; // dedent → end of block scalar
+        collected.push(lines[j].trim());
+      }
+      while (collected.length && collected[collected.length - 1] === '') collected.pop();
+      val = folded
+        ? collected.join(' ').replace(/\s+/g, ' ').trim()
+        : collected.join('\n');
+      i = j - 1; // skip the consumed continuation lines
+    } else {
+      const q = val.match(/^(['"])([\s\S]*)\1$/); // strip matched surrounding quotes
+      if (q) val = q[2];
+    }
+    out[m[2]] = val;
   }
   return out;
 }

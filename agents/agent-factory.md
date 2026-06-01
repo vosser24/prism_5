@@ -4,7 +4,7 @@ description: >
   Creates or upgrades expert agents via research. Uses NotebookLM (free)
   as primary research engine with Claude as quality gate.
   Only spawned by master-orchestrator when a needed agent doesn't exist.
-tools: Read, Write, Bash, Grep, Glob, WebSearch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch
 model: opus
 maxTurns: 40
 memory: true
