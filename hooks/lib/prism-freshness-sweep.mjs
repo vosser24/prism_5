@@ -40,6 +40,9 @@ const CLAUDE_MD_AGE_DAYS = 60;
 const SNAPSHOT_REL = ['.claude', '.prism-freshness-last.json'];
 const VERSION_MARKER_REL = ['.claude', '.prism-version'];
 const KB_INDEX_REL = ['.claude', '.prism-kb-index.json'];
+// F4 cross-project knowledge index lives under ~/.prism-kb/ (NOT ~/.claude/) —
+// matches tools/prism-kb-knowledge-indexer.mjs KNOWLEDGE_INDEX_REL.
+const KNOWLEDGE_INDEX_REL = ['.prism-kb', 'knowledge-index.json'];
 // KB source roots under ~/.claude. plugins/cache is deliberately excluded —
 // plugin churn is already surfaced by Q1 (plugin drift), and walking the
 // plugin cache would dominate the sweep's cost.
@@ -243,6 +246,79 @@ function checkKbIndexStale(home) {
   return 'PRISM FRESHNESS: KB index is behind its source docs (a skill/agent/command/rule changed since the last build). Run `node ~/.claude/tools/prism-kb-rebuild.mjs --sync` to refresh semantic recall (/prism-recall).';
 }
 
+// ── Check F4: cross-project KNOWLEDGE index staleness ─────────────────
+// Sibling to E1 (checkKbIndexStale), but for the F4 knowledge corpus. The
+// autosync knowledge-dirty flag + Stop-drain handle in-session edits, but
+// OUT-OF-BAND changes (git pull bringing new lessons/plans into a shared
+// project, a Stop that didn't drain, a new verdict log) leave the knowledge
+// index behind. The index records source_mtime_max (seconds) at build time;
+// if any shared-corpus .md / panel.json / verdict file is now newer, recall
+// (--cross-project) is stale. Silent when no knowledge index exists (feature
+// not in use) and when nothing is shared + no verdicts (newest stays 0).
+// Absorbs the v4.6-deferred cross-project index-freshness item (design §5).
+function walkPanelMaxMtimeSec(workspaceRoot, budget, maxDepth = 6) {
+  let max = 0;
+  if (!existsSync(workspaceRoot)) return 0;
+  const stack = [[workspaceRoot, 0]];
+  while (stack.length && budget.n > 0) {
+    const [d, depth] = stack.pop();
+    if (depth > maxDepth) continue;
+    let entries;
+    try { entries = readdirSync(d, {withFileTypes: true}); } catch { continue; }
+    for (const e of entries) {
+      if (budget.n <= 0) break;
+      const full = join(d, e.name);
+      if (e.isDirectory()) { stack.push([full, depth + 1]); continue; }
+      if (e.name !== 'panel.json') continue;
+      budget.n--;
+      try { const m = Math.floor(statSync(full).mtimeMs / 1000); if (m > max) max = m; } catch {}
+    }
+  }
+  return max;
+}
+
+function verdictNewestMtimeSec(home) {
+  let max = 0;
+  const jsonl = join(home, '.prism-phase-1-5-verdicts.jsonl');
+  const m1 = safeMtime(jsonl);
+  if (m1 !== null) max = Math.max(max, Math.floor(m1 / 1000));
+  let entries;
+  try { entries = readdirSync(home, {withFileTypes: true}); } catch { entries = []; }
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    if (!/^\.prism-phase-.*-verdicts-.*\.json$/.test(e.name)) continue;
+    const m = safeMtime(join(home, e.name));
+    if (m !== null) max = Math.max(max, Math.floor(m / 1000));
+  }
+  return max;
+}
+
+function knowledgeCorpusNewestSec(index, home) {
+  const budget = {n: 8000};
+  let newest = 0;
+  const projects = (index && index.projects && typeof index.projects === 'object') ? index.projects : {};
+  for (const pid of Object.keys(projects)) {
+    const p = projects[pid];
+    if (!p || typeof p.root !== 'string' || !Array.isArray(p.shared_types)) continue;
+    const t = new Set(p.shared_types);
+    if (t.has('adjudication')) newest = Math.max(newest, walkMdMaxMtimeSec(join(p.root, 'docs', 'prism', 'adjudications'), budget));
+    if (t.has('lesson')) newest = Math.max(newest, walkMdMaxMtimeSec(join(p.root, 'docs', 'prism', 'lessons'), budget));
+    if (t.has('plan')) newest = Math.max(newest, walkMdMaxMtimeSec(join(p.root, 'docs', 'prism', 'plans'), budget));
+    if (t.has('panel-rationale')) newest = Math.max(newest, walkPanelMaxMtimeSec(join(p.root, 'tasks', 'workspace'), budget));
+  }
+  // Always-on home-global verdicts (exempt from the share marker).
+  newest = Math.max(newest, verdictNewestMtimeSec(home));
+  return newest;
+}
+
+export function checkKnowledgeIndexStale(home) {
+  const index = readJsonSafe(join(home, ...KNOWLEDGE_INDEX_REL));
+  if (!index || typeof index.source_mtime_max !== 'number') return null;  // no index ⇒ feature unused
+  const newest = knowledgeCorpusNewestSec(index, home);
+  if (newest <= index.source_mtime_max) return null;
+  return 'PRISM FRESHNESS: cross-project knowledge index is behind its source docs (a shared adjudication/lesson/plan/panel or a verdict log changed since the last build). Run `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync` to refresh /prism-recall --cross-project.';
+}
+
 // ── Check E2: tools-registry.md ↔ roster index-sync ───────────────────
 // Q11 catches "registry changed since the last SWEEP". E2 catches the
 // stickier gap: registry changed after the last actual /prism-index run, so
@@ -321,6 +397,12 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
     if (n) notices.push(n);
   } catch {}
 
+  // F4 — cross-project knowledge index staleness
+  try {
+    const n = checkKnowledgeIndexStale(home);
+    if (n) notices.push(n);
+  } catch {}
+
   // E2 — tools-registry ↔ roster index sync
   try {
     const n = checkToolsRegistrySync(home);
@@ -352,6 +434,7 @@ export function freshnessSweepDryRun({home, now = Date.now(), cwd = undefined} =
   } catch {}
   try { const n = checkVersionLag(home, cwd); if (n) notices.push(n); } catch {}
   try { const n = checkKbIndexStale(home); if (n) notices.push(n); } catch {}
+  try { const n = checkKnowledgeIndexStale(home); if (n) notices.push(n); } catch {}
   try { const n = checkToolsRegistrySync(home); if (n) notices.push(n); } catch {}
 
   return {notices, snapshot: prior};

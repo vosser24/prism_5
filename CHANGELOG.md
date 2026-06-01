@@ -4,6 +4,37 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — v5.0 (in progress)
+
+> Version deliberately held at **4.7.0** until v5.0 is complete (F4 is the foundational
+> bet; A5 and the re-rank quality validation are still pending). This section accrues
+> v5.0 work as it lands on `feat/v5.0`; the `prism_version` bump happens at release cut.
+
+### F4 — cross-project knowledge index (foundational bet)
+- **Phases A–D** (committed): dep-free **BM25** lexical lib (`tools/lib/prism-bm25.mjs`); cross-project
+  **knowledge indexer** (`tools/prism-kb-knowledge-indexer.mjs`) with default-deny per-corpus-type
+  `.prism-kb-share.json` opt-in, always-on home-global verdicts, secret pre-scan/redaction (fail-closed),
+  descriptor-not-body storage, provenance, atomic write; **`claude -p` re-rank** wrapper
+  (`tools/lib/prism-kb-rerank.mjs`, default-on-when-available, 8 s timeout, silent BM25 fallback); and the
+  **`queryKnowledge({crossProject, limit, rerank})`** API (`tools/lib/prism-kb-knowledge-query.mjs`) wired
+  into `prism-recall.mjs` (`--cross-project`, `--share-project [types…]`, `--unshare-project`, honest
+  "(LLM re-ranked)" / "(lexical only — …)" labels).
+- **Phase E — freshness/sync + manifest-coverage integration** (this batch):
+  - `tools/prism-kb-knowledge-rebuild.mjs` — drain-at-Stop refresher (`--sync --quiet`); derives changed
+    project root(s) from a dedicated `~/.claude/.prism-kb-knowledge-dirty` flag.
+  - `hooks/prism-kb-autosync.mjs` — writes the dedicated knowledge-dirty flag (separate from the resource
+    `.prism-kb-dirty`); project corpus gated by the project's shared types (default-deny), verdicts always-on.
+  - `hooks/prism-session-end.mjs` — Stop-drain spawns `prism-kb-knowledge-rebuild` detached. Zero per-turn latency.
+  - `hooks/lib/prism-freshness-sweep.mjs` — `checkKnowledgeIndexStale` SessionStart nudge (sibling to the
+    v4.7 E1 per-project check); absorbs the v4.6-deferred cross-project freshness item.
+  - `tools/install-manifest.json` — added the 5 `files[]` entries the A–D phases shipped uninstalled
+    (bm25/indexer/rebuild/query/rerank). New `tests/v3/state/test-manifest-coverage.mjs` enforces this as a
+    build-phase gate.
+- **Known limitation (measured):** on Windows, raw `claude -p` cold-start (~20 s) exceeds the 8 s re-rank
+  budget, so the default-on semantic re-rank silently falls back to BM25. Set
+  `PRISM_RECALL_RERANK_TIMEOUT_MS=25000` to let it engage (accepting ~20 s per `--cross-project` query).
+  Tracked in `docs/prism/lessons/2026-06-01-v5.0-f4-phase-e-handoff.md`.
+
 ## [4.7.0] - 2026-05-29
 
 Stepping-stone minor that clears the small deferred backlog (no v5.0 lift) and turns the parallel-dispatch cap into a real configurable knob. Purely additive — no topology change, no new agents or slash commands, no default flips. `.prism-routing.jsonl` gains a new `install_outcome` event (schema_version 5 on that line only; sibling events stay 4 — additive, older readers ignore unknown event kinds).

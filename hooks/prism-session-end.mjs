@@ -259,5 +259,29 @@ try {
       try { (await import('fs')).unlinkSync(dirtyFlag); } catch {}
     }
   } catch {}
+
+  // ── v5.0 F4: drain the KNOWLEDGE-dirty flag (detached cross-project rebuild) ──
+  // Separate flag + separate rebuilder from the resource index above, so the two
+  // never couple (design §5). The rebuilder reads the flag itself to derive the
+  // changed project root(s); we only check presence + spawn it detached, then the
+  // rebuilder clears the flag. We do NOT unlink here (the child owns the drain).
+  try {
+    const kDirtyFlag = j(H, '.claude', '.prism-kb-knowledge-dirty');
+    if (e(kDirtyFlag)) {
+      const kPaths = r(kDirtyFlag, 'utf-8').split(/\r?\n/).filter(Boolean);
+      if (kPaths.length) {
+        const {spawn} = await import('child_process');
+        const kRebuildPath = j(H, '.claude', 'tools', 'prism-kb-knowledge-rebuild.mjs');
+        const child = spawn('node', [kRebuildPath, '--sync', '--quiet'], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        child.unref();
+      } else {
+        try { (await import('fs')).unlinkSync(kDirtyFlag); } catch {}
+      }
+    }
+  } catch {}
 } catch {}
 process.exit(0);
