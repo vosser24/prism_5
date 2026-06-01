@@ -4,11 +4,11 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — v5.0 (in progress)
+## [5.0.0] - 2026-06-01
 
-> Version deliberately held at **4.7.0** until v5.0 is complete (F4 is the foundational
-> bet; A5 and the re-rank quality validation are still pending). This section accrues
-> v5.0 work as it lands on `feat/v5.0`; the `prism_version` bump happens at release cut.
+The v5.0 foundational bet: a **dep-free, offline cross-project knowledge index** (F4) — BM25 lexical retrieval + a default-on `claude -p` re-rank (silent BM25 fallback), a default-deny per-corpus-type sharing model, and a stable `queryKnowledge()` API. This is the topology shift from a self-aware single-project orchestration to a substrate that can learn across projects. The verdict-regression scanner (A5) that consumes the index is deferred to v5.1.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.7 → v5.0".
 
 ### F4 — cross-project knowledge index (foundational bet)
 - **Phases A–D** (committed): dep-free **BM25** lexical lib (`tools/lib/prism-bm25.mjs`); cross-project

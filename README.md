@@ -100,7 +100,7 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 
 > **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
 
-## Status — works / half-works / known-gaps (v4.7.0)
+## Status — works / half-works / known-gaps (v5.0.0)
 
 | Journey | State | Notes |
 |---|---|---|
@@ -141,7 +141,11 @@ Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are 
 | Tested on macOS native | ❌ Not yet | Linux + Windows tested |
 
 See `tests/v3/plan.md` for the comprehensive user-journey test grid and
-`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0, v4.5 → v4.6, and v4.6 → v4.7).
+`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0, v4.6 → v4.7, and v4.7 → v5.0).
+
+### v5.0 — Cross-project knowledge index (F4)
+
+The v5.0 foundational bet: a **dep-free, offline cross-project knowledge index**. BM25 lexical retrieval over each project's shared adjudications / lessons / plans / panel-rationales plus always-on home-global verdict logs, with a **default-on `claude -p` re-rank** (the "semantic" layer — *not* embeddings) that degrades silently to BM25 whenever the CLI is absent, slow, or errors. Privacy is **default-deny, per-corpus-type**: a project shares only the corpus types it lists in `.prism-kb-share.json`, consumption is explicit via `/prism-recall --cross-project`, and the global store holds descriptors + lexical postings — never verbatim bodies. A stable `queryKnowledge({crossProject, limit, rerank})` API ships for programmatic callers. Freshness reuses the autosync dirty-flag + Stop-drain + a SessionStart staleness nudge. **Note:** on slow-CLI platforms (e.g. Windows, ~20 s `claude -p` cold-start) the re-rank routinely times out at its 8 s default and falls back to BM25 — raise `PRISM_RECALL_RERANK_TIMEOUT_MS` to let it engage. The verdict-regression scanner (A5) that consumes this index is deferred to v5.1.
 
 ### v4.7 — Deferred-backlog cleanup + the parallel cap becomes a knob
 
@@ -184,9 +188,9 @@ Tag any rostered specialist with `requires_phase_1_5: true` to enable an indepen
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.7.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.7 upgrade recipes
-- `/prism-help` (in Claude Code) — curated v4.7 slash-command index
+- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v5.0.0)
+- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v5.0 upgrade recipes
+- `/prism-help` (in Claude Code) — curated v5.0 slash-command index
 - [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
 - [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
 - [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
