@@ -158,7 +158,17 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId) {
   // v3.2.0: append self-override directive when keyword-floor classified this
   // prompt and the tier is not allowlist/force-opus (those are explicit intent
   // and should not be overrideable by the conversation model).
-  if (source === 'keyword-floor') {
+  //
+  // v5.0.x: do NOT append it on hard-mode PANEL turns. On those turns the
+  // parent-dispatch-guard denies the very Write the protocol instructs (Write is
+  // not in the guard's ALWAYS_ALLOW set), so the sentinel-write self-override is
+  // unfollowable there — and panels are deliberately human-gated. The panel
+  // branch above already gives the correct escape (spawn @master-orchestrator,
+  // or the human prefixes !opus-force: / sets PRISM_DISPATCH_GUARD=off), so the
+  // v3.2.0 text would only contradict it. Suppressing it removes the
+  // advertise-an-escape-the-guard-forbids contradiction.
+  const panelHardBlocked = mode === 'hard' && tier === 'opus' && summonPanel;
+  if (source === 'keyword-floor' && !panelHardBlocked) {
     advice += '\n' + buildOverrideDirective(tier, summonPanel, sessionId);
   }
   return advice;

@@ -35,6 +35,20 @@ Migration guide: `docs/prism/MIGRATION.md` §"v4.7 → v5.0".
   `PRISM_RECALL_RERANK_TIMEOUT_MS=25000` to let it engage (accepting ~20 s per `--cross-project` query).
   Tracked in `docs/prism/lessons/2026-06-01-v5.0-f4-phase-e-handoff.md`.
 
+### Fixed — routing
+- **Release-safety screen no longer force-summons the design panel.** The keyword-floor release/meta-work
+  screen (`hooks/lib/prism-opus-classifier.mjs`) matched bare `ship`/`release` tokens and hardcoded
+  `summon_panel=true`, so a ship-*readiness question* ("are we ready to ship?") was routed through the
+  full `@master-orchestrator` design panel. The screen now promotes to **opus tier** (the real anti-haiku
+  safety) but leaves `summon_panel` to the genuine novel-architecture signal path (`PANEL_SIGNALS` /
+  stakes / ≥3 opus signals) — a real "re-architect + release" prompt still summons it; a readiness check
+  does not. New test: `tests/v3/state/test-prism-release-screen-panel.mjs`.
+- **Tier-override guidance no longer contradicts the dispatch guard on panel turns.** On hard-mode
+  panel-summoning turns the router (`hooks/prism-prompt-tier-router.mjs`) printed the v3.2.0 "write the
+  sentinel as your FIRST action" self-override protocol — a Write the parent-dispatch-guard denies (Write
+  isn't in its `ALWAYS_ALLOW` set). That text is now suppressed on those turns; the panel directive already
+  carries the correct escape (`!opus-force:` / `PRISM_DISPATCH_GUARD=off`).
+
 ## [4.7.0] - 2026-05-29
 
 Stepping-stone minor that clears the small deferred backlog (no v5.0 lift) and turns the parallel-dispatch cap into a real configurable knob. Purely additive — no topology change, no new agents or slash commands, no default flips. `.prism-routing.jsonl` gains a new `install_outcome` event (schema_version 5 on that line only; sibling events stay 4 — additive, older readers ignore unknown event kinds).
