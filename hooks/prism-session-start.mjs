@@ -396,6 +396,7 @@ try {
   if (notices.length) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
+        hookEventName: 'SessionStart',
         additionalContext: notices.join('\n'),
       },
     }));

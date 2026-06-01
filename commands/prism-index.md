@@ -58,8 +58,8 @@ Skip files that fail YAML parse — report the path to the user at the end.
 **Tools** — read `~/.claude/skills/prism-plan/references/tools-registry.md`. For each tool entry, probe install status:
 
 - `superpowers` / `uipro-cli` — check `~/.claude/plugins/<name>` dir exists
-- npm global tools — `command -v <tool>` non-interactive check
-- Python tools — `which <tool>` or `python -c "import <pkg>"` as listed
+- npm global tools — probe by EXECUTION (`<tool> --version`), NOT a bare `command -v`/`where`: under Windows AppLocker/WDAC the PATH resolves but the `.exe` is denied, so a PATH-only check FALSE-POSITIVES "available" (v5.x finding). If PATH resolves but `--version` fails, record `install_status: blocked`, not `installed`.
+- Python tools — prefer `python -m <pkg> --version` (or `python -c "import <pkg>"`) over the bare console-script `.exe`, which may be AppLocker-blocked even when the package is installed.
 - MCPs — see next block
 
 Write to `roster.tools[<name>]` with `install_status` + `tier` + `domains` + `keywords`.

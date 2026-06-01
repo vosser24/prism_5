@@ -10,8 +10,9 @@
 //   - Subscription auth only: calls `claude -p` via spawnSync — NO Anthropic
 //     SDK, NO ANTHROPIC_API_KEY. Mirrors the oob pattern from
 //     hooks/prism-phase-1-5-oob.mjs.
-//   - Payloads >32 KB are written to a tempfile and passed as a path arg to
-//     avoid Windows ENAMETOOLONG (feedback-windows-cli-test-args).
+//   - Prompt is delivered via stdin (spawnSync `input`), which has no argv-length
+//     limit — so no tempfile is needed even for large prompts, and there is no
+//     `claude` flag that reads a local file as the prompt.
 //   - Hard 8s timeout (overridable via opts.timeoutMs or
 //     PRISM_RECALL_RERANK_TIMEOUT_MS env); silent BM25 fallback on ANY error.
 //   - INTENTIONALLY SYNCHRONOUS (spawnSync-based): the caller (prism-recall)
@@ -23,9 +24,8 @@
 //
 // Ref: docs/prism/plans/2026-05-29-F4-design.md §7 + §8
 
-import { existsSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import { spawnSync } from 'child_process';
 
 // ── exported constants ────────────────────────────────────────────────────────
@@ -145,47 +145,32 @@ export function parseRerankResponse(stdout, candidates) {
 
 // ── defaultRunner ─────────────────────────────────────────────────────────────
 //
-// Invokes `claude -p` via spawnSync, delivering the prompt via stdin.
-// For payloads >32 KB, writes a tempfile and passes `--file <path>` to avoid
-// Windows ENAMETOOLONG (feedback-windows-cli-test-args).
+// Invokes `claude -p` via spawnSync, delivering the prompt over stdin (the same
+// channel hooks/prism-phase-1-5-oob.mjs uses). stdin has no argv-length limit, so
+// large prompts need no tempfile — and `claude` has no flag that reads a local
+// file as the prompt (`--file` is for downloadable resource specs, not prompt IO).
 // Returns { stdout, code, timedOut, error }.
 
 function defaultRunner(claudeBin, env) {
   return function runClaude({ prompt, timeoutMs }) {
-    const THIRTY_TWO_KB = 32 * 1024;
-    let tempPath = null;
+    const res = spawnSync(claudeBin, ['-p'], {
+      input: prompt,
+      encoding: 'utf-8',
+      timeout: timeoutMs,
+      env,
+      windowsHide: true,
+    });
 
-    try {
-      let args;
-      if (Buffer.byteLength(prompt, 'utf-8') > THIRTY_TWO_KB) {
-        tempPath = join(tmpdir(), `prism-rerank-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
-        writeFileSync(tempPath, prompt, 'utf-8');
-        args = ['-p', '--file', tempPath];
-      } else {
-        args = ['-p'];
-      }
-
-      const res = spawnSync(claudeBin, args, {
-        input: tempPath ? undefined : prompt,
-        encoding: 'utf-8',
-        timeout: timeoutMs,
-        env,
-        windowsHide: true,
-      });
-
-      // spawnSync reports timeout via signal === 'SIGTERM'
-      const timedOut = res.signal === 'SIGTERM';
-      return {
-        stdout: res.stdout || '',
-        code: res.status,
-        timedOut,
-        error: res.error || null,
-      };
-    } finally {
-      if (tempPath) {
-        try { unlinkSync(tempPath); } catch {}
-      }
-    }
+    // A timeout kill surfaces as signal 'SIGTERM' on POSIX, but on Windows it
+    // commonly arrives as an error with code 'ETIMEDOUT'; treat either as a
+    // timeout so the user-facing label is 'timeout', not the vaguer 'error'.
+    const timedOut = res.signal === 'SIGTERM' || (res.error && res.error.code === 'ETIMEDOUT');
+    return {
+      stdout: res.stdout || '',
+      code: res.status,
+      timedOut,
+      error: res.error || null,
+    };
   };
 }
 

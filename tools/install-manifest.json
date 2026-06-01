@@ -55,6 +55,7 @@
     {"src": "tools/prism-rollup-weekly.mjs", "dst": "tools/prism-rollup-weekly.mjs", "executable": true},
     {"src": "tools/prism-roster.mjs", "dst": "tools/prism-roster.mjs", "executable": true},
     {"src": "tools/prism-state.mjs", "dst": "tools/prism-state.mjs", "executable": true},
+    {"src": "tools/prism-retire.mjs", "dst": "tools/prism-retire.mjs", "executable": true},
     {"src": "tools/prism-state.ps1", "dst": "tools/prism-state.ps1", "executable": false},
     {"src": "tools/prism-sync.mjs", "dst": "tools/prism-sync.mjs", "executable": true},
     {"src": "tools/prism-telemetry-aggregate.mjs", "dst": "tools/prism-telemetry-aggregate.mjs", "executable": true},

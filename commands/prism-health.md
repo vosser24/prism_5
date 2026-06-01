@@ -62,9 +62,11 @@ Top 5 most-used by task count.
 ### Step 3 — External tools status (NEW in v2.1.23)
 
 Read tools-registry.md. For each entry, check install status:
-  Tier 1 check methods:
+  Tier 1 check methods (detect by EXECUTION, not a bare PATH probe — AppLocker
+  can resolve the PATH while denying the .exe, [[feedback-applocker-exe-detection]]):
     /plugin list                              (superpowers)
-    which uipro || npm ls -g uipro-cli        (ui-ux-pro-max)
+    uipro --version || npm ls -g uipro-cli    (ui-ux-pro-max; PATH resolves but
+                                               --version fails ⇒ report blocked)
 
   Tier 2 check methods:
     /plugin list | grep everything-claude-code
@@ -115,7 +117,7 @@ ORPHAN SCAN, DEDUPLICATION, RETIREMENT CHECK, COST SUMMARY.
 ### Step 7 — NotebookLM integration
 
 Check:
-  - command -v notebooklm
+  - notebooklm availability by EXECUTION: `notebooklm --version` || `python -m notebooklm --version` (NOT bare `command -v` — AppLocker/WDAC can resolve the PATH while denying the `.exe`, a false "available"). Report `blocked` if PATH resolves but neither runs.
   - Agents with notebooklm_notebook_id count (N/total)
   - Last /prism-archive timestamp
   - Pending archive candidates (agents with 5+ unarchived notes)

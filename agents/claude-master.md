@@ -21,8 +21,8 @@ description: >
   limits, .mcp.json env expansion, claude mcp serve), plugins (.claude-plugin/plugin.json,
   marketplace add/install/update, namespacing, validation, managed restrictions),
   prompt-caching (5-min vs 1-hour TTL, three layers, prefix-match invalidation, fork
-  cache reuse, /compact vs /rewind vs /recap), model routing (Opus 4.7 / Sonnet 4.6 /
-  Haiku 4.5 + aliases + opusplan + sonnet[1m] / opus[1m]), effort levels (low|medium|
+  cache reuse, /compact vs /rewind vs /recap), model routing (Opus 4.8 / Sonnet 4.6 /
+  Haiku 4.5 + aliases + opusplan + sonnet[1m] / opus[1m] + /fast fast-mode), effort levels (low|medium|
   high|xhigh|max) and the ultrathink keyword, slash commands (built-in + bundled +
   custom merged with skills), sessions (resume / continue / branch / fork / rewind /
   teleport / desktop / remote-control / background / agent-teams), git + gh (worktrees,
@@ -73,9 +73,10 @@ debug needs **authoritative judgment grounded in current documentation**.
   on a native exe, or `.cmd`/`.bat` shims in hook exec form — all of which
   break on Windows in ways that are silent until they fail.
 - **Cheapest viable path.** Recommend Haiku 4.5 for trivial, Sonnet 4.6 for
-  routine, Opus 4.7 for novel work. Recommend `xhigh` effort by default on
-  Opus 4.7 (it is already the default); `max` only for explicit deep-reasoning
-  asks. Treat the 5-min prompt-cache TTL as the unit of session economics.
+  routine, Opus 4.8 for novel work. On Opus 4.8 the default effort is `high`
+  (Opus 4.7 defaulted to `xhigh`); bump to `xhigh` for deeper reasoning and
+  reserve `max` (session-only) for explicit deep-reasoning asks. Treat the
+  5-min prompt-cache TTL as the unit of session economics.
 - **PRISM-aware.** If you detect a PRISM session (presence of
   `~/.claude/skills/prism-plan/references/roster.json`, `~/.claude/.prism-routing.jsonl`,
   or `.claude/.prism-state.json`), read `roster.json` first and defer dispatch
@@ -222,10 +223,13 @@ settings. Source: https://code.claude.com/docs/en/permission-modes
 
 Set via `model` field, `--model` CLI flag, `ANTHROPIC_MODEL` env, or `/model`.
 **Aliases**: `default`, `best`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`,
-`opus[1m]`, `opusplan`. **Full IDs**: `claude-opus-4-7`, `claude-sonnet-4-6`,
-`claude-haiku-4-5`. On Anthropic API, `opus` = Opus 4.7, `sonnet` = Sonnet 4.6
-(May 2026). **Bedrock / Vertex / Foundry** may resolve `opus` to Opus 4.6 —
-**pin the full ID in managed settings if you need a guarantee**.
+`opus[1m]`, `opusplan`. **Full IDs**: `claude-opus-4-8`, `claude-sonnet-4-6`,
+`claude-haiku-4-5-20251001`. On the Anthropic API, `opus` = Opus 4.8, `sonnet`
+= Sonnet 4.6 (June 2026); `best` currently equals `opus`. **Claude Platform on
+AWS** resolves `opus` to Opus 4.7; **Bedrock / Vertex / Foundry** resolve `opus`
+to Opus 4.6 and `sonnet` to Sonnet 4.5 — **pin the full ID (or set
+`ANTHROPIC_DEFAULT_OPUS_MODEL`) in managed settings if you need a guarantee**.
+Opus 4.8 requires Claude Code v2.1.154+.
 
 Source: https://code.claude.com/docs/en/model-config
 
@@ -773,13 +777,27 @@ directory share cache; sequential sessions only if git-status snapshot matches.
 
 ### Effort levels
 
-`low | medium | high | xhigh | max`. **`max` is session-only.** Default:
-`xhigh` on Opus 4.7, `high` on Opus 4.6/Sonnet 4.6.
+`low | medium | high | xhigh | max`. **`max` is session-only.** `xhigh` exists
+only on **Opus 4.8 / Opus 4.7** (Opus 4.6 + Sonnet 4.6 cap at `high`; `xhigh`
+set there falls back to `high`). Default: `high` on **Opus 4.8** / Opus 4.6 /
+Sonnet 4.6, `xhigh` on Opus 4.7. **`ultracode`** (in the `/effort` menu) is a
+Claude Code setting, not a model level — it sends `xhigh` plus dynamic-workflow
+orchestration, session-only. Source: https://code.claude.com/docs/en/model-config#adjust-effort-level
 
 ### `ultrathink` keyword
 
 Requests deeper reasoning for that turn without changing session effort.
 **Other phrases** ("think hard", "think more") are NOT magic.
+
+### Fast mode
+
+Opus-only **faster output** — same model weights, **NOT** a downgrade to a
+smaller model — available on **Opus 4.8 / 4.7 / 4.6**. Toggle in-product with
+**`/fast`**. Trades a premium token price for higher output throughput; reach
+for it when latency on an Opus turn matters more than cost. Source:
+https://platform.claude.com/docs/en/build-with-claude/fast-mode — note the
+`model-config` page does **not** enumerate the `/fast` command surface, so treat
+the toggle name as build-specific and re-confirm against release notes.
 
 ### Auto-compaction
 
@@ -1319,9 +1337,10 @@ bug.
    — referenced in local `redeploy-readiness-vm` skill description. Reasonable
    best practice (per-user Limited tasks), but cite the local skill, not
    Anthropic docs.
-5. **Model alias resolution varies by provider** — May 2026: `opus` = Opus 4.7
-   on Anthropic API + Claude Platform on AWS, but **Opus 4.6 on Bedrock /
-   Vertex / Foundry**. Pin full IDs in enterprise managed settings.
+5. **Model alias resolution varies by provider** — June 2026: `opus` = Opus 4.8
+   on the Anthropic API, **Opus 4.7 on Claude Platform on AWS**, and **Opus 4.6
+   on Bedrock / Vertex / Foundry** (`sonnet` = Sonnet 4.5 there). Pin full IDs
+   or set `ANTHROPIC_DEFAULT_OPUS_MODEL` in enterprise managed settings.
 6. **Auto-mode classifier specifics** — "research preview" without published
    thresholds. Mention as available, not as default recommendation.
 7. **Effective context-window sizes per model + provider** vary. Bedrock 1M

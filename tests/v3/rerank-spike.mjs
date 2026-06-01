@@ -55,8 +55,13 @@ buildKnowledgeIndex({ home, projectRoot: beta });
 
 const QUERY = 'race condition on shutdown';
 const bin = resolveClaudeBin();
+// Effective budget: env override (the reranker honors PRISM_RECALL_RERANK_TIMEOUT_MS)
+// falls back to the compiled default. Display + verdict must use the EFFECTIVE value,
+// else a raised-budget run prints a self-contradictory "OVER budget (fell back)" while
+// reranked===true. (§6.D stress-test reporting fix.)
+const EFFECTIVE_BUDGET_MS = Number(process.env.PRISM_RECALL_RERANK_TIMEOUT_MS) || DEFAULT_RERANK_TIMEOUT_MS;
 console.log(`claude CLI: ${bin || '(absent — will report BM25 fallback only)'}`);
-console.log(`re-rank timeout budget: ${DEFAULT_RERANK_TIMEOUT_MS} ms`);
+console.log(`re-rank timeout budget: ${EFFECTIVE_BUDGET_MS} ms${EFFECTIVE_BUDGET_MS !== DEFAULT_RERANK_TIMEOUT_MS ? ` (env override; compiled default ${DEFAULT_RERANK_TIMEOUT_MS} ms)` : ''}`);
 console.log(`query: "${QUERY}"\n`);
 
 // BM25-only baseline.
@@ -75,7 +80,7 @@ rr.results.forEach((r, i) => console.log(`  ${i + 1}. [${r.type}] ${r.title}`));
 const bm25Top = bm25.results[0] && bm25.results[0].title;
 const rrTop = rr.results[0] && rr.results[0].title;
 console.log('\n=== SPIKE VERDICT ===');
-console.log(`latency: ${ms.toFixed(0)} ms vs ${DEFAULT_RERANK_TIMEOUT_MS} ms budget — ${ms <= DEFAULT_RERANK_TIMEOUT_MS ? 'WITHIN budget' : 'OVER budget (fell back)'}`);
+console.log(`latency: ${ms.toFixed(0)} ms vs ${EFFECTIVE_BUDGET_MS} ms budget — ${rr.reranked ? 'WITHIN budget (LLM ran)' : 'OVER budget / no-CLI (BM25 fallback)'}`);
 console.log(`reranked: ${rr.reranked} (${rr.reason})`);
 console.log(`BM25 top:    ${bm25Top}`);
 console.log(`re-rank top: ${rrTop}`);

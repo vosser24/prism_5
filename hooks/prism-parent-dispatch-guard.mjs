@@ -134,6 +134,15 @@ try {
   }
   // ----------------------------------------------------------------
 
+  // FIX-A (v5.x): the conversation-model tier-override file is the documented
+  // in-session escape from a (possibly false-positive) panel/dispatch block.
+  // It MUST stay writable even when work tools are denied — otherwise the
+  // override is unreachable and the turn deadlocks (v5.0 stress-test finding).
+  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
+    const fp = String(input.tool_input?.file_path || '');
+    if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) process.exit(0);
+  }
+
   if (ALWAYS_ALLOW.has(toolName)) {
     if (DISPATCH_MARKERS.has(toolName)) {
       const sentinel = readSentinel(sessionId);

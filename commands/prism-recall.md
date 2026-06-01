@@ -25,7 +25,7 @@ Tier 1 can also search the **cross-project knowledge index** (shared adjudicatio
 
 - `--cross-project "<query>"` — augments Tier 1 with BM25 retrieval over the global index + a default-on `claude -p` re-rank. Results are labeled `(LLM re-ranked)` or `(lexical only — …)`.
   - `--no-rerank` (or env `PRISM_RECALL_RERANK=off`) — skip the re-rank, BM25 only.
-  - env `PRISM_RECALL_RERANK_TIMEOUT_MS` (default 8000) — raise this on slow-CLI platforms (e.g. Windows, where `claude -p` cold-start ~20s otherwise times out → silent BM25 fallback).
+  - env `PRISM_RECALL_RERANK_TIMEOUT_MS` (default 8000) — raise this on slow-CLI platforms (e.g. Windows, where `claude -p` cold-start ~20s otherwise times out → silent BM25 fallback). For interactive Windows use prefer `--no-rerank` over a long timeout (you'd otherwise block ~20s every cold call); the re-rank pays off in warm/scheduled runs.
 - `--share-project [types…]` — opt THIS project into sharing the listed corpus types (`adjudication lesson plan panel-rationale`); no args = share all four. Writes `.prism-kb-share.json` (default-deny: nothing is shared until run).
 - `--unshare-project` — stop sharing this project.
 

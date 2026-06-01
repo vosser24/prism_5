@@ -51,11 +51,17 @@ const REDACTION_PLACEHOLDER = '(redacted — possible secret)';
 
 // Secret pre-scan patterns (§4.5 / invariant 2). Fail-closed: any match ⇒ redact.
 const SECRET_PATTERNS = [
-  /sk-[a-z0-9-]{8,}/i,
-  /gho_[A-Za-z0-9]{8,}/,
-  /AKIA[0-9A-Z]{12,}/,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-  /(api[_-]?key|secret|password|token)\s*[=:]\s*\S{6,}/i,
+  /sk-[a-z0-9-]{8,}/i,                                       // OpenAI/Anthropic-style key
+  /gho_[A-Za-z0-9]{8,}/,                                     // GitHub OAuth token
+  /AKIA[0-9A-Z]{12,}/,                                       // AWS access key id
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,                      // PEM private key
+  /(api[_-]?key|secret|password|token)\s*[=:]\s*\S{6,}/i,    // generic key=value
+  // S1 (v5.0 review): keyword-less / URL-embedded secrets the originals missed.
+  /xox[baprs]-[A-Za-z0-9-]{10,}/,                            // Slack token
+  /AIza[0-9A-Za-z_-]{20,}/,                                  // Google API key
+  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}/,                // JWT (header.payload)
+  /(sk|rk)_live_[A-Za-z0-9]{8,}/,                            // Stripe live key
+  /\b\w+:\/\/[^:\s/]+:[^@\s]+@/,                             // URL with embedded credentials
 ];
 
 // ── projectIdFor ──────────────────────────────────────────────────────────────
@@ -193,8 +199,25 @@ function stripFrontMatter(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
+// §6.B privacy hardening (v5.0.x): a keyword-less HIGH-ENTROPY token — a long
+// hex hash or API-key-shaped blob — that scanSecrets' keyworded patterns MISS
+// would otherwise survive verbatim as a postings/keyword TERM and reach the
+// global cross-project index + the claude -p rerank egress. Such tokens are
+// never legitimate BM25 search terms, so we drop them from the indexed
+// descriptor. Defense-in-depth LAYERED on top of scanSecrets (which still
+// redacts the whole entry when a keyworded pattern matches).
+function isHighEntropyToken(t) {
+  if (!t) return false;
+  if (/^[0-9a-f]{32,}$/.test(t)) return true;                       // hex hash / hex secret (≥32)
+  if (t.length >= 40 && /[0-9]/.test(t) && /[a-z]/.test(t)) return true; // long mixed-class blob
+  return false;
+}
+export function dropHighEntropy(tokens) {
+  return tokens.filter(t => !isHighEntropyToken(t));
+}
+
 function boundedPostings(bodyText) {
-  const tf = termFrequencies(tokenize(bodyText));
+  const tf = termFrequencies(dropHighEntropy(tokenize(bodyText)));
   const keys = Object.keys(tf);
   if (keys.length <= POSTINGS_CAP) return tf;
   // Keep top-N terms by tf to cap index size (§8 bounded-vocab guard).
@@ -225,7 +248,7 @@ function buildMarkdownEntry({ filePath, type, projectId, projectLabel, indexedAt
   } else {
     description = boundDescription(fields.description || firstNonHeadingLine(body));
     postings = boundedPostings(body);
-    keywords_top = extractKeywords(`${title} ${body}`, KEYWORDS_TOP);
+    keywords_top = dropHighEntropy(extractKeywords(`${title} ${body}`, KEYWORDS_TOP));
   }
 
   const entry = {
@@ -272,7 +295,7 @@ function buildPanelEntry({ filePath, projectId, projectLabel, indexedAt }) {
   } else {
     description = boundDescription(typeof rawDesc === 'string' ? rawDesc : JSON.stringify(rawDesc));
     postings = boundedPostings(fullText);
-    keywords_top = extractKeywords(`${title} ${description}`, KEYWORDS_TOP);
+    keywords_top = dropHighEntropy(extractKeywords(`${title} ${description}`, KEYWORDS_TOP));
   }
 
   const entry = {
@@ -371,7 +394,7 @@ function buildVerdictEntry({ rawText, sourcePath, slug, mtime, indexedAt }) {
   } else {
     description = boundDescription(typeof rawDesc === 'string' ? rawDesc : JSON.stringify(rawDesc));
     postings = boundedPostings(rawText);
-    keywords_top = extractKeywords(`${title} ${description}`, KEYWORDS_TOP);
+    keywords_top = dropHighEntropy(extractKeywords(`${title} ${description}`, KEYWORDS_TOP));
   }
 
   const entry = {
@@ -479,6 +502,12 @@ export function buildKnowledgeIndex({ home, projectRoot, now } = {}) {
     entries,
   };
 
+  // Sharding (design: shard by project_id above ~2000 docs) is not yet implemented.
+  // Warn (don't crash) so operators know when the single-file index starts to degrade.
+  if (index.doc_count > 2000) {
+    console.warn(`[prism-kb] knowledge index has ${index.doc_count} docs (>2000); still single-file — expect slower loads/parses until sharding lands.`);
+  }
+
   // Atomic write: tmp + renameSync (Windows/SMB safe; no PowerShell redirection).
   const tmp = `${indexPath}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmp, JSON.stringify(index));
@@ -491,6 +520,10 @@ export function buildKnowledgeIndex({ home, projectRoot, now } = {}) {
 // Guard on the exact basename so importing the same-suffixed test file does NOT trigger it.
 const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-kb-knowledge-indexer.mjs';
 if (invokedDirectly) {
+  if (process.argv.slice(2).some(a => a === '--help' || a === '-h')) {
+    console.log('Usage: prism-kb-knowledge-indexer.mjs\n  Builds the global cross-project knowledge index (~/.prism-kb/knowledge-index.json)\n  from the current project (cwd) when it carries a .prism-kb-share.json marker.');
+    process.exit(0);
+  }
   const home = process.env.HOME || process.env.USERPROFILE;
   const projectRoot = process.cwd();
   const idx = buildKnowledgeIndex({ home, projectRoot });

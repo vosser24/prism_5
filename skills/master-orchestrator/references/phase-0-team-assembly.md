@@ -45,6 +45,19 @@ For the current step's domain, check:
 This prevents creating agents for capabilities better external tools provide
 (compose-only stance: never replicate what external tools do well).
 
+**Free-research pre-check (v5.x) — before ANY @agent-factory dispatch that CREATES a new agent:**
+agent-factory's $0 research engine is NotebookLM; without it the factory silently
+falls back to Opus (~$1-3/agent). Because the factory runs as a subagent (which
+cannot prompt the human), this offer MUST happen here in the parent turn:
+- Run `command -v notebooklm`.
+- If ABSENT → use `AskUserQuestion`: "NotebookLM (free, $0 agent research) is not
+  installed. Install it now for $0 research (`pip install notebooklm-py[browser]`
+  + `notebooklm login`, or run `/prism-deps`), or proceed with Opus (~$1-3)?"
+  On accept: install (reuse `/prism-deps`'s protocol), confirm `notebooklm list`,
+  then dispatch the factory. On decline: dispatch anyway (Tier 3, user-informed).
+- If PRESENT → proceed directly.
+(Skip this pre-check for `--from-notebook` wiring, which already implies NotebookLM.)
+
 **Agent hiring flow:**
 - Agent missing → spawn @agent-factory for creation, wait, hire.
   Once @agent-factory is invoked, the factory's own "Decision tree:

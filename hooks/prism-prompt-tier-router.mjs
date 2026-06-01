@@ -76,6 +76,11 @@ function shouldInheritPreviousTier(prompt, previousSentinel) {
   const ageMs = previousSentinel.ts ? (Date.now() - new Date(previousSentinel.ts).getTime()) : Infinity;
   const isFresh = ageMs < 5 * 60 * 1000; // 5 min
 
+  // FIX-A (v5.x): an empty/whitespace prompt is a notification / non-user turn,
+  // not a real continuation — never inherit (would otherwise re-lock a panel
+  // turn on a turn the user never typed). v5.0 stress-test finding.
+  if (wordCount === 0) return false;
+
   return (isShort || isApproval) && isFresh;
 }
 
@@ -193,6 +198,11 @@ async function main() {
         source: 'continuation-inherit',
         rationale: `inherited from previous turn (${prevSentinel.tier}); short or approval-phrase`,
         dispatched: false, // reset dispatch flag for new turn
+        // FIX-A (v5.x): inherit the (expensive) TIER to keep work going, but
+        // NEVER re-summon a panel — the panel already fired on the original
+        // turn; carrying it forward deadlocks approval/continuation turns.
+        summon_panel: false,
+        orchestrator_dispatched: false,
       };
       try {
         const p = sentinelPath(sessionId);

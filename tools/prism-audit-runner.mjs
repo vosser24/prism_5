@@ -14,7 +14,7 @@
 //
 // Exit 0 on all-pass, 1 on any fail or runner error.
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -85,8 +85,24 @@ let pass = 0;
 let fail = 0;
 const results = [];
 
+// v5.x FIX-B: seed a per-session sentinel so stateful guards (dispatch-guard,
+// mutation-guard) can be exercised the way they fire in a live session. The
+// synthetic harness otherwise has no sentinel, so the guards short-circuit to
+// "allow" and the scenario can't test the deny path. Returns the path to clean.
+function seedSentinel(sc) {
+  if (!sc.setup_sentinel) return null;
+  const H = process.env.HOME || process.env.USERPROFILE;
+  if (!H) return null;
+  const sid = (sc.input_payload && sc.input_payload.session_id) || 'anon';
+  const p = join(H, '.claude', `.prism-turn-tier-${sid}.json`);
+  try { mkdirSync(dirname(p), {recursive: true}); writeFileSync(p, JSON.stringify(sc.setup_sentinel)); return p; }
+  catch { return null; }
+}
+
 function runScenario(targetPath, sc) {
+  const seeded = seedSentinel(sc);
   return new Promise((resolve) => {
+    const done = (res) => { if (seeded) { try { unlinkSync(seeded); } catch {} } resolve(res); };
     const proc = spawn('node', [targetPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
@@ -95,18 +111,23 @@ function runScenario(targetPath, sc) {
     let stderr = '';
     proc.stdout.on('data', d => stdout += d.toString());
     proc.stderr.on('data', d => stderr += d.toString());
-    proc.on('error', err => resolve({exit_code: -1, stdout, stderr, error: err.message}));
-    proc.on('close', exit_code => resolve({exit_code, stdout, stderr}));
+    proc.on('error', err => done({exit_code: -1, stdout, stderr, error: err.message}));
+    proc.on('close', exit_code => done({exit_code, stdout, stderr}));
     try {
       proc.stdin.write(JSON.stringify(sc.input_payload || {}));
       proc.stdin.end();
     } catch (err) {
       // stdin may be closed already; ignore
     }
-    const timeoutMs = sc.max_duration_ms || 5000;
+    // v5.x FIX-B: the kill timeout must clear Windows node cold-start (~1–3.5s)
+    // + git snapshot, or slow-but-correct hooks get SIGTERM'd → exit null → a
+    // FALSE failure. `max_duration_ms` is a soft latency budget (recorded in the
+    // result for reporting), NOT the kill deadline.
+    const KILL_FLOOR_MS = 12000;
+    const timeoutMs = Math.max(sc.max_duration_ms || 0, KILL_FLOOR_MS);
     setTimeout(() => {
       try { proc.kill('SIGTERM'); } catch {}
-    }, timeoutMs + 500); // grace period
+    }, timeoutMs);
   });
 }
 

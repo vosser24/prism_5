@@ -297,13 +297,23 @@ export async function recall(query, {forcedTier = null, json = false, verbose = 
   return formatEnvelope(envelope, {verbose});
 }
 
-function formatEnvelope(env, {verbose = false} = {}) {
+export function formatEnvelope(env, {verbose = false} = {}) {
   const lines = [];
   if (verbose) lines.push(`[classify] tier=${env.classification.tier} reason=${env.classification.reason}`);
   const r = env.result;
   if (env.classification.tier === 1) {
     if (r && r.text) lines.push(r.text.trimEnd());
-    else if (r && r.error) lines.push(`ERROR: ${r.error}`);
+    else if (r && r.error) {
+      // FIX-C (v5.x): the tier1Query error string may already begin with
+      // "ERROR:" — strip it before re-prefixing so we never emit "ERROR: ERROR:".
+      // And when the user explicitly asked for --cross-project, a missing Tier-1
+      // resource index (.prism-kb-index.json, a DIFFERENT subsystem than the F4
+      // knowledge index) is not what they asked about — demote it to a one-line
+      // note so it does not dominate the cross-project results they requested.
+      const msg = String(r.error).replace(/^ERROR:\s*/i, '');
+      if (env.crossProject) lines.push('(tier-1 semantic index unavailable — showing cross-project results only)');
+      else lines.push(`ERROR: ${msg}`);
+    }
     else lines.push('(no tier-1 result)');
   } else if (env.classification.tier === 2) {
     lines.push('State:');

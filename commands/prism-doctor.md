@@ -37,7 +37,10 @@ Run these in parallel where possible:
    ```
    If file missing: note as a symptom (router never ran or log was wiped).
 
-2. **Node availability** — `command -v node` and `node --version`.
+2. **Node availability** — detect by EXECUTION: `node --version` (a bare
+   `command -v node` only proves PATH resolution; AppLocker/WDAC can resolve the
+   path while denying the binary — [[feedback-applocker-exe-detection]]). If
+   `node --version` fails but the path resolves, report `blocked`, not missing.
 
 3. **prism.env presence + content** — does `~/.claude/prism.env` exist?
    Does it set `PRISM_NODE`?

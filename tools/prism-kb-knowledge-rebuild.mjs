@@ -108,6 +108,10 @@ export function runKnowledgeRebuild({ home, roots, dirtyFlagPath, now, clearFlag
 const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-kb-knowledge-rebuild.mjs';
 if (invokedDirectly) {
   const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('Usage: prism-kb-knowledge-rebuild.mjs [--sync] [--quiet]\n  Drains the knowledge-dirty flag and rebuilds the global cross-project knowledge\n  index (~/.prism-kb/knowledge-index.json) over all .prism-kb-share.json roots.');
+    process.exit(0);
+  }
   const quiet = args.includes('--quiet');
   const home = process.env.HOME || process.env.USERPROFILE;
   const { roots, index } = runKnowledgeRebuild({ home });

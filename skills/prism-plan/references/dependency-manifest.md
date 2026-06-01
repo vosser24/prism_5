@@ -13,6 +13,17 @@ detection check.
 Core requirements are checked by `scripts/verify.mjs` and not managed here.
 This manifest covers **optional** dependencies only.
 
+**Detection convention (read before running any `Check:`).** Detect every tool
+by **execution**, never by a bare PATH probe. `command -v <tool>` / `where
+<tool>` / `which <tool>` only prove a name resolves on PATH — under Windows
+AppLocker/WDAC the PATH resolves while the `.exe` is **denied**, so a PATH-only
+check FALSE-POSITIVES "installed" and the tool then fails at runtime (v5.x
+finding, [[feedback-applocker-exe-detection]]). So run the tool's `--version`
+(or `python -m <pkg> --version`). If the name resolves but execution fails,
+record **`blocked`** (not `installed`). For pip-installed tools prefer the
+`python -m <pkg>` form over the bare console-script `.exe`, which is the exact
+surface AppLocker denies.
+
 ---
 
 ## Tier A — Agent research & persistence
@@ -23,7 +34,10 @@ This manifest covers **optional** dependencies only.
   consolidation of agent notes into RAG-queryable sources.
 - **Used by:** `@agent-factory` (primary research engine),
   `/prism-archive`, `@master-orchestrator` PHASE 0a inventory.
-- **Check:** `command -v notebooklm` (POSIX) / `where notebooklm` (Windows)
+- **Check (by execution):** `notebooklm --version` ‖ `python -m notebooklm --version`.
+  `python -m notebooklm` is the canonical invocation — the bare `notebooklm.exe`
+  is AppLocker/WDAC-denied on locked-down domain boxes even when installed. PATH
+  resolves but neither runs → record `blocked`.
 - **Install:**
   - All platforms: `pip install notebooklm-py[browser]`
   - Also run: `notebooklm login` (one-time Google OAuth)
@@ -40,7 +54,7 @@ This manifest covers **optional** dependencies only.
 - **Capability:** audio mixing, format conversion, final video encode.
 - **Used by:** `skills/video-production/` pipeline, `/prism-app-expert`
   composite renders.
-- **Check:** `command -v ffmpeg`
+- **Check (by execution):** `ffmpeg -version`
 - **Install:**
   - macOS: `brew install ffmpeg`
   - Linux (Debian/Ubuntu): `sudo apt install ffmpeg`
@@ -53,8 +67,8 @@ This manifest covers **optional** dependencies only.
 
 - **Capability:** voiceover generation for video-production.
 - **Used by:** `skills/video-production/`
-- **Check:**
-  - CLI: `command -v kokoro` or `python -c "import kokoro_onnx"`
+- **Check (by execution):**
+  - CLI: `kokoro --version` or `python -c "import kokoro_onnx"`
   - Models: `kokoro-v1.0.onnx` (~330 MB) + `voices-v1.0.bin` (~5 MB)
 - **Install:**
   - `pip install kokoro-onnx`
@@ -96,7 +110,7 @@ This manifest covers **optional** dependencies only.
 
 - **Capability:** `/prism-audit` can check for leaked secrets in public
   mirrors; `@master-orchestrator` can reference PR history when scoping.
-- **Check:** `command -v gh`
+- **Check (by execution):** `gh --version`
 - **Install:**
   - macOS: `brew install gh`
   - Linux: see cli.github.com
@@ -107,7 +121,7 @@ This manifest covers **optional** dependencies only.
 
 - **Capability:** shell-script JSON munging inside hook tests; some
   `/prism-recommend` fit-score probes use `jq` if available.
-- **Check:** `command -v jq`
+- **Check (by execution):** `jq --version`
 - **Install:**
   - macOS: `brew install jq`
   - Linux: `apt install jq` / `dnf install jq`
@@ -137,5 +151,6 @@ and waits for user approval.
 ## Auth-required deps
 
 `notebooklm-py` requires a one-time `notebooklm login` after install.
-`/prism-deps` detects this by running `notebooklm list` post-install and
-flags if it fails — but does NOT automate the OAuth flow (browser-based).
+`/prism-deps` detects this by running `python -m notebooklm list` post-install
+(the AppLocker-safe form) and flags if it fails — but does NOT automate the
+OAuth flow (browser-based).

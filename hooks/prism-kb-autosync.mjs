@@ -101,17 +101,17 @@ function collectPaths(ti) {
 function appendDirtyTo(flagPath, paths) {
   try {
     mkdirSync(dirname(flagPath), {recursive: true});
-    const existing = new Set();
-    if (existsSync(flagPath)) {
-      for (const line of readFileSync(flagPath, 'utf-8').split('\n')) {
-        if (line.trim()) existing.add(line.trim());
-      }
-    }
+    // Append-only: dedup just within THIS call (cheap, in-memory). We intentionally
+    // do NOT read+dedup against the existing flag file on every PostToolUse turn —
+    // the drain (runKnowledgeRebuild) derives roots through a Set and rebuilds from
+    // directories, so duplicate path-lines are harmless. Saves one readFileSync/turn
+    // (matters on SMB-mounted trees). [v5.0 review P3]
+    const seen = new Set();
     const added = [];
     for (const p of paths) {
       const abs = resolve(p);
-      if (!existing.has(abs)) {
-        existing.add(abs);
+      if (!seen.has(abs)) {
+        seen.add(abs);
         added.push(abs);
       }
     }

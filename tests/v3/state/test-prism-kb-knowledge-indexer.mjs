@@ -90,6 +90,14 @@ check('scanSecrets: AKIA key => redacted', scanSecrets('AKIA1234567890ABCDEF').r
 check('scanSecrets: BEGIN PRIVATE KEY => redacted', scanSecrets('-----BEGIN RSA PRIVATE KEY-----').redacted === true);
 check('scanSecrets: api_key=... => redacted', scanSecrets('api_key=supersecret123').redacted === true);
 check('scanSecrets: password: ... => redacted', scanSecrets('password: hunter2xyz').redacted === true);
+// S1 (v5.0 review): keyword-less / URL-embedded secrets the original 5 patterns missed.
+check('scanSecrets: slack token => redacted', scanSecrets('bot xoxb-123456789012-abcdefABCDEF0987').redacted === true);
+check('scanSecrets: google api key => redacted', scanSecrets('AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q').redacted === true);
+check('scanSecrets: JWT => redacted', scanSecrets('token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.abc123def').redacted === true);
+check('scanSecrets: stripe live key => redacted', scanSecrets('sk_live_abcd1234EFGH5678ijkl').redacted === true);
+check('scanSecrets: connection string with creds => redacted', scanSecrets('postgres://admin:s3cr3tpw@db.example.com:5432/mydb').redacted === true);
+// Negative control: a plain URL with no embedded credentials must NOT redact.
+check('scanSecrets: plain url => not redacted', scanSecrets('see https://example.com/docs/page for details').redacted === false);
 
 // ── default-deny: no marker => 0 project entries for that project_id ─────────
 {
@@ -185,6 +193,31 @@ check('scanSecrets: password: ... => redacted', scanSecrets('password: hunter2xy
   const pid = projectIdFor(root);
   const e = idx.entries.find(x => x.project_id === pid && x.type === 'lesson');
   check('descriptor-not-body: tokenized posting key is allowed', !!(e && e.postings && Object.keys(e.postings).length > 0));
+}
+
+// ── HIGH-ENTROPY TOKEN LEAK (HARD, §6.B): a keyword-less secret that scanSecrets'
+//    keyworded patterns MISS must still not survive verbatim in the egress index.
+//    Defense-in-depth: long hex hashes / API-key-shaped blobs are dropped from
+//    postings + keywords (they are never legitimate BM25 search terms), so they
+//    never reach the global cross-project index or claude -p rerank egress.
+{
+  const home = freshHome();
+  const root = freshProject('entropy');
+  const hexSecret = 'a3f9c1e8b7d24056af3e9c1b8d7f2046a3f9c1e8b7d24056af3e9c1b8d7f2046'; // 64-hex, keyword-less
+  const blobSecret = 'qwxhzgrpbjpvcgvuu2vzyw1lmtizndu2nzg5mefcq0rfrkdisuo';                 // 51-char mixed blob
+  // scanSecrets does NOT flag these (confirms the keyword-less gap they close).
+  check('high-entropy: scanSecrets misses bare hex (keyword-less gap)', scanSecrets(hexSecret).redacted === false);
+  makeCorpus(root, { lesson: `# Entropy Lesson\nbenign summary line for description.\nnormal prose then ${hexSecret} and ${blobSecret} embedded.` });
+  writeShare(root, ['lesson']);
+  const idx = buildKnowledgeIndex({ home, projectRoot: root, now: NOW });
+  const json = JSON.stringify(idx);
+  check('high-entropy: 64-hex secret ABSENT from egress index', !json.includes(hexSecret));
+  check('high-entropy: mixed blob secret ABSENT from egress index', !json.includes(blobSecret));
+  const pid = projectIdFor(root);
+  const e = idx.entries.find(x => x.project_id === pid && x.type === 'lesson');
+  check('high-entropy: hex not a posting key', e && !Object.keys(e.postings || {}).some(k => k.includes(hexSecret)));
+  // GUARD: ordinary words on the same line must still be indexed (no over-drop).
+  check('high-entropy: normal terms still indexed (no over-drop)', e && Object.keys(e.postings || {}).includes('embedded'));
 }
 
 // ── cross-project merge: two roots both sharing lesson ───────────────────────
