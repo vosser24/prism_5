@@ -138,7 +138,10 @@ try {
   // in-session escape from a (possibly false-positive) panel/dispatch block.
   // It MUST stay writable even when work tools are denied — otherwise the
   // override is unreachable and the turn deadlocks (v5.0 stress-test finding).
-  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
+  // FIX-A2 (v5.x): Read MUST be included — the Write tool requires a prior Read
+  // when the override file already exists (it does; the router writes it every
+  // turn), so omitting Read re-deadlocks the documented escape. (finding #1, live-repro 2026-06-02)
+  if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
     const fp = String(input.tool_input?.file_path || '');
     if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) process.exit(0);
   }

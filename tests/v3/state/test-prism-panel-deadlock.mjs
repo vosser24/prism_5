@@ -59,6 +59,10 @@ const panelSentinel = (sessionId) => ({
   tier: 'opus', summon_panel: true, orchestrator_dispatched: false, dispatched: false,
   source: 'keyword-floor', rationale: 'test panel turn', ts: new Date().toISOString(),
 });
+const haikuSentinel = (sessionId) => ({
+  tier: 'haiku', summon_panel: false, orchestrator_dispatched: false, dispatched: false,
+  source: 'keyword-floor', rationale: 'test haiku turn', ts: new Date().toISOString(),
+});
 
 // ── A1: override file is writable on a panel turn (escapability) ──────────────
 test('dispatch-guard: ALLOWS Write to the .prism-turn-tier override file on a panel turn', () => {
@@ -94,6 +98,43 @@ test('mutation-guard: ALLOWS Edit to the .prism-turn-tier override file on a pan
       tool_input: {file_path: sentinelPath(home, sid), old_string: 'a', new_string: 'b'},
     });
     assertEq(r.status, 0, 'override-file Edit must be allowed by mutation-guard');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── A1-R: override file is READABLE on a denied turn (the real deadlock) ──────
+test('dispatch-guard: ALLOWS Read of the .prism-turn-tier override file on a haiku turn', () => {
+  const home = makeHome(); const sid = 'sess-a1r';
+  try {
+    seedSentinel(home, sid, haikuSentinel(sid));
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Read', session_id: sid,
+      tool_input: {file_path: sentinelPath(home, sid)},
+    });
+    assertEq(r.status, 0, 'override-file Read must be allowed — Write requires a prior Read, else the escape deadlocks');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: STILL denies Read of a normal file on a haiku turn (control)', () => {
+  const home = makeHome(); const sid = 'sess-a1rc';
+  try {
+    seedSentinel(home, sid, haikuSentinel(sid));
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Read', session_id: sid,
+      tool_input: {file_path: join(home, 'some-real-file.txt')},
+    });
+    assertEq(r.status, 2, 'normal Read must still be blocked on a haiku no-dispatch turn');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: ALLOWS Read of the override file on a panel turn too', () => {
+  const home = makeHome(); const sid = 'sess-a1rp';
+  try {
+    seedSentinel(home, sid, panelSentinel(sid));
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Read', session_id: sid,
+      tool_input: {file_path: sentinelPath(home, sid)},
+    });
+    assertEq(r.status, 0, 'override-file Read must be allowed on panel turns as well');
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
