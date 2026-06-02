@@ -45,7 +45,7 @@ export const SONNET_SIGNALS = [
   /\b(port|migrate)\s+(from|to)\b/,
   /\b(fix|patch)\s+(this|the)\s+(bug|issue)\b/,
   /\b(create|build|scaffold|generate)\s+(a|an|the)\s+(skill|hook|component|agent|module|page|endpoint|api|route|script|tool)\b/,
-  /\b(implement|write|add)\s+(a|an|the)\s+(\w+\s+){0,3}(feature|function|endpoint|component|utility|page|handler)\b/,
+  /\b(implement|write|add)\s+(a|an|the)\s+(\w+\s+){0,3}(feature|function|endpoint|component|utility|page|handler|field|model|column|method|migration|attribute|property|serializer|middleware|validator|validation|fixture|route|setting)\b/,
 ];
 
 export const OPUS_SIGNALS = [
@@ -76,6 +76,12 @@ export const PANEL_SIGNALS = [
   /\b(expert panel|architect panel|panel of)/,
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
 ];
+
+// UAT-3/5 (2026-06-02): EXPLICIT user requests for a panel. Honoring explicit
+// intent is SAFE — it is not an ambient false-positive (the class that caused
+// the v5.0 finding-#1 deadlock), it is exactly what the user asked for. Kept
+// narrow so benign "admin/control/solar/settings panel" nouns don't trip it.
+export const EXPLICIT_PANEL_RE = /\b(?:summon|convene|run)\s+(?:the\s+|an?\s+)?(?:expert\s+|adversarial\s+)?panel\b|\b(?:expert|adversarial)\s+panel\b|\bpanel\s+review\b|(?:^|\s)[!/]panel\b|\bPRISM\s+this\b/i;
 
 // D1 — high-stakes work: migrations, destructive ops, security, money. These
 // bias toward opus + mandatory panel independent of length-based tier floor.
@@ -200,6 +206,8 @@ export function detectCompound(prompt, description) {
 // involvement without needing the Opus API.
 export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
   const hay = `${prompt || ''} ${description || ''}`;
+  // UAT-3/5: explicit user request for a panel — honor it directly.
+  if (EXPLICIT_PANEL_RE.test(hay)) return true;
   const panelHit = PANEL_SIGNALS.some(r => r.test(hay));
   if (panelHit) return true;
   if (detectStakes(prompt, description)) return true;

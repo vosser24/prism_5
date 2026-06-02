@@ -65,5 +65,19 @@ block('B8 rm -f of a SYSTEM path',         'rm -f /etc/hosts');
 block('B9 interpreter eval python -c',     `python -c "import os; os.system('rm -rf /')"`);
 block('B10 force push to a branch',        'git push origin main --force');
 
+// ── rm -rf TARGET-AWARENESS (UAT-4): a specific relative subdir is routine
+//    dev cleanup → ALLOW; dangerous targets (root/home/glob/traversal/abs) BLOCK.
+allow('A1 rm -rf a named build dir',        'rm -rf ./build');
+allow('A2 rm -rf node_modules',             'rm -rf node_modules');
+allow('A3 rm -rf a nested relative dir',    'rm -rf dist/assets');
+allow('A4 rm -rf a dotted scratch dir',     'rm -rf .uat-sandbox-home');
+allow('A5 rm -rf two named relative dirs',  'rm -rf build dist');
+block('B11 rm -rf bare home tilde',         'rm -rf ~');
+block('B12 rm -rf glob star',               'rm -rf *');
+block('B13 rm -rf an env-var path',         'rm -rf $HOME/data');
+block('B14 rm -rf the cwd dot',             'rm -rf .');
+block('B15 rm -rf an absolute system path', 'rm -rf /var/lib/postgres');
+block('B16 rm -rf with no operand (bare)',  'rm -rf');
+
 console.log(`\n${pass} passed, ${total - pass} failed (${total} total)`);
 process.exit(pass === total ? 0 : 1);

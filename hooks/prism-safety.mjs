@@ -27,7 +27,10 @@ const blockedRaw=[
 // Shell-command-position dangers — scanned against the de-quoted view unless an
 // eval-wrapper is present.
 const blockedCmd=[
-  [/rm\s+-rf(?:[\s/]|$)/i, 'rm -rf blocked by PRISM safety gate'],
+  // NOTE: `rm -rf` is handled by the target-aware rmRfDanger() check below — it
+  // ALLOWS a specific relative subdir (routine `rm -rf ./build` / `node_modules`)
+  // but BLOCKS root / ~ / $VAR / glob / parent-traversal / absolute / bare
+  // targets (UAT-4, 2026-06-02). The old blanket regex blocked ALL rm -rf.
   // recursive/force rm onto traversal or SYSTEM paths. `~` (the user's OWN home)
   // dropped from the path class: a non-recursive `rm -f ~/file` is routine
   // cleanup, and recursive home removal is already caught by the rm -rf rule.
@@ -59,6 +62,39 @@ for(const [pattern, reason] of blockedCmd){
     process.stderr.write(reason);
     process.exit(2);
   }
+}
+
+// UAT-4: target-aware `rm -rf`. Allow a specific relative subdirectory (routine
+// cleanup like `rm -rf ./build` or `rm -rf node_modules`); block dangerous or
+// unverifiable targets — root, ~, $VAR expansion, glob, parent-traversal,
+// absolute/system paths, or a bare `rm -rf` with no operand. Runs on cmdScan
+// (de-quoted unless an eval-wrapper is present, same as the rules above).
+function rmRfTargetDangerous(t){
+  if(!t) return true;                          // bare / de-quoted-to-empty → can't verify
+  if(t.startsWith('-')) return true;           // another flag, no clear operand
+  t=t.replace(/^["']+|["']+$/g,'');            // strip quote residue
+  if(!t) return true;
+  if(/[~*$]/.test(t)) return true;             // home, glob, env-var expansion
+  if(t.startsWith('/')) return true;           // absolute (system risk)
+  if(/(^|\/)\.\.(\/|$)/.test(t)) return true;  // parent traversal
+  if(t==='.'||t==='./') return true;           // current working directory
+  return false;                                // a specific relative path → safe
+}
+function rmRfDanger(s){
+  const re=/\brm\b((?:\s+-[a-zA-Z]+)*)(?:\s+([^\s;|&<>]*))?/g;
+  let m;
+  while((m=re.exec(s))!==null){
+    const flags=m[1]||'';
+    const hasR=/-[a-z]*r/i.test(flags);
+    const hasF=/-[a-z]*f/i.test(flags);
+    if(hasR&&hasF&&rmRfTargetDangerous(m[2]||'')) return true;
+    if(re.lastIndex===m.index) re.lastIndex++;  // guard against zero-width match
+  }
+  return false;
+}
+if(rmRfDanger(cmdScan)){
+  process.stderr.write('rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)');
+  process.exit(2);
 }
 
 // Warning patterns — allow but add context (Claude sees stdout)

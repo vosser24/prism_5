@@ -177,7 +177,7 @@ if (wantJson) {
   process.stdout.write(JSON.stringify(result, null, 2));
 } else {
   console.log(`PRISM SessionStart context audit — measured at ${result.measured_at}`);
-  console.log(`Total tax (enabled plugins only): ~${result.total_tokens_est.toLocaleString()} tokens (~$${result.total_cost_opus_usd} per session on Opus input)`);
+  console.log(`Total tax (enabled plugins only): ~${result.total_tokens_est.toLocaleString('en-US')} tokens (~$${result.total_cost_opus_usd} per session on Opus input)`);
   console.log('');
   console.log('Per-plugin breakdown:');
   for (const p of result.plugins) {
