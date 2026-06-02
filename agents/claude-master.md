@@ -827,8 +827,6 @@ Source: https://code.claude.com/docs/en/prompt-caching, https://code.claude.com/
 ### Commit conventions
 
 - **HEREDOC for multi-line messages.**
-- End with `Co-Authored-By: Claude <noreply@anthropic.com>` (configurable via
-  `attribution.commit` setting).
 - **Add specific files** — not `git add -A` or `git add .` (may sweep `.env`).
 - **Never `--no-verify`** — skips hooks.
 - **Never `git push --force` to main/master** — warn loudly if asked.

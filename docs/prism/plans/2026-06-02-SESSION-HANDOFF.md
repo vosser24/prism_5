@@ -83,7 +83,7 @@ node tests/v3/state/test-prism-{phase-0d-oob,panel-deadlock,dispatch-cap,roster-
 After P2–P4 green: `node tools/prism-installer.mjs install` (re-sync live) → `node tools/prism-installer.mjs verify` → `node tools/prism-audit-runner.mjs` (expect 29/29).
 
 ## COMMIT GUIDANCE (when user approves)
-Working tree holds two features. Suggested: ONE commit for v5.0 panel + sync, ONE for v5.1 master-default+lifecycle (or a single `feat(prism): v5.0 real panels + v5.1 project-master-default + claude-mem-aware memory`). Co-Authored-By footer per repo rule. Branch `feat/v5.0`. Do NOT force-push; user hasn't asked to push.
+Working tree holds two features. Suggested: ONE commit for v5.0 panel + sync, ONE for v5.1 master-default+lifecycle (or a single `feat(prism): v5.0 real panels + v5.1 project-master-default + claude-mem-aware memory`). Branch `feat/v5.0`. Do NOT force-push; user hasn't asked to push.
 
 ## POINTERS
 - v5.0 plan (items 1–9, all ✅ + review): `docs/prism/plans/2026-06-02-independent-agent-panel-design.md`
