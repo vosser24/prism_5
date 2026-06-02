@@ -242,7 +242,6 @@ Adds 8 tests for the two new tools/prism-clean.mjs subcommands locked in
 D004 §H — happy path, 10-trim, 25 KB refusal, missing-MEMORY refusal,
 date validation. All currently FAIL; Task 2 implements the subcommands.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -463,7 +462,6 @@ Implements two of the three deliverables for D004 §H. The third
 (/prism-deep-dive --upgrade <slug> with diff preview) lands in Tasks
 4-5 of the same plan.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -542,7 +540,6 @@ pointer append, every lessons-tactical entry triggers a lesson pointer
 append. Exit-code handling for missing MEMORY.md (project not deep-dived)
 and >25 KB cap (router needs re-synth) is documented inline.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -716,7 +713,6 @@ the same body-generation logic verbatim.
 This is the no-side-effects primitive that commands/prism-deep-dive.md
 --upgrade <slug> mode wraps with AskUserQuestion confirmation in Task 5.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -824,7 +820,6 @@ covers missing-file and no-diff cases without surprise writes.
 This is the third and final D004 §H deliverable. Per-quarter auto-rerun
 stays deferred to v4.1 per D004 §5.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -884,7 +879,6 @@ the dev-install needs an explicit re-sync to pick them up. Adds a single
 row clarifying which files moved and that the cleanup commands are
 unchanged.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```

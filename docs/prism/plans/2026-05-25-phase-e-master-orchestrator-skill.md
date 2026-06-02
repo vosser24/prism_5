@@ -141,7 +141,6 @@ Asserts agents/master-orchestrator.md body is the canonical
 Test currently FAILS (body is still 600+ lines of inlined protocol);
 Task 2 + 3 of Phase E make it pass by migrating the body to a skill.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -236,7 +235,6 @@ wrapper.
 D004 §3 lock: "single source of truth for orchestration protocol;
 per-project memory stays per-project."
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -322,7 +320,6 @@ D004 §3 lock implemented in full. Phase D agents that picked up the
 inline-fallback body (master-competition-agents.md on testbed) will be
 regenerated on next /prism-deep-dive run with the default flip in Task 4.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -441,7 +438,6 @@ New test locks the default behavior so a future regression can't silently
 revert. The existing explicit-mode tests for --orchestrator-protocol=inline
 and --orchestrator-protocol=skill-ref continue to pass unchanged.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -502,7 +498,6 @@ docs(prism): update dev-install inventory for Phase E skill (master-orchestrator
 Adds the new skills/master-orchestrator/ subtree to the dev-install
 sync list and cleanup commands.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
