@@ -56,6 +56,54 @@ revision gets tested empirically before the plan commits to it.
 See: ~/.claude/skills/prism-plan/references/adversarial-review.md
 for the full protocol, common challenge patterns, and examples.
 
+## Real multi-agent dispatch (v5.x — default for NOVEL / high-stakes)
+
+The panel is NOT single-model role-play by default. As the session-level
+project-master (the sole dispatcher — STEP 0: subagent dispatch is main-loop-only)
+you DISPATCH one real subagent per seat:
+
+1. **Dispatch all seats in parallel** — one `Agent()` call per expert seat, each
+   with the request + its assigned (opposed) bias + the expert's recalled domain
+   memory. Separate context windows produce genuine disagreement, not self-critique.
+   Record the real agentId each dispatch returns as that position's
+   `dispatched_agent_id`.
+2. **Cross-challenge round** — give each expert the OTHERS' positions and require
+   ≥2 substantive challenges to other seats (the floor above). Because the experts
+   are independent contexts, these are real challenges, not one model arguing with
+   itself.
+3. **Synthesize** — you adjudicate surviving/revised positions into the plan with
+   explicit exclusions + reasons.
+
+Set `dispatch_mode: "dispatch"` and a real, UNIQUE `dispatched_agent_id` on every
+position. The `prism-panel-guard.mjs` hook BLOCKS (exit 2) a panel that claims
+`dispatch_mode: "dispatch"` but records zero / partial / duplicate ids — i.e.
+role-play masquerading as dispatch.
+
+**Opt-in fast mode (role-play → literal token `dispatch_mode: "roleplay"`, one word, no hyphen):** when `PRISM_PANEL_MODE=roleplay` (or a low-stakes
+tier / explicit user request) you MAY run the legacy in-context role-play — one
+model voicing every seat. Set `dispatch_mode: "roleplay"`; no `dispatched_agent_id`
+is required. This is the cost/latency escape, not the default.
+
+**No-project-master fallback:** if you are the dispatched `@master-orchestrator`
+wrapper (not a session-level project-master) you CANNOT dispatch experts (STEP 0).
+Degrade to `dispatch_mode: "roleplay"` and advise the user to run `/prism-deep-dive`
+so a session-level master can chair a real dispatched panel.
+
+## Cost guardrails (v5.x — keep default real-dispatch affordable)
+
+- **Seat cap:** default **3** seats, max **5**. More seats rarely adds independent
+  signal and multiplies cost.
+- **Model defaults:** **opus** chair (you); seats default **sonnet**; **haiku** for
+  scout-type seats; workers sized to the task (haiku scan / sonnet implement / opus
+  only for architecture).
+- **Parallel dispatch:** dispatch all seats in ONE message — wall-clock = slowest
+  seat, not the sum.
+- **Reuse to amortize:** prefer rostered experts (and their persisted memory +
+  owned skills) over creating new ones — reuse pays back creation + re-learning cost.
+- **Estimate first:** before a full real-dispatch panel, offer the user a one-line
+  cost estimate (≈ seats × seat-model + workers). Let them downshift to
+  `PRISM_PANEL_MODE=roleplay` if the task doesn't warrant real dispatch.
+
 ## Panel.json write (v4.4 NEW — closes A4/F1 0d→1.5 cross-link)
 
 At end of PHASE 0d, BEFORE proceeding to tensions and synthesis, write the panel state to `~/.claude/.prism-task-<task-id>/panel.json` for downstream OOB PHASE 1.5 reviewer pickup. Atomic write (tempfile + rename); fail-open (if write fails, log to stderr but continue).
@@ -66,11 +114,13 @@ Schema:
 {
   "schema_version": 1,
   "task_id": "20260526-a3f7",
+  "dispatch_mode": "dispatch",          // "dispatch" (default) | "roleplay" (opt-in fast mode)
   "positions": [
     {
       "position_id": "pos-1",
       "expert_name": "Claude Code product expert",
       "specialist": "@claude-master",
+      "dispatched_agent_id": "a168f7095456bfffc",  // real agentId from the seat's Agent() call (dispatch mode only; UNIQUE per seat)
       "challenges": [
         {
           "id": "ch-1",
@@ -84,7 +134,7 @@ Schema:
 }
 ```
 
-One position object per SURVIVING expert. `specialist` is the agent name that will be dispatched to fulfill the position (if not yet known, leave as `null` and OOB reviewer falls through to no-cross-link mode for that position).
+One position object per SURVIVING expert. `specialist` is the agent name that will be dispatched to fulfill the position (if not yet known, leave as `null` and OOB reviewer falls through to no-cross-link mode for that position). `dispatch_mode` records whether the panel ran as real per-seat dispatch or the opt-in role-play fast mode; in `"dispatch"` mode every position MUST carry a real, unique `dispatched_agent_id` (the guard blocks otherwise). Omitting `dispatch_mode` is treated as a legacy (pre-v5.x) panel and left unenforced.
 
 Bash one-liner to write atomically:
 

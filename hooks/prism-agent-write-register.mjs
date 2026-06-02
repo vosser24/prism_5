@@ -194,6 +194,10 @@ async function registerAgent(agentPath) {
       default_model: null,
       pending_upgrade: null,
       team_id: null,
+      // v5.x — persistent/learning panel experts (additive; inert defaults).
+      learns: false,                 // true once the expert accumulates per-project domain memory
+      domain_memory_file: null,      // path to the expert's per-project domain-memory doc (master-brokered)
+      owned_skills: [],              // skills this expert authored/owns (equipped to its workers)
       description,
       agent_path: agentPath,
       auto_registered: true,

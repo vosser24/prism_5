@@ -86,6 +86,7 @@ const opts = {
   force: false,
   skipDiscover: false,
   withDeepDive: false,
+  noMaster: false,
   noGitGuard: false,
 };
 const positional = [];
@@ -97,7 +98,8 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--dry-run') opts.dryRun = true;
   else if (a === '--force') opts.force = true;
   else if (a === '--skip-discover') opts.skipDiscover = true;
-  else if (a === '--with-deep-dive') opts.withDeepDive = true;
+  else if (a === '--with-deep-dive') opts.withDeepDive = true;  // v5.1: accepted no-op (project-master is now default-on)
+  else if (a === '--no-master') opts.noMaster = true;
   else if (a === '--no-git-guard') opts.noGitGuard = true;
   else if (a === '--no-telemetry') opts.noTelemetry = true;
   else if (a === '--meta') named.meta = args[++i];
@@ -129,7 +131,9 @@ Commands:
   set-telemetry-consent <on|off> [--home <path>]
 
 Phases (v2 schema): ${PHASES.join(' | ')}
-project-master is opt-in: planner skips it unless --with-deep-dive is set.
+project-master is DEFAULT-ON (v5.1): bootstrap auto-creates master-<slug> as the
+session agent (the prerequisite for real dispatched panels). Pass --no-master to
+opt out. --with-deep-dive is an accepted no-op.
 Statusline + telemetry-consent commands bypass the .git/ guard (they
 operate on $HOME/.claude/, not a project root). The --no-telemetry flag
 flips set-telemetry-consent's default during the bootstrap health phase.
@@ -157,9 +161,10 @@ function planPhases(state) {
   const plan = [];
   for (const p of PHASES) {
     if (p === 'discovery' && opts.skipDiscover) continue;
-    // D004 §3 + §4: project-master is opt-in. Default plan skips it; users
-    // who want the deep-dive flow re-run with --with-deep-dive.
-    if (p === 'project-master' && !opts.withDeepDive) continue;
+    // v5.1: project-master is DEFAULT-ON (prerequisite for real dispatched
+    // panels — STEP 0). --no-master opts out. (--with-deep-dive kept as an
+    // accepted no-op for back-compat.)
+    if (p === 'project-master' && opts.noMaster) continue;
     if (opts.force) {
       plan.push(p);
     } else if (!isPhaseCompleted(state, p)) {
@@ -673,56 +678,77 @@ try {
     }
 
     case 'phase-project-master': {
-      // v4.0 Phase D wiring. Opt-in only — refuse unless --with-deep-dive is set.
-      // The bootstrap helper cannot run AskUserQuestion, so it requires
-      // slug-derive --source auto to succeed non-interactively. If that fails
-      // (generic basename, no CLAUDE.md identity), the user must run
-      // /prism-deep-dive directly (which can prompt).
-      if (!opts.withDeepDive) {
-        die('phase-project-master is opt-in. Pass --with-deep-dive to run.', 6);
+      // v5.1: DEFAULT-ON. The project-master is the prerequisite for real
+      // dispatched panels (STEP 0: dispatch is main-loop-only). Bootstrap
+      // creates master-<slug> fully non-interactively (slug-derive +
+      // agent-write + memory-seed + settings-write). --no-master opts out.
+      // --with-deep-dive is an accepted no-op (back-compat). slug-derive exit 6
+      // (generic basename, no CLAUDE.md identity) still falls back to
+      // /prism-deep-dive, which can prompt.
+      if (opts.noMaster) {
+        stdout.write('project-master phase: skipped via --no-master\n');
+        break;
       }
       const state = loadStateOrDie();
       const markStarted = markPhaseStarted(state, 'project-master');
       writeStateAtomic(opts.root, setLastCommand(markStarted, 'bootstrap:project-master'));
 
-      // Resolve the deep-dive helper path relative to this file's own dir.
-      // Use fileURLToPath so Windows drive letters resolve correctly
-      // (raw .pathname yields "/Y:/..." which Node mis-resolves to "Y:\Y:\...").
+      // Resolve the deep-dive helper relative to this file's own dir. Use
+      // fileURLToPath so Windows drive letters resolve correctly (raw .pathname
+      // yields "/Y:/..." which Node mis-resolves to "Y:\Y:\...").
       const helperPath = fileURLToPath(new URL('./prism-deep-dive.mjs', import.meta.url));
-      const slugRes = spawnSync(process.execPath, [helperPath, 'slug-derive', '--source', 'auto', '--root', opts.root], {encoding: 'utf8'});
+      const dd = (...a) => spawnSync(process.execPath, [helperPath, ...a, '--root', opts.root], {encoding: 'utf8'});
+
+      const slugRes = dd('slug-derive', '--source', 'auto');
       if (slugRes.status === 6) {
         // Generic basename or no identity → the slash command must drive (it can prompt).
         stdout.write(
           `project-master phase: slug needs user prompting (basename is generic, no CLAUDE.md identity).\n` +
           `  Run /prism-deep-dive to complete this phase interactively.\n`
         );
-        // Do NOT mark complete — slash command will close it.
-        break;
+        break;  // do NOT mark complete — the slash command will close it
       }
       if (slugRes.status !== 0) {
         die(`slug-derive failed: ${slugRes.stderr || slugRes.stdout}`, 1);
       }
       const slugInfo = JSON.parse(slugRes.stdout);
+      const slug = slugInfo.slug;
 
-      // We've derived the slug non-interactively. But we STILL don't drive the
-      // discovery + AskUserQuestion turn here (bootstrap is helper-only). Tell
-      // the user to run /prism-deep-dive — but seed the phase with the slug so
-      // the slash command picks it up from state.
-      stdout.write(
-        `project-master phase: slug locked (${slugInfo.slug} via ${slugInfo.source}).\n` +
-        `  Run /prism-deep-dive to complete agent generation interactively.\n`
-      );
+      // Create the agent file. exit 7 = already exists → idempotent skip; in
+      // that case we MUST NOT re-seed MEMORY.md (it may carry learned knowledge).
+      const agentRes = dd('agent-write', '--slug', slug);
+      const freshlyCreated = agentRes.status === 0;
+      if (agentRes.status !== 0 && agentRes.status !== 7) {
+        die(`agent-write failed: ${agentRes.stderr || agentRes.stdout}`, 1);
+      }
 
-      // Persist slug to state but mark the phase complete from the bootstrap
-      // orchestrator's POV — the slash command can re-open it via start-phase
-      // if it needs to add the artifact paths.
-      const withSlug = setProjectSlug(loadStateOrDie(), slugInfo.slug);
+      // Seed MEMORY.md ONLY on first creation — never clobber a learned router.
+      // Profile is tiny → pass inline (spawnSync args array, no shell mangling).
+      let memorySeeded = false;
+      if (freshlyCreated) {
+        const profile = JSON.stringify({stack: '', datasources: [], active_workstreams: [], specialists: []});
+        const memRes = dd('memory-seed', '--slug', slug, '--profile', profile);
+        if (memRes.status !== 0) {
+          die(`memory-seed failed: ${memRes.stderr || memRes.stdout}`, 1);
+        }
+        memorySeeded = true;
+      }
+
+      // Wire the session agent (idempotent merge — safe on re-run).
+      const setRes = dd('settings-write', '--slug', slug);
+      if (setRes.status !== 0) {
+        die(`settings-write failed: ${setRes.stderr || setRes.stdout}`, 1);
+      }
+
+      const withSlug = setProjectSlug(loadStateOrDie(), slug);
       const next = markPhaseCompleted(withSlug, 'project-master', {
-        slug: slugInfo.slug,
+        slug,
         source: slugInfo.source,
-        completed_via: 'phase-project-master (slug only; agent files written by /prism-deep-dive)',
+        agent_created: freshlyCreated,
+        memory_seeded: memorySeeded,
+        completed_via: 'phase-project-master (non-interactive: agent-write + memory-seed + settings-write)',
       });
-      persistOrPrint(next, 'phase-project-master complete (slug locked)');
+      persistOrPrint(next, `phase-project-master complete (master-${slug} wired as session agent)`);
       break;
     }
 

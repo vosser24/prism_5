@@ -20,6 +20,19 @@ spawn tools.
 
 Before executing, classify each step pair AND choose dispatch shape:
 
+## Who dispatches (v5.x — dispatch is main-loop-only)
+
+Only the MAIN LOOP (the session-level master) can call `Agent()`. A dispatched
+subagent — expert, specialist, or team member — has **NO Agent tool** (STEP 0
+spike: even an agent that declares it in frontmatter has it stripped). So:
+
+- An expert returns a written worker **spec**; the master dispatches the workers on
+  it. There is no expert-fans-out-its-own-workers shape — it is not buildable.
+- In Agent Teams, "teammates coordinate directly" means peer **messaging**, NOT
+  further spawning — a teammate still **cannot** issue its own `Agent()` call.
+- Any design where a dispatched agent fans out sub-workers must route that fan-out
+  back through the master (main loop).
+
 ## SEQUENTIAL
 
 **SEQUENTIAL** — Step B needs Step A's output:

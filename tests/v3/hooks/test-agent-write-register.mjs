@@ -266,5 +266,23 @@ test('malformed JSON in input → exits 0 silently (defensive)', () => {
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+test('v5.x: auto-registered agent carries learning/skills fields with safe defaults', () => {
+  // Panel experts persist AND learn (per-project domain memory + an evolving
+  // skill toolkit). Every auto-registered agent gets the additive v5.x fields
+  // with inert defaults: learns=false, domain_memory_file=null, owned_skills=[].
+  const home = makeFakeHome('v5-fields');
+  try {
+    const agentPath = join(home, '.claude', 'agents', 'expert.md');
+    writeAgentFile(agentPath, 'expert', 'a domain expert');
+    const r = runHook({toolName: 'Write', filePath: agentPath, home});
+    assertEq(r.status, 0, r.stderr);
+    const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+    const e = readRoster(rosterPath).agents.expert;
+    assertEq(e.learns, false, 'learns defaults to false');
+    assertEq(e.domain_memory_file, null, 'domain_memory_file defaults to null');
+    assertEq(e.owned_skills, [], 'owned_skills defaults to empty array');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

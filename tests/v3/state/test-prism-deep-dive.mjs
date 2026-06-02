@@ -228,6 +228,49 @@ test('agent-write default (no --orchestrator-protocol flag): skill-ref body (Pha
   }
 });
 
+test('agent-write: master body frames identity as solution architect + sole dispatcher (v5.x)', () => {
+  // STEP 0 spike proved subagent dispatch is main-loop-only; the session-level
+  // project-master is the ONLY context that can dispatch. The v5.x identity
+  // promotes it from "dispatcher/evaluator" to a top-class solution architect
+  // that owns the design and is the sole dispatcher.
+  const root = makeTestbed('agentwrite-architect');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/solution architect/i.test(body), 'description identifies as solution architect: ' + body.slice(0, 500));
+    assert(/sole dispatcher/i.test(body), 'description notes sole-dispatcher role (STEP 0): ' + body.slice(0, 500));
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('agent-write --orchestrator-protocol inline: includes recall→archive knowledge loop + sole-dispatcher (v5.x)', () => {
+  const root = makeTestbed('agentwrite-loop');
+  try {
+    const r = run(root, 'agent-write', '--slug', 'foo', '--orchestrator-protocol', 'inline');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/Five unbreakable rules/.test(body), 'regression: preserves existing inline marker');
+    assert(/recall/i.test(body) && /archive/i.test(body), 'knowledge-growth loop (recall/archive) present in inline body');
+    assert(/sole dispatcher/i.test(body), 'sole-dispatcher framing present in inline body');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('chair wiring end-to-end: settings.json agent → master-<slug>, and that master declares the Agent tool (v5.x item 7)', () => {
+  // STEP 0: only the main-loop/session agent can dispatch. The chair works iff
+  // BOTH halves are wired: settings.json points the session agent at the master,
+  // AND the master frontmatter declares the Agent tool (else it can't dispatch
+  // even as the session agent). Drift-guard for that end-to-end invariant.
+  const root = makeTestbed('chair-wiring-e2e');
+  try {
+    assertEq(run(root, 'agent-write', '--slug', 'foo').status, 0, 'agent-write ok');
+    assertEq(run(root, 'settings-write', '--slug', 'foo').status, 0, 'settings-write ok');
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'));
+    assertEq(settings.agent, 'master-foo', 'session agent wired to the master');
+    const body = readFileSync(join(root, '.claude', 'agents', 'master-foo.md'), 'utf8');
+    assert(/^tools:.*\bAgent\b/m.test(body), 'the chaired master MUST declare the Agent tool (sole dispatcher in main loop): ' + body.slice(0, 400));
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('agent-diff: exit 0 when generated body equals on-disk body', () => {
   const root = makeTestbed('agent-diff-same');
   try {
