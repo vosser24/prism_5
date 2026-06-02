@@ -164,12 +164,18 @@ step('4. partial-init — phases identity+structure done, others pending', () =>
   if (r.status !== 'ok') throw new Error(`status ${r.status}`);
   if (!isPhaseCompleted(r.state, 'identity')) throw new Error('identity should be done');
   if (!isPhaseCompleted(r.state, 'structure')) throw new Error('structure should be done');
-  for (const p of ['discovery', 'roster', 'health']) {
+  // Derive the still-pending phases from PHASES (not a hardcoded list) so this
+  // test stays correct as the schema grows. v5.x added plugin-validate +
+  // project-master; the old hardcoded ['discovery','roster','health'] left those
+  // two never-completed, then the `for (const p of PHASES)` resume check below
+  // failed on plugin-validate. Deriving keeps it in lockstep with the schema.
+  const remaining = PHASES.filter((p) => p !== 'identity' && p !== 'structure');
+  for (const p of remaining) {
     if (isPhaseCompleted(r.state, p)) throw new Error(`${p} should NOT be done`);
   }
   // Resume: complete remaining phases idempotently
   let s2 = r.state;
-  for (const p of ['discovery', 'roster', 'health']) {
+  for (const p of remaining) {
     s2 = markPhaseCompleted(s2, p);
     writeStateAtomic(TESTBED, s2);
   }
