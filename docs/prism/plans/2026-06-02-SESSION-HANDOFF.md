@@ -1,5 +1,9 @@
 # SESSION HANDOFF — v5.0 panel + v5.1 project-master-default + claude-mem (2026-06-02)
 
+> ✅ **RESOLVED 2026-06-02 (Session 4, commit `fcb7109db`).** All four pending items below (P2, P2b, P3, P4) are **DONE + TDD'd + committed**, plus a default-flip drift-guard (`test-prism-v5-1-default-flip.mjs`) and a Round 11 stress-test entry. Re-synced live to `~/.claude` (audit-runner 29/29). Full sweep: 18 suites, 0 failures. **Nothing in §Pending remains.** The only open publish-blocker is the pre-existing **finding #1 dispatch-guard deadlock** (reproduced live again this session — see stress-test report Round 11). Sections below are kept as the historical record of what this work was.
+>
+> ⚠️ Note for the next session: the original TL;DR step 2 ("everything is UNCOMMITTED") was already stale when this was resumed — the bundle had landed in `415dc7de6`. Re-verify before trusting any handoff backlog.
+
 > **Read this first in the next cleared session.** It is self-contained: resume the pending work without re-reconning. Authoritative detail lives in the two plan docs referenced below; this is the index + exact pointers.
 
 ## TL;DR — what to do next session
