@@ -16,7 +16,7 @@ Active version: **v5.0** — the cross-project knowledge index (F4): opt-in, dep
 
 | Command | What it does |
 |---|---|
-| `/prism-bootstrap` | One-command setup. Runs the 7-phase state machine (identity → structure → plugin-validate → discovery → roster → project-master → health). Idempotent. Pass `--with-deep-dive` to opt into the project-master phase. |
+| `/prism-bootstrap` | One-command setup. Runs the 7-phase state machine (identity → structure → plugin-validate → discovery → roster → project-master → health). Idempotent. The project-master phase is **default-on** (v5.1); pass `--no-master` to opt out (`--with-deep-dive` is an accepted no-op). |
 | `/prism-sync` | Refresh PRISM's project index — re-runs discovery, roster reconcile, and health checks. Stamps `last_sync_at`. Conservative drift detection (always re-scans). |
 | `/prism-clean` | Capture durable session knowledge into `docs/prism/`. Applies a 5-level importance classifier; surfaces candidates as a checklist; writes approved artifacts with locked headers. Use before `/clear` or at session end. |
 | `/prism-recall <query>` | Unified recall across PRISM knowledge base (semantic), session state, and spend/metrics (analytical). Auto-routes to the right tier. |
@@ -25,7 +25,7 @@ Active version: **v5.0** — the cross-project knowledge index (F4): opt-in, dep
 
 | Command | What it does |
 |---|---|
-| `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Opt-in entry point. |
+| `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Manual entry point; `/prism-bootstrap` also creates the project-master by default (v5.1). |
 
 The `master-orchestrator` skill (Phase E) is loaded automatically by every
 `master-<slug>` agent — no slash command needed. Its navigation index lives at

@@ -76,6 +76,9 @@ import {
   synthesizeFromFilesystem,
   writeStateAtomic,
 } from './lib/prism-state.mjs';
+// v5.1: claude-mem detection drives the bootstrap install-offer (Mode A vs Mode B).
+// Relative path resolves both in-repo (tools/→../hooks/) and installed (~/.claude/tools/→~/.claude/hooks/).
+import {claudeMemInstalled} from '../hooks/lib/prism-claude-mem-detect.mjs';
 
 // ------------------------------ args ------------------------------
 
@@ -129,6 +132,7 @@ Commands:
   install-statusline [--home <path>] [--dry-run] [--force]
   detect-telemetry-consent [--home <path>]
   set-telemetry-consent <on|off> [--home <path>]
+  detect-claude-mem [--home <path>]
 
 Phases (v2 schema): ${PHASES.join(' | ')}
 project-master is DEFAULT-ON (v5.1): bootstrap auto-creates master-<slug> as the
@@ -148,7 +152,8 @@ flips set-telemetry-consent's default during the bootstrap health phase.
 // --no-git-guard is set.
 const STATUSLINE_COMMANDS = new Set(['detect-statusline', 'install-statusline']);
 const TELEMETRY_CONSENT_COMMANDS = new Set(['detect-telemetry-consent', 'set-telemetry-consent']);
-const HOME_ONLY_COMMANDS = new Set([...STATUSLINE_COMMANDS, ...TELEMETRY_CONSENT_COMMANDS]);
+const CLAUDE_MEM_COMMANDS = new Set(['detect-claude-mem']);
+const HOME_ONLY_COMMANDS = new Set([...STATUSLINE_COMMANDS, ...TELEMETRY_CONSENT_COMMANDS, ...CLAUDE_MEM_COMMANDS]);
 if (!opts.noGitGuard && !HOME_ONLY_COMMANDS.has(cmd) && !existsSync(join(opts.root, '.git'))) {
   die(`refusing to run: ${opts.root} has no .git/. Pass --no-git-guard to override.`, 2);
 }
@@ -847,6 +852,14 @@ try {
       const result = setTelemetryConsent(home, effectiveOptIn);
       if (envVar) result.forced_off_by_env = envVar;
       stdout.write(JSON.stringify(result, null, 2) + '\n');
+      break;
+    }
+
+    case 'detect-claude-mem': {
+      const home = resolveStatuslineHome();
+      // present ⇒ Mode A (claude-mem owns ambient memory, PRISM nudge stands down);
+      // absent ⇒ Mode B (PRISM-native fallback: nudge active + /prism-clean folds into MEMORY.md).
+      stdout.write(JSON.stringify({installed: claudeMemInstalled(home)}, null, 2) + '\n');
       break;
     }
 

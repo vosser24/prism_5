@@ -22,7 +22,7 @@ described below.
 | 3 | plugin-validate  | deterministic | v3.11.0 sentinel stub; `/prism-validate-plugins` runs the real validator |
 | 4 | discovery        | LLM-judged    | Codebase + DB + API scan |
 | 5 | roster           | LLM-judged    | Reconcile orphan agents |
-| 6 | project-master   | LLM-judged    | **Opt-in only** (`--with-deep-dive`); generates `master-<slug>` agent via `/prism-deep-dive` |
+| 6 | project-master   | deterministic (+LLM fallback) | **Default-on** (v5.1); non-interactively creates `master-<slug>` as the session agent. `--no-master` opts out. Falls back to `/prism-deep-dive` only when the slug needs prompting |
 | 7 | health           | LLM-judged    | Verify wiring; report green/yellow/red |
 
 **Flags:**
@@ -30,7 +30,8 @@ described below.
 - `--interactive` — confirm between phases
 - `--force` — re-run all phases even if state shows them complete
 - `--skip-discover` — for projects without DB/API surface
-- `--with-deep-dive` — opt-in to phase 6 (project-master); default is skipped (D004 §8)
+- `--no-master` — opt OUT of phase 6 (project-master). Phase 6 is **default-on** in v5.1 (user decision: all their projects are code; the project-master is the prerequisite for real dispatched panels)
+- `--with-deep-dive` — **accepted no-op** (back-compat). project-master is now default-on, so this flag no longer gates phase 6; it is silently ignored
 
 ---
 
@@ -201,39 +202,32 @@ If `--interactive`: hold for user confirmation.
 
 Complete with meta: `{"agents_registered": N, "orphans_remaining": N}`.
 
-### Phase 6 — project-master (opt-in via --with-deep-dive)
+### Phase 6 — project-master (default-on; `--no-master` opts out)
 
-This phase is **skipped by default** (D004 §8). To run it, the user invoked
-`/prism-bootstrap --with-deep-dive` OR runs `/prism-deep-dive` directly.
+This phase **runs by default** (v5.1). The project-master (`master-<slug>`) is
+wired as the session agent — the prerequisite for real dispatched panels
+(STEP 0 spike: dispatch is main-loop-only, so the chair must be the
+session-level agent). The user opts out with `--no-master`.
 
-Two paths:
+Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-project-master`
 
-**Path A — opt-in via bootstrap flag:**
-
-Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-project-master --with-deep-dive`
+The helper does the whole thing **non-interactively**: slug-derive →
+agent-write → memory-seed (fresh only, never clobbers a learned MEMORY.md) →
+settings-write. It is idempotent (re-running skips an existing agent and
+preserves its learned router).
 
 Outcomes:
-- Exit 0 with "slug locked" message → phase complete (slug recorded in
-  state; the actual agent generation happens when the user runs
-  `/prism-deep-dive` to drive the AskUserQuestion turn).
-- Exit 0 with "slug needs user prompting" message → tell the user to run
-  `/prism-deep-dive` directly. Do NOT try to AskUserQuestion in the bootstrap
-  flow — that's the deep-dive slash command's responsibility.
-- Exit 6 ("opt-in") → the user passed `--with-deep-dive` but the bootstrap
-  helper didn't honor it. Re-check the invocation.
-
-After the helper returns, **invoke /prism-deep-dive yourself** (as the
-bootstrap slash command) to complete the agent generation. Do not leave the
-user with a half-built master.
-
-**Path B — direct deep-dive (recommended for clarity):**
-
-If the user did NOT pass `--with-deep-dive`, the planner skips this phase
-silently. Surface a one-line nudge at the end of bootstrap:
-
-  *"To create your project-master agent, run `/prism-deep-dive`."*
-
-Per D004 §8, this is the opt-in default. Do NOT auto-prompt or auto-run.
+- **Exit 0, "master-`<slug>` wired as session agent"** → phase complete. The
+  agent file, seeded MEMORY.md, and `settings.json` `agent:` field are all in
+  place. Nothing more to do.
+- **Exit 0, "slug needs user prompting"** → the project basename is generic
+  and there's no CLAUDE.md identity to derive a slug from, so the helper did
+  NOT mark the phase complete. Invoke `/prism-deep-dive` yourself (as the
+  bootstrap slash command) to drive the AskUserQuestion slug turn and finish
+  the agent generation. Do not leave the user with a half-built master.
+- **"skipped via --no-master"** → the user opted out. Surface a one-line nudge
+  at the end of bootstrap: *"project-master skipped (--no-master). Run
+  `/prism-deep-dive` any time to create it."*
 
 ### Phase 7 — health
 
@@ -288,7 +282,7 @@ Run: `node ~/.claude/tools/prism-bootstrap.mjs status`
 Then summarize for the user:
 
 - ✅ Phases completed this run
-- ⚠ Phases skipped (and why — especially project-master if `--with-deep-dive` was not passed)
+- ⚠ Phases skipped (and why — especially project-master if `--no-master` was passed)
 - ❌ Phases that failed (and where they're recorded)
 - Suggested next action: `/prism-sync` for ongoing maintenance,
   or `/prism-clean` before /exit to capture session lessons.
@@ -347,6 +341,64 @@ mutating user config.)
 If `--dry-run` was passed to `/prism-bootstrap`: skip the prompt; just
 print the detect-statusline output and a one-line *"would offer install
 if not in dry-run"* note.
+
+### Step N.2 — claude-mem memory-tier offer (opt-in, v5.1)
+
+`claude-mem` (`thedotmack/claude-mem`) is an **optional ambient-memory tier**:
+it captures every session continuously and re-injects context at SessionStart.
+PRISM treats it like the NotebookLM free-research tier — **offered, never
+required**. Its presence selects PRISM's memory mode (see *Memory modes* below).
+
+After the statusline step, detect it:
+
+```bash
+node ~/.claude/tools/prism-bootstrap.mjs detect-claude-mem
+```
+
+The helper prints `{"installed": true|false}` (signal = the `~/.claude-mem/`
+data dir, with a settings.json reference as a corroborating fallback).
+
+Behaviour by branch:
+
+- **`installed: true`** → **Mode A** is active. Say one line: *"claude-mem
+  detected — it owns ambient session memory; PRISM's save-nudge stands down
+  and `/prism-clean` stays manual."* Do not offer anything.
+- **`installed: false`** → **Mode B** is the default. Offer the install via
+  `AskUserQuestion`: *"PRISM can run with `claude-mem` for continuous ambient
+  memory (auto-capture + auto-reload across sessions). Install it now?"* —
+  options (default-first):
+  - **Keep PRISM-native memory (default)** → log: *"staying on Mode B —
+    PRISM's save-nudge stays active and `/prism-clean` folds session
+    summaries into your project-master MEMORY.md. Nothing is lost."*
+  - **Install claude-mem** → run `npx claude-mem install` (Node ≥20 + Bun are
+    auto-handled by its installer). On success, note that PRISM has switched to
+    Mode A for subsequent sessions; on failure, surface the error and remain on
+    Mode B.
+
+**Never auto-install.** Like the statusline, this is opt-in convenience.
+
+If `--dry-run` was passed: print the detect-claude-mem output and a one-line
+*"would offer install if not in dry-run"* note; prompt nothing.
+
+---
+
+## Memory modes (Mode A / Mode B)
+
+PRISM's session-memory behaviour is **two-mode**, selected at runtime by
+whether `claude-mem` is installed (`~/.claude-mem/`). Nothing is lost either
+way — the modes are mutually exclusive fallbacks, not a feature gate.
+
+| | **Mode A — claude-mem present** | **Mode B — claude-mem absent (default)** |
+|---|---|---|
+| Ambient capture | claude-mem captures continuously + reloads at SessionStart | PRISM's `memory-save-nudge` reminds you to capture before `/clear` |
+| Save nudge | **Stands down** (claude-mem already injects + reminds) | **Active** |
+| `/prism-clean` | Manual; the MEMORY.md session-summary fold is redundant (skip it) | Manual; folds a one-line session summary into `master-<slug>` MEMORY.md `## Session log` via `append-summary` |
+| Durable router | claude-mem store + project-master MEMORY.md | project-master MEMORY.md (decisions / lessons / session log) |
+
+Switching is automatic: install claude-mem → next session runs Mode A; remove
+it → back to Mode B. `/clear` fires `SessionEnd`+`SessionStart` (not
+`PreCompact`), so capture always happens *during* the session (nudge +
+`/prism-clean`), and reload is automatic (subagent MEMORY.md auto-injects).
 
 ---
 

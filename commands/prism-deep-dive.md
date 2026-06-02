@@ -1,12 +1,12 @@
 ---
 name: prism-deep-dive
-description: Generate this project's master-<slug> agent. Discovery + ≤5 clarifying questions + writes <project>/.claude/agents/master-<slug>.md, seeded MEMORY.md, and settings.json agent: field. Opt-in entry point for v4.0 project-master surface.
+description: Generate this project's master-<slug> agent. Discovery + ≤5 clarifying questions + writes <project>/.claude/agents/master-<slug>.md, seeded MEMORY.md, and settings.json agent: field. Manual entry point for the project-master surface; /prism-bootstrap also creates the project-master by default (v5.1).
 ---
 
 # /prism-deep-dive — v4.0 project-master generator (Phase D)
 
 Locked design: `docs/prism/adjudications/D004-v4-product-vision.md` §1 (slug
-derivation), §3 (skill wiring), §5 (MEMORY.md router), §8 (opt-in migration).
+derivation), §3 (skill wiring), §5 (MEMORY.md router), §8 (project-master rollout — opt-in at v4.0, flipped to default-on in v5.1).
 The deterministic surface lives in `tools/prism-deep-dive.mjs`; the
 LLM-judged synthesis + clarifying-turn UX is in this slash command body.
 
@@ -23,8 +23,9 @@ Run: `git rev-parse --is-inside-work-tree`
 If NOT a git repo: STOP. Tell the user to `git init` first and re-run.
 
 Read `.claude/.prism-state.json`. If missing: STOP and tell the user to run
-`/prism-bootstrap` first — the project-master phase opt-in pattern requires
-state to exist (D004 §8).
+`/prism-bootstrap` first — the project-master phase requires state to exist
+(D004 §8; note `/prism-bootstrap` itself now creates the project-master by
+default, so direct `/prism-deep-dive` is mainly for `--refresh`/`--upgrade`).
 
 ## Step 1 — derive slug
 
@@ -271,8 +272,9 @@ Running `/prism-deep-dive` twice in a row on an already-completed project:
 
 ## Related commands
 
-- `/prism-bootstrap --with-deep-dive` — runs `/prism-deep-dive` automatically
-  during the project-master phase
+- `/prism-bootstrap` — creates the project-master **by default** (v5.1),
+  non-interactively, during the project-master phase. `--no-master` opts out;
+  `--with-deep-dive` is an accepted no-op kept for back-compat
 - `/prism-deep-dive --upgrade <slug>` — re-synthesize an existing
   project-master with diff preview + explicit approval (D004 §5 manual rhythm)
 - `/prism-clean` — appends per-decision pointers into the master's MEMORY.md

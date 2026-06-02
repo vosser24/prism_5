@@ -339,6 +339,10 @@ function renderMemoryMd({slug, profile}) {
   lines.push('');
   lines.push('<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->');
   lines.push('');
+  lines.push('## Session log');
+  lines.push('');
+  lines.push('<!-- /prism-clean appends session-summary lines here. -->');
+  lines.push('');
   lines.push('## Active specialists');
   lines.push('');
   for (const s of (profile.specialists || [])) lines.push(`- @${s}`);

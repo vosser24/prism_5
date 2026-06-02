@@ -52,6 +52,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--d-number') named.d_number = args[++i];
   else if (a === '--date') named.date = args[++i];
   else if (a === '--title') named.title = args[++i];
+  else if (a === '--summary') named.summary = args[++i];
   else if (a === '-h' || a === '--help' || a === 'help') usage();
   else positional.push(a);
 }
@@ -67,6 +68,7 @@ Commands:
   git-stats --since <iso>
   append-decision --slug <s> --d-number <NNN> --title <text>
   append-lesson --slug <s> --date <YYYY-MM-DD> --title <text>
+  append-summary --slug <s> --date <YYYY-MM-DD> --summary <text>
 `);
   exit(code);
 }
@@ -90,6 +92,7 @@ const MEMORY_MD_HARD_CAP_BYTES = 25 * 1024;
 
 const DECISION_ANCHOR = '<!-- /prism-clean appends `[[D###]]` lines here per Phase H. -->';
 const LESSON_ANCHOR = '<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->';
+const SUMMARY_ANCHOR = '<!-- /prism-clean appends session-summary lines here. -->';
 const POINTER_KEEP = 10;
 
 function readMemoryMd(root) {
@@ -233,6 +236,25 @@ function appendLesson({root, slug, date, title}) {
   return {path, bytes: Buffer.byteLength(updated, 'utf8')};
 }
 
+function appendSummary({root, slug, date, summary}) {
+  if (!slug) die('append-summary requires --slug <s>', 5);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+    die('append-summary requires --date <YYYY-MM-DD>', 5);
+  }
+  if (!summary) die('append-summary requires --summary <text>', 5);
+  if (/[\n\r]/.test(summary)) die('append-summary: --summary must not contain newlines', 5);
+  const {path, body} = readMemoryMd(root);
+  const newLine = `- [${date}] ${summary}`;
+  const updated = appendUnderAnchor({
+    body,
+    anchor: SUMMARY_ANCHOR,
+    newLine,
+    pointerRe: /^- \[\d{4}-\d{2}-\d{2}\]/,
+  });
+  writeMemoryMdAtomic(path, updated);
+  return {path, bytes: Buffer.byteLength(updated, 'utf8')};
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -265,6 +287,16 @@ try {
         slug: named.slug,
         date: named.date,
         title: named.title,
+      });
+      stdout.write(JSON.stringify({appended: true, ...r}) + '\n');
+      break;
+    }
+    case 'append-summary': {
+      const r = appendSummary({
+        root: opts.root,
+        slug: named.slug,
+        date: named.date,
+        summary: named.summary,
       });
       stdout.write(JSON.stringify({appended: true, ...r}) + '\n');
       break;

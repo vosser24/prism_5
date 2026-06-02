@@ -64,6 +64,10 @@ function seedMemoryMd(root, slug) {
     '',
     '<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->',
     '',
+    '## Session log',
+    '',
+    '<!-- /prism-clean appends session-summary lines here. -->',
+    '',
     '## Active specialists',
     '',
     '- (none hired yet)',
@@ -312,6 +316,61 @@ test('append-lesson: rejects malformed --date', () => {
   try {
     seedMemoryMd(root, 'foo');
     const r = run(root, 'append-lesson', '--slug', 'foo', '--date', 'not-a-date', '--title', 'x');
+    assertEq(r.status, 5, 'expected exit 5 (bad arg)');
+    assert(/date/i.test(r.stderr), 'stderr should mention date');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// v5.1 — append-summary (Mode-B session-summary fold into MEMORY.md)
+// ─────────────────────────────────────────────────────────────────────────
+
+test('append-summary: happy path appends a dated line under the Session log anchor', () => {
+  const root = makeTestbed('append-sum-happy');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-summary', '--slug', 'foo',
+                  '--date', '2026-06-02', '--summary', 'Shipped v5.1 append-summary');
+    assertEq(r.status, 0, r.stderr);
+    const body = readMemoryMd(root);
+    assert(/- \[2026-06-02\] Shipped v5\.1 append-summary/.test(body), 'summary line missing');
+    assert(/<!-- \/prism-clean appends session-summary lines here\. -->/.test(body), 'anchor stripped');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-summary: trims to last 10 summaries (oldest dropped)', () => {
+  const root = makeTestbed('append-sum-trim');
+  try {
+    seedMemoryMd(root, 'foo');
+    for (let i = 1; i <= 12; i++) {
+      const date = `2026-06-${String(i).padStart(2, '0')}`;
+      const r = run(root, 'append-summary', '--slug', 'foo', '--date', date, '--summary', `Session ${i}`);
+      assertEq(r.status, 0, r.stderr);
+    }
+    const body = readMemoryMd(root);
+    assert(!/2026-06-01/.test(body), 'first summary should have been trimmed');
+    assert(!/2026-06-02/.test(body), 'second summary should have been trimmed');
+    for (let i = 3; i <= 12; i++) {
+      const date = `2026-06-${String(i).padStart(2, '0')}`;
+      assert(body.includes(date), `${date} should remain in last-10 window`);
+    }
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-summary: refuses when MEMORY.md does not exist', () => {
+  const root = makeTestbed('append-sum-nomem');
+  try {
+    const r = run(root, 'append-summary', '--slug', 'foo', '--date', '2026-06-02', '--summary', 'x');
+    assertEq(r.status, 6, 'expected exit 6 (missing MEMORY.md)');
+    assert(/MEMORY\.md/.test(r.stderr), 'stderr should mention MEMORY.md');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append-summary: rejects malformed --date', () => {
+  const root = makeTestbed('append-sum-baddate');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-summary', '--slug', 'foo', '--date', 'not-a-date', '--summary', 'x');
     assertEq(r.status, 5, 'expected exit 5 (bad arg)');
     assert(/date/i.test(r.stderr), 'stderr should mention date');
   } finally { rmSync(root, {recursive: true, force: true}); }
