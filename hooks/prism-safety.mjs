@@ -48,8 +48,17 @@ const blockedCmd=[
 const hasEvalWrapper =
   /\b(?:bash|sh|zsh|dash|ksh|fish|ash)\b[^\n]*?\s-[a-z]*c\b/i.test(cmd) ||
   /\b(?:python[0-9.]*|node|perl|ruby|php)\b[^\n]*?\s-[a-z]*[ce]\b/i.test(cmd) ||
+  // a shell/interpreter reading a heredoc (or stdin) EXECUTES it → scan RAW
+  /\b(?:bash|sh|zsh|dash|ksh|fish|ash|python[0-9.]*|node|perl|ruby|php)\b[^\n|]*?<<-?\s*['"]?\w/i.test(cmd) ||
   /\beval\b/i.test(cmd);
-const cmdScan = hasEvalWrapper ? cmd : cmd.replace(/'[^']*'|"[^"]*"/g, ' ');
+// A heredoc fed to cat/git/etc. is DATA, not a command — strip its whole body
+// before scanning so a dangerous token (or embedded quotes that break "..."
+// pairing) inside a commit message can't trip the gate. Shell-EXECUTED heredocs
+// are caught by hasEvalWrapper above and scanned RAW instead.
+function stripHeredocs(s){
+  return s.replace(/<<-?\s*(['"]?)(\w+)\1[\s\S]*?\n[ \t]*\2(?=\s|$)/g, ' ');
+}
+const cmdScan = hasEvalWrapper ? cmd : stripHeredocs(cmd).replace(/'[^']*'|"[^"]*"/g, ' ');
 
 for(const [pattern, reason] of blockedRaw){
   if(pattern.test(cmd)){
