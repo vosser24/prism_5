@@ -4,6 +4,16 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.4] - 2026-06-03
+
+Bugfix (UAT finding — stale doctor fix-recipes). Live UAT of `/prism-doctor` (in `test_prism_5`) surfaced Symptom-1 ("prism.env missing") recommending `cd ~/PRISM && bash scripts/bootstrap-prism-env.sh` — a script that **never existed in git history**, behind a stale `~/PRISM` clone path. No `.mjs` writes `prism.env`; it is an **optional** node-resolution pin (step 2 of the `prism-exec` fallback chain), so with `node` on PATH a missing pin is the *normal healthy state*, not a symptom. Two sibling fix-recipes (Symptoms 5 and 7) also pointed at the retired `scripts/install-merge.sh` (the shell installer was retired in v5.1 / `5da140f3f`).
+
+- **Fix (`commands/prism-doctor.md`):**
+  - Symptom-1 detection is now **guarded on `node` being unresolvable** (`node --version` fails) — a missing `prism.env` with working `node` is no longer flagged. Its fix recipe writes the `PRISM_NODE=<path>` pin directly (no phantom installer script).
+  - Symptoms 5 + 7 now recommend the **canonical installer** `node tools/prism-installer.mjs update` instead of the retired `scripts/install-merge.sh`.
+  - Step-1 signal #3 annotated so the engine treats `prism.env` as the optional pin it is.
+- Regression test: `tests/v3/state/test-prism-doctor-fix-recipes.mjs` (6 tests) — asserts no phantom `bootstrap-prism-env.sh` / stale `~/PRISM`, that **no command file references a non-existent `scripts/*.{sh,ps1}`** (general dangling-retired-script guard), and that Symptom-1 detection is node-guarded.
+
 ## [5.1.3] - 2026-06-03
 
 Bugfix (UAT finding — state-file collision). The project-local turn-counter and the bootstrap state machine both used `.claude/.prism-state.json`. `prism-session-start.mjs` **full-overwrote** it with `{turns:0, session_start}` every session start, and `prism-hook.mjs` incremented `turns`/`recent_suggestions` in it — **clobbering the bootstrap state** (`schema_version`, `phases`, `project_slug`, …) that `tools/lib/prism-state.mjs` owns. Result: `/prism-deep-dive --refresh`, `/prism-sync`, and `/prism-doctor` saw an invalid state file after any session restart.

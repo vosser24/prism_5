@@ -42,8 +42,11 @@ Run these in parallel where possible:
    path while denying the binary — [[feedback-applocker-exe-detection]]). If
    `node --version` fails but the path resolves, report `blocked`, not missing.
 
-3. **prism.env presence + content** — does `~/.claude/prism.env` exist?
-   Does it set `PRISM_NODE`?
+3. **prism.env presence + content** — does `~/.claude/prism.env` exist
+   and set `PRISM_NODE`? `prism.env` is an OPTIONAL node-resolution pin
+   (step 2 of the `prism-exec` fallback chain). Only treat its absence as
+   a symptom when node is otherwise unresolvable (signal #2 failed) — with
+   `node` on PATH a missing pin is the normal healthy state. See #1 below.
 
 4. **roster.json validity** — JSON-parse
    `~/.claude/skills/prism-plan/references/roster.json`. Is `agents` block
@@ -107,15 +110,24 @@ addresses both, listing both symptoms above the single proposal.
 
 ### Step 3 — Symptoms covered (10 minimum)
 
-#### 1. prism.env missing
-**Detect:** `~/.claude/prism.env` does not exist.
-**Cause:** Install never completed §2.5 (prism.env bootstrap), or file
-was deleted.
-**Fix:** Re-run §2.5 of `INSTALL.md` from the PRISM repo:
-```
-cd ~/PRISM && bash scripts/bootstrap-prism-env.sh
-```
-(Auto-detects `node` path, writes `PRISM_NODE`.)
+#### 1. prism.env missing AND node unresolvable
+**Detect:** `~/.claude/prism.env` does not exist **AND** `node --version`
+fails (no `node` on PATH and no version-manager fallback resolves). If
+`node` resolves, this is **not** a symptom — `prism.env` is an *optional*
+node-resolution pin (step 2 of the `prism-exec` fallback chain; a bare
+`node` on PATH is the best-case step 3). A missing pin with a working
+`node` is the normal, healthy state — do not flag it.
+**Cause:** `node` lives only in a version-manager shell that the
+non-interactive hook subprocess doesn't see, and no install-time pin was
+written.
+**Fix:** Write the pin directly — there is no installer script for this
+(the legacy shell installer was retired; nothing auto-writes the pin).
+The file is a single `KEY=VALUE` line:
+`PRISM_NODE=<absolute path to a working node>`. Find the path in your
+interactive shell with `which node` (bash) or `(Get-Command node).Source`
+(PowerShell), then create `~/.claude/prism.env` (prefer Claude Code's
+Write tool — no BOM). Or set `PRISM_NODE` in your shell profile / Claude
+Code settings `env` and skip the file entirely.
 
 #### 2. Resource-index empty
 **Detect:** roster.json has non-empty `agents` block but `skills`,
@@ -151,11 +163,12 @@ mv ~/.claude/.prism-routing.jsonl \
 **Detect:** Any `~/.claude/hooks/prism-*.mjs` fails `node --check`.
 **Cause:** Hook file corrupted by a partial install, manual edit, or
 filesystem fault.
-**Fix:** Re-run install-merge from the repo:
+**Fix:** Re-run the canonical installer from the repo clone (re-writes
+hooks and re-wires settings.json):
 ```
-cd ~/PRISM && bash scripts/install-merge.sh
+node tools/prism-installer.mjs update
 ```
-Or roll back from the `.bak` if the install-merge tool kept one:
+Or roll back from the `.bak` if the installer kept one:
 ```
 cp ~/.claude/hooks/prism-<name>.mjs.bak ~/.claude/hooks/prism-<name>.mjs
 ```
@@ -178,10 +191,10 @@ wrapper.
 **Cause:** Manual edit, or upgrade from a pre-wrapper PRISM version.
 The wrapper is what loads `prism.env` into the subprocess — without it,
 hooks cannot resolve `PRISM_NODE` reliably.
-**Fix:** Re-run install-merge to prune raw entries and re-wire through
-the wrapper:
+**Fix:** Re-run the canonical installer to prune raw entries and re-wire
+every hook entry through the wrapper:
 ```
-cd ~/PRISM && bash scripts/install-merge.sh
+node tools/prism-installer.mjs update
 ```
 
 #### 8. Orphan agent files
