@@ -6,15 +6,18 @@
 - **Shipped v5.1.0** (command-consolidation) → then **v5.1.1 … v5.1.9** as live-UAT bug fixes. All merged + pushed to `main` (`vosser24/prism_master`). **Live `~/.claude` install synced to v5.1.9.**
 - **Running the 30-prompt live UAT** of PRISM v5.1 inside **`test_prism_5`** (coffee-ledger app, scaffolded this session). **Section A prompts 1–5 PASS; `/prism-deep-dive --refresh` exposed a real bug (v5.1.3); `/prism-doctor` runs exposed bugs #4, #5, #6 (fixed v5.1.4 / v5.1.5 / v5.1.6).**
 - **test_prism_5 state REPAIRED** this session: `reset`→`adopt`→`validate` → `status: ok` (was clobbered pre-v5.1.3, never repaired — confirmed STALE damage, not a regression: clobbered `.prism-state.json` frozen at 11:17Z while the live turn-counter correctly writes `.prism-turn-state.json`). Stale tier sentinels cleaned (37→2).
-- **Next:** exit + restart `test_prism_5` on v5.1.6 → (optional) re-run `/prism-doctor` to confirm only Symptom-2 resource-index remains → continue the UAT prompts (6–30).
+- **UAT Section-A infra commands ALL validated this session** (each fed back as a transcript paste; triage = fix-and-ship for real bugs, note-and-continue for echoes): `/prism-bootstrap`, `/prism-deep-dive --refresh`, `/prism-sync`, `/prism-doctor`, `/prism-audit`, `/prism-index`, `/prism-recall`, `/prism-roster`, `/prism-clean`. **10 real bugs found+fixed+shipped (v5.1.1 → v5.1.9), all TDD'd, live.**
+- **Next session:** continue the UAT from **prompt 6** of the pack (`docs/prism/2026-06-02-uat-prompt-pack.md`) — Section B onward. Keep using the paste-transcript → triage loop.
 
-## RESUME STEPS (do these in `test_prism_5`, not this repo)
-1. **Restart** the test_prism_5 terminal (`/exit` + `claude`) so it loads v5.1.3 hooks (stops the state-clobber).
-2. **Repair the already-corrupt state** (clobbered before the fix landed):
-   `node ~/.claude/tools/prism-state.mjs adopt`  → then `... validate` (expect `ok`). (`/prism-doctor` is the guided alt.)
-3. **Confirm the fix** end-to-end: re-run `/prism-deep-dive --refresh` (should pass Step 0 → slug `test-prism-5` → regenerate MEMORY.md).
-4. **Continue** the UAT from the next prompt. Pack: `docs/prism/2026-06-02-uat-prompt-pack.md`.
-5. **Triage rule:** real PRISM bug (blocks/denies, same failure every retry) → fix+TDD+ship+reinstall. Echo/benign (self-correcting, or panel-words pasted into a PRISM session lighting up *this* router) → note and continue.
+## RESUME STEPS (next session)
+> The original "restart + repair state" steps are DONE. test_prism_5 state = `status: ok`; live install = v5.1.9; full state suite green.
+1. **Re-verify the baseline** before trusting this doc (claims decay): `git -C <prism_3> log --oneline -1` should show `405d1176a` (v5.1.9) or later; `node ~/.claude/tools/prism-state.mjs validate --root <test_prism_5>` → `status: ok`; `grep '"version"' ~/.claude/.../plugin.json`-equivalent → 5.1.9.
+2. **Two test_prism_5 threads still open (USER side, in that terminal):**
+   - `/prism-deep-dive --refresh` was left **mid-flight** awaiting Q1–Q3 (workstreams/tone/auto-hire, or "defaults"). Completing it regenerates `MEMORY.md` AND locks `project_slug` (resolving the by-design `null`).
+   - **D001's `.gitignore` patch** (root `.env` not ignored — HIGH) is *documented* (adjudication) but **not applied**. Apply the `.env`/`.env.*`/`!.env.example` block to close it.
+3. **Continue the UAT** from prompt 6. Pack: `docs/prism/2026-06-02-uat-prompt-pack.md`.
+4. **Triage rule:** real PRISM bug (blocks/denies, same failure every retry) → fix+TDD+ship+reinstall (one version bump per fix, push, `node tools/prism-installer.mjs update`). Echo/benign (self-correcting, or panel-words pasted into a PRISM session lighting up *this* router) → note and continue.
+5. **Exercise judgment — not every flagged item is a bug.** This session ruled out 2 non-bugs after source verification: `project_slug: null` after adopt (locked to `/prism-deep-dive` by D004 §1), and the `phase-1-5-oob-reviewer-lite` "frontmatter collision" (stale `roster.json` `_note`; the agent file is correct + dispatch is by file path). VERIFY in source before proposing a fix.
 
 ## WHAT SHIPPED THIS SESSION (commits on `main`, newest last)
 - `2da9bab1d` — merge **v5.1.0** command-consolidation (A1 hook-integrity [change-gated], A2 roster-orphan, A3 audit-staleness, A5 KB/knowledge **inline auto-rebuild**, `/prism-fresh`, help "Maintenance" group). Version stamped 5.0.0→5.1.0.
@@ -23,7 +26,11 @@
 - `7fb3eec33` — **v5.1.2** UAT-fix: bootstrap Phase-4 shell-hygiene nudge (Read/Grep/Glob, no mixed bash+PowerShell).
 - `364f1cda9` — **v5.1.3** UAT-fix: turn-counter moved to `.claude/.prism-turn-state.json` so it stops clobbering bootstrap `.prism-state.json`.
 - `cadeaaf5c` — **v5.1.4** UAT-fix: `/prism-doctor` fix-recipes no longer point at retired/phantom installer scripts (`bootstrap-prism-env.sh` never existed; `install-merge.sh` retired). Symptom-1 detection now node-guarded; Symptoms 5+7 use `node tools/prism-installer.mjs update`. New test `test-prism-doctor-fix-recipes.mjs` (incl. general dangling-script guard).
-- **v5.1.5** UAT-fix (this commit): `/prism-doctor` now actually validates the bootstrap `.prism-state.json` (signal #13 + Symptom #11, existence-guarded) — it previously had NO state signal despite being the advertised "guided alt" for state repair. Test extended to 10.
+- `a5bdc02df` — **v5.1.5** UAT-fix: `/prism-doctor` now validates the bootstrap `.prism-state.json` (signal #13 + Symptom #11, existence-guarded) — previously NO state signal despite being the advertised "guided alt." Test → 10.
+- `e69cede4f` — **v5.1.6** UAT-fix: doctor state-repair recipe is now `reset`→`adopt`→`validate` (`adopt` refuses to overwrite an existing corrupt file). Test → 11.
+- `6789a3419` — **v5.1.7** UAT-fix (TWO): panel-summon dampened on pasted/quoted content (`tools/lib/prism-tier-classify.mjs`, `pastedRatio ≥ 0.6`) + `/prism-audit` exempts `*-oob-reviewer` from the model/maxTurns frontmatter check. Tests: `test-prism-panel-paste-dampening.mjs` (9), `test-prism-audit-oob-exemption.mjs` (6).
+- `8b03940c3` — **v5.1.8** UAT-fix: `/prism-clean append-decision` accepts un-padded `--d-number` (zero-pads internally). Test → 22.
+- `405d1176a` — **v5.1.9** UAT-fix: `/prism-recall` renders a friendly note when the opt-in NotebookLM KB isn't initialized (was a scary `ERROR: meta missing` with leaked path). Test `test-prism-recall-error-leak.mjs` → 13.
 
 ## BUGS FOUND BY THE UAT (all FIXED + TDD'd + shipped)
 1. **Dispatch-guard blocked `/prism-bootstrap`** (Step-0 git guard denied on fresh projects) — `/prism-bootstrap` etc. weren't in the classifier opus-allowlist. Fix v5.1.1. Test: `test-prism-routing-chaos.mjs` A4 block.
@@ -43,8 +50,17 @@
 - **3** "decisions & lessons recorded" → PASS (Haiku discovery dispatch; found `docs/prism/lessons/2026-06-01-coffee-netting.md`; flagged header-drift + missing adjudication).
 - **4** "onboarding brief" → PASS (self-overrode opus→routine, 2 parallel Explores, accurate brief). Note: master mis-narrated "summon_panel=true"; actual log = `opus, summon_panel=false`.
 - **5** "explain net-balance/settlement algorithm" → PASS (reused context, accurate, flagged NP-hardness + `debt-settlement-algo-expert`).
-- **`/prism-deep-dive --refresh`** → correctly STOPPED on corrupt state (bug #3). Master behavior was exemplary (diagnosed, refused to auto-overwrite, gave options).
-- **Remaining:** prompt 6 onward (~24 prompts). `(expect BLOCK)` prompts pass when refused.
+- **`/prism-deep-dive --refresh`** → first STOPPED on corrupt state (bug #3); after repair it runs end-to-end to the clarifying questions (left mid-flight awaiting Q1–Q3 — see RESUME STEPS).
+
+### Infra-command validations this session (all PASS after fixes; each exposed bugs above)
+- **`/prism-doctor`** → after v5.1.4/5/6: clean 0-symptom report; correctly catches a clobbered state as Symptom #11; prism.env correctly NOT flagged.
+- **`/prism-sync`** → conservative sync, 0 drift, all phases green (validates the v5.1.3 state fix for sync).
+- **`/prism-audit`** → 0 secrets across 37 files; HIGH = root `.env` gitignore gap (real, → D001); OOB-reviewer frontmatter WARNs were the false-positive fixed in v5.1.7.
+- **`/prism-index`** → populated global roster resource-index (60 skills, 4 tools, 47 domain-groups; agents preserved 9). `roster.json.bak` saved.
+- **`/prism-recall`** → exposed bug #10 (KB-not-init hard-fail); model fell back to source correctly; fixed v5.1.9.
+- **`/prism-roster`** → 9 agents, 0 orphans, accurate; the "frontmatter collision" it flagged is a stale `_note` (non-bug, see RESUME STEP 5).
+- **`/prism-clean`** → recovered the prior `/clear`'d session's missed L5 (wrote D001); exposed bug #9 (d-number); claude-mem Mode A detected correctly.
+- **Remaining:** UAT pack prompt 6 onward (Section B+). `(expect BLOCK)` prompts pass when refused.
 
 ## IMPORTANT MECHANICS / GOTCHAS
 - **This dev session vs PRISM guards:** PRISM is live-installed, so its mutation-guard/dispatch-guard police THIS repo's session. The escape used all session: each turn, Write `~/.claude/.prism-turn-tier-<session-id>.json` with `{"force_opus":true,"dispatched":true,...}` (the sentinel is carved out as always-writable). The tier-router rewrites it every turn, so re-assert at the START of any turn that needs parent Edit/Write/Bash. Alternative for a clean dev session: set `PRISM_MUTATION_GUARD=off` + `PRISM_DISPATCH_GUARD=off` in env, then restart. See [[prism-live-install-governs-dev-session]].
@@ -53,13 +69,16 @@
 - **Installer test flake:** `test-prism-installer.mjs` times out on this slow-spawn Windows box under load (rc=124) but passes **99/99 in isolation** — environmental, not a regression ([[feedback-installer-state-test-flaky-windows]]).
 
 ## STILL OPEN / OPTIONAL
-- **Finish the UAT** (prompts 6–30) — the main pending work.
-- **Override-protocol micro-nit** (offered, NOT done): the tier-override instruction says "your FIRST action should be a **Write**", but the sentinel exists so a blind Write fails → must Read-then-Write. Tweak `hooks/prism-prompt-tier-router.mjs` advice text to "Read then Write the sentinel". Low priority.
+- **Finish the UAT** (prompts 6–30, Section B+) — the main pending work.
+- **test_prism_5 user-side threads:** finish the mid-flight `/prism-deep-dive --refresh` (Q1–Q3); apply D001's `.gitignore` patch (HIGH, documented-not-applied).
+- **Deferred enhancement (NOT a bug):** local-index fallback for `/prism-recall` Tier-1 so semantic recall returns real results with no cloud KB (today it renders the friendly "not initialized" note — bug #10 fix).
+- **Won't-fix (cosmetic):** stale `roster.json` `_note` on `phase-1-5-oob-reviewer-lite` claiming a frontmatter collision that's already resolved; `/prism-roster --reconcile` doesn't clear resolved `_note`s. Low value.
+- **Enhancement candidate (NOT a bug) — `/prism-roster` project-master discoverability:** the project-master `master-<slug>` (e.g. `master-test-prism-5`) is **project-local** (`<project>/.claude/agents/master-<slug>.md`, wired via project `settings.json agent:`), while `/prism-roster` only reads the GLOBAL `roster.json` + scans GLOBAL `~/.claude/agents/`. So the project-master is invisible to `/prism-roster` BY DESIGN (it's the project orchestrator, not a pooled talent-pool specialist — separate lifecycle via `/prism-deep-dive` / `/prism-fresh`). Fair UX gap: `/prism-roster` run inside a project could add a one-line header noting the active project-master (read from settings `agent:`). Also note its "no orphans / N↔N" claim is scoped to the GLOBAL agents dir, not the project dir.
+- **Override-protocol micro-nit** (offered, NOT done): the tier-override instruction says "your FIRST action should be a **Write**", but the sentinel exists so a blind Write fails → must Read-then-Write. Tweak `hooks/prism-prompt-tier-router.mjs` advice text. Low priority. (Hit every mutating turn this session.)
 - **`coffee-ledger-expert` path scope:** its description still says root `prism-stress-test`; `test_prism_5` is structurally identical so it still applies. Repoint that one line if exact-match desired.
-- **`manifest.json` (root) is GONE** (retired). Single manifest = `tools/install-manifest.json`. See [[project-stale-root-manifest]].
 
 ## TEST BASELINE
-Full `.mjs` state suite green (incl. new `test-prism-fresh` 7/7, `test-prism-turn-state-collision` 3/3, `test-prism-routing-chaos` 30/30, freshness-sweep 43/43, bootstrap 38, deep-dive 27, sync 11). `prism-audit-runner` 29/29. Verify with: `for t in tests/v3/state/test-*.mjs; do node "$t"; done` (give the installer test a generous timeout or run it isolated).
+Full `.mjs` state suite **56/56 green** (installer excluded — documented Windows-under-load timeout, passes 99/99 isolated). New/extended tests this session: `test-prism-doctor-fix-recipes` (11), `test-prism-panel-paste-dampening` (9), `test-prism-audit-oob-exemption` (6), `test-prism-recall-error-leak` (13), `test-prism-clean` (22), `test-prism-turn-state-collision` (3). Verify: `for t in tests/v3/state/test-*.mjs; do case "$t" in *installer*) continue;; esac; node "$t"; done` (run the installer test isolated with a generous timeout).
 
 ## POINTERS / MEMORIES written this session
 `feedback-changegate-hotpath-spawns`, `feedback-orchestration-command-allowlist`, `feedback-prism-state-filename-collision`, `project-stale-root-manifest` (updated to "retired"). UAT pack: `docs/prism/2026-06-02-uat-prompt-pack.md`. Prior consolidation handoff (shipped): `docs/prism/plans/2026-06-03-SESSION-HANDOFF.md`.
