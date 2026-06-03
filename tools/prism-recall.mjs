@@ -299,6 +299,28 @@ export async function recall(query, {forcedTier = null, json = false, verbose = 
   return formatEnvelope(envelope, {verbose});
 }
 
+// The Tier-1 NotebookLM knowledge base is an OPT-IN cloud feature; on a default or
+// manual install it is simply not set up, so the delegate fails with "meta missing"
+// / "index missing". That is the EXPECTED state, not a failure — render it as a
+// friendly, actionable note instead of a raw ERROR that leaks an internal path
+// (UAT 2026-06-03). Tiers 2 (state) and 3 (analytics) need no KB and are unaffected.
+export function isKbNotInitialized(errText) {
+  const s = String(errText || '');
+  return /\b(meta|index)\s+missing\b/i.test(s) && /(prism-kb|notebook-init|kb-rebuild)/i.test(s);
+}
+
+function kbNotInitializedNote(errText) {
+  const m = String(errText || '').match(/run\s+([\w.-]+\.mjs)/i);
+  const tool = m ? m[1] : 'prism-kb-notebook-init.mjs';
+  return [
+    'Tier-1 semantic recall is unavailable — the optional NotebookLM knowledge base',
+    "isn't initialized (this is the default; it's an opt-in cloud feature).",
+    `Enable it once with:  node ~/.claude/tools/${tool}`,
+    '(requires the notebooklm CLI authenticated). Tiers 2 (state) and 3 (analytics)',
+    'work without it — e.g. "current session id" or "total cost today".',
+  ].join('\n');
+}
+
 export function formatEnvelope(env, {verbose = false} = {}) {
   const lines = [];
   if (verbose) lines.push(`[classify] tier=${env.classification.tier} reason=${env.classification.reason}`);
@@ -314,6 +336,7 @@ export function formatEnvelope(env, {verbose = false} = {}) {
       // note so it does not dominate the cross-project results they requested.
       const msg = String(r.error).replace(/^ERROR:\s*/i, '');
       if (env.crossProject) lines.push('(tier-1 semantic index unavailable — showing cross-project results only)');
+      else if (isKbNotInitialized(msg)) lines.push(kbNotInitializedNote(msg));
       else lines.push(`ERROR: ${msg}`);
     }
     else lines.push('(no tier-1 result)');

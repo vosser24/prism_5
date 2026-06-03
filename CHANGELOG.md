@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.9] - 2026-06-03
+
+Bugfix (UAT — `/prism-recall` hard-failed on fresh installs). A Tier-1 semantic query (the default for most questions) routes to `prism-kb-query.mjs`, which hard-requires the NotebookLM KB (`meta missing … run prism-kb-notebook-init.mjs first`, exit 1). That KB is an **opt-in, heavyweight cloud feature** — not initialized on a default/manual install — so the headline recall command emitted a scary `ERROR: meta missing: C:\…\.prism-kb-meta.json` (leaked path, looked like a crash, never said "optional") for the most common query type. Tiers 2 (state) and 3 (analytics) were unaffected (local).
+
+- **Fix (`tools/prism-recall.mjs`):** `formatEnvelope` now detects the KB-not-initialized condition (`isKbNotInitialized`) and renders a friendly, actionable note — "optional NotebookLM KB isn't set up (the default); enable with `node ~/.claude/tools/<rebuild|notebook-init>.mjs`; Tiers 2 & 3 work without it" — instead of a raw `ERROR:` with a leaked path. Genuine (non-KB-init) Tier-1 errors still surface as `ERROR:` unchanged.
+- Regression test: `tests/v3/state/test-prism-recall-error-leak.mjs` extended (13) — covers both index-missing and meta-missing → friendly note, no path leak, points to the right tool, and a genuine error still surfaces.
+
 ## [5.1.8] - 2026-06-03
 
 Bugfix (UAT papercut — `/prism-clean append-decision` rejected un-padded D-numbers). `tools/prism-clean.mjs` validated `--d-number` with `/^\d{3,}$/` (≥3 digits), so the natural call `--d-number 1` (the number lifted from "D001") was rejected with a misleading `(digits only)` message — "1" *is* digits. Observed live: the model passed `1`, got rejected, retried `001`.

@@ -32,11 +32,23 @@ check('no doubled "ERROR: ERROR:" prefix', !outCP.includes('ERROR: ERROR:'));
 check('cross-project results still shown', outCP.includes('[prism-stress-test] lesson: coffee-netting'));
 check('tier-1 index error demoted to a note on cross-project', /tier-1 .*unavailable/i.test(outCP) && !outCP.includes('prism-kb-rebuild.mjs'));
 
-// non-cross-project tier-1 error must still surface (single prefix)
-const envPlain = {classification: {tier: 1, reason: 'r'}, result: {error: tier1Error}};
-const outPlain = formatEnvelope(envPlain, {});
-check('plain tier-1 error still surfaced', outPlain.includes('index missing'));
-check('plain tier-1 error not double-prefixed', !outPlain.includes('ERROR: ERROR:'));
+// v5.1.9: a plain (non-cross-project) tier-1 "KB not initialized" error is the
+// EXPECTED default (the NotebookLM KB is opt-in cloud), so render it as a friendly,
+// actionable note — NOT a raw ERROR with a leaked path (UAT 2026-06-03). Covers
+// both the index-missing (rebuild) and meta-missing (notebook-init) preconditions.
+const metaError = 'ERROR: meta missing: C:/Users/x/.claude/.prism-kb-meta.json — run prism-kb-notebook-init.mjs first';
+for (const [label, err] of [['index-missing', tier1Error], ['meta-missing', metaError]]) {
+  const out = formatEnvelope({classification: {tier: 1, reason: 'r'}, result: {error: err}}, {});
+  check(`${label}: rendered as a friendly note`, /tier-1 .*unavailable/i.test(out) && /(opt-in|isn't initialized|not initialized)/i.test(out));
+  check(`${label}: does not leak the internal path`, !/\.prism-kb-(index|meta)\.json/.test(out) && !/C:[\\/]/.test(out));
+  check(`${label}: not raw-ERROR-prefixed`, !/^ERROR:/m.test(out));
+  check(`${label}: points to the init/rebuild tool`, /prism-kb-(rebuild|notebook-init)\.mjs/.test(out));
+}
+
+// a GENUINE (non-KB-init) tier-1 error must STILL surface as ERROR (not swallowed).
+const outReal = formatEnvelope({classification: {tier: 1, reason: 'r'}, result: {error: 'tier-1 delegate failed: ECONNRESET'}}, {});
+check('genuine tier-1 error still surfaces as ERROR', /ERROR:/.test(outReal) && outReal.includes('ECONNRESET'));
+check('genuine tier-1 error not double-prefixed', !outReal.includes('ERROR: ERROR:'));
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
