@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.2] - 2026-06-03
+
+Bugfix (UAT — `/prism-validate-plugins` audited **0 of 15** active plugins and returned a false "✅ all healthy"). `tools/prism-validate-plugins.mjs` was written + tested against an assumed schema the installed `claude` CLI never emits: it expected `{plugins:[{name, path, hooks:[{command}], skills:[{name}]}]}`, but `claude plugin list --json` returns a **top-level array** of `{id, version, scope, enabled, installPath, …}` that exposes **neither hooks nor skills**. So `pluginList.plugins` was `undefined` → 0 audited, and the entire test fixture set encoded the fiction (green tests, real-world blind).
+
+- **Fix (full):** normalize the real top-level-array schema (back-compatible with the legacy `{plugins:[…]}` shape via `normalizePluginList`); map `id`→name and `installPath`→path through `pluginName`/`pluginPath` aliases. `missing_manifest` now works off `installPath` (D004's primary purpose: "plugin dir removed without uninstall"). `broken_hook` and `skill_conflict` — absent from the list output — now read each plugin's **on-disk layout**: hook commands from `.claude-plugin/plugin.json` `.hooks` + conventional `hooks/hooks.json`; skill names from `skills/*/` directories. `${VAR}` expansion added (maps `${CLAUDE_PLUGIN_ROOT}`→installPath).
+- **Conservative guards (D004 risk #5 — false-positive aversion):** `broken_hook` skips inline shell-script hooks (statement separators, command substitution, `sh -c`), glob-pattern candidates, and unresolvable-var paths — verified against the real install, which has a claude-mem plugin shipping inline `export PATH=…; ls …/[0-9]*/; exec node …` hooks that the naive path-extractor false-flagged 7×. After the fix: **15 audited, 0 findings** on the live install.
+- Regression tests: `test-prism-validate-plugins.mjs` 10→19 — top-level-array-is-audited (the test that would have caught it), id/installPath mapping, disk-backed hook + skill discovery, and the inline-script / glob false-positive guards. All drive the helper as a real subprocess.
+
 ## [5.2.1] - 2026-06-03
 
 Bugfix (UAT — skill-suggestion nudges over-fired on pasted content; the unfinished half of v5.1.7). `hooks/prism-hook.mjs` matched its TDD / debugging / code-review / git-worktree / parallelizable / MCP-intent / KB-router nudges against the **raw** prompt, with none of the pasted-content dampening v5.1.7 added to the classifier. So pasting a `/prism-*` transcript fired skill nudges off the *transcript's* vocabulary.

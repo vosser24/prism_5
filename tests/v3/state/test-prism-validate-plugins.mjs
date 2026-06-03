@@ -206,5 +206,160 @@ test('audit: non-zero finding exit code when findings include error level', () =
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+// ------------------------------ real CLI schema (regression) ------------------------------
+// `claude plugin list --json` emits a TOP-LEVEL ARRAY of
+//   {id, version, scope, enabled, installPath, installedAt, lastUpdated, mcpServers}
+// — NOT {plugins:[{name, path, hooks, skills}]}. The list output exposes
+// neither hooks nor skills, so those checks must read the plugin's on-disk
+// layout (.claude-plugin/plugin.json + hooks/hooks.json + skills/*/).
+
+test('audit: real CLI top-level array is audited (regression — was 0)', () => {
+  const root = makeTestbed('toparray');
+  try {
+    const pdir = join(root, 'p1');
+    mkdirSync(pdir, {recursive: true});
+    const fixturePath = writeFixture(root, [
+      {id: 'plugin-a@mkt', version: '1.0', installPath: pdir, enabled: true},
+      {id: 'plugin-b@mkt', version: '1.0', installPath: pdir, enabled: true},
+    ]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.plugins_audited, 2, 'top-level array must be audited, not 0');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: top-level array maps installPath + id (missing_manifest)', () => {
+  const root = makeTestbed('installpath');
+  try {
+    const fixturePath = writeFixture(root, [
+      {id: 'gone@mkt', version: '1', installPath: join(root, 'nope-dir')},
+    ]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 1, 'missing installPath is error → exit 1: ' + r.stderr);
+    const out = JSON.parse(r.stdout);
+    const mm = out.findings.filter(f => f.type === 'missing_manifest');
+    assertEq(mm.length, 1, JSON.stringify(out.findings));
+    assertEq(mm[0].plugin, 'gone@mkt', 'plugin name should come from id');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: disk-backed broken_hook detects missing file via hooks/hooks.json', () => {
+  const root = makeTestbed('diskhook');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, 'hooks'), {recursive: true});
+    writeFileSync(join(pdir, 'hooks', 'hooks.json'), JSON.stringify({
+      PreToolUse: [{hooks: [{type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/ghost.mjs"'}]}],
+    }));
+    const fixturePath = writeFixture(root, [{id: 'p@mkt', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 1, r.stderr);
+    const bh = JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook');
+    assertEq(bh.length, 1, 'one broken_hook for ghost.mjs: ' + r.stdout);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: disk-backed broken_hook does NOT flag an existing hook file (no false positive)', () => {
+  const root = makeTestbed('diskhookok');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, 'hooks'), {recursive: true});
+    writeFileSync(join(pdir, 'hooks', 'real.mjs'), '// hook');
+    writeFileSync(join(pdir, 'hooks', 'hooks.json'), JSON.stringify({
+      PostToolUse: [{hooks: [{type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/real.mjs"'}]}],
+    }));
+    const fixturePath = writeFixture(root, [{id: 'p@mkt', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, r.stderr);
+    assertEq(JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook').length, 0);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: broken_hook skips commands with unresolvable env vars (conservative)', () => {
+  const root = makeTestbed('unresolv');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, 'hooks'), {recursive: true});
+    writeFileSync(join(pdir, 'hooks', 'hooks.json'), JSON.stringify({
+      PreToolUse: [{hooks: [{type: 'command', command: 'node "${TOTALLY_UNKNOWN_VAR_XYZ}/x.mjs"'}]}],
+    }));
+    const fixturePath = writeFixture(root, [{id: 'p@mkt', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, 'unresolvable var → skipped, not flagged: ' + r.stderr);
+    assertEq(JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook').length, 0);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: disk-backed skill_conflict across plugins via skills/*/ dirs', () => {
+  const root = makeTestbed('diskskill');
+  try {
+    const a = join(root, 'pa'), b = join(root, 'pb');
+    mkdirSync(join(a, 'skills', 'shared'), {recursive: true});
+    mkdirSync(join(a, 'skills', 'only-a'), {recursive: true});
+    mkdirSync(join(b, 'skills', 'shared'), {recursive: true});
+    const fixturePath = writeFixture(root, [
+      {id: 'pa@mkt', installPath: a},
+      {id: 'pb@mkt', installPath: b},
+    ]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, r.stderr);
+    const sc = JSON.parse(r.stdout).findings.filter(f => f.type === 'skill_conflict');
+    assertEq(sc.length, 1, JSON.stringify(sc));
+    assert(/shared/.test(sc[0].message), sc[0].message);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: disk-backed broken_hook from .claude-plugin/plugin.json hooks', () => {
+  const root = makeTestbed('manifesthook');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, '.claude-plugin'), {recursive: true});
+    writeFileSync(join(pdir, '.claude-plugin', 'plugin.json'), JSON.stringify({
+      name: 'p', version: '1',
+      hooks: {Stop: [{hooks: [{type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/missing.mjs"'}]}]},
+    }));
+    const fixturePath = writeFixture(root, [{id: 'p@mkt', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 1, r.stderr);
+    assertEq(JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook').length, 1);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// Conservative false-positive guards (D004 risk register #5). Real plugins
+// (e.g. claude-mem) ship inline shell-script hooks with embedded globs — these
+// have no single target file and MUST NOT be flagged as broken.
+
+test('audit: broken_hook does NOT flag inline shell-script hooks (claude-mem repro)', () => {
+  const root = makeTestbed('inlinescript');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, 'hooks'), {recursive: true});
+    writeFileSync(join(pdir, 'hooks', 'hooks.json'), JSON.stringify({
+      SessionStart: [{hooks: [{type: 'command',
+        command: '_C="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; ls -dt "$HOME/.codex/plugins/cache/claude-mem"/[0-9]*/ 2>/dev/null; exec node "$_P/scripts/mcp-server.cjs"'}]}],
+    }));
+    const fixturePath = writeFixture(root, [{id: 'claude-mem@x', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, 'inline script hook must not be flagged: ' + r.stdout + r.stderr);
+    assertEq(JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook').length, 0);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('audit: broken_hook does NOT flag glob-pattern path candidates', () => {
+  const root = makeTestbed('globpath');
+  try {
+    const pdir = join(root, 'plug');
+    mkdirSync(join(pdir, 'hooks'), {recursive: true});
+    writeFileSync(join(pdir, 'hooks', 'hooks.json'), JSON.stringify({
+      Stop: [{hooks: [{type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/v*.mjs"'}]}],
+    }));
+    const fixturePath = writeFixture(root, [{id: 'p@mkt', installPath: pdir}]);
+    const r = run(root, ['audit', '--json'], fixturePath);
+    assertEq(r.status, 0, r.stdout + r.stderr);
+    assertEq(JSON.parse(r.stdout).findings.filter(f => f.type === 'broken_hook').length, 0);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

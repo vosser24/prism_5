@@ -21,8 +21,8 @@
 // --no-git-guard is passed.
 
 import {spawnSync} from 'node:child_process';
-import {existsSync, readFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {existsSync, readFileSync, readdirSync} from 'node:fs';
+import {isAbsolute, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
 
 // ------------------------------ args ------------------------------
@@ -97,31 +97,51 @@ function loadPluginList() {
 
 // ------------------------------ audit checks ------------------------------
 
-// Hook commands look like:
-//   "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/X.mjs"
-//   "cmd /c \"%USERPROFILE%\\.claude\\hooks\\lib\\prism-exec.cmd\" \"%USERPROFILE%\\...\""
-//   "echo done"  ← raw shell, no file to check
-//
-// We extract the LAST whitespace-separated token that looks like a path
-// (starts with /, ~/, drive-letter, or %VAR%) and check whether it exists
-// on disk after env expansion. Anything else is treated as a non-file hook
-// and skipped.
-function expandHomeAndEnv(p) {
+// `claude plugin list --json` emits a TOP-LEVEL ARRAY of entries shaped:
+//   {id, version, scope, enabled, installPath, installedAt, lastUpdated, mcpServers}
+// It exposes NEITHER hooks NOR skills, so those two checks read the plugin's
+// on-disk layout (.claude-plugin/plugin.json + hooks/hooks.json + skills/*/).
+// We stay back-compatible with the older {plugins:[{name,path,hooks,skills}]}
+// shape (and any future CLI that inlines hooks/skills) via field aliases and
+// an "inline wins, else disk" discovery strategy.
+
+function normalizePluginList(parsed) {
+  if (Array.isArray(parsed)) return parsed;            // real CLI: top-level array
+  if (parsed && Array.isArray(parsed.plugins)) return parsed.plugins;  // legacy / fixtures
+  return [];
+}
+
+function pluginName(p) { return (p && (p.name || p.id)) || '(unknown)'; }
+function pluginPath(p) { return (p && (p.installPath || p.path)) || null; }
+
+function readJSONSafe(p) {
+  try { return JSON.parse(readFileSync(p, 'utf-8')); } catch { return null; }
+}
+
+// Expand ~/, ${VAR}, and %VAR%. `extra` overrides process.env (used to map
+// ${CLAUDE_PLUGIN_ROOT} → installPath when checking a plugin's own hooks).
+// Returns {path, unresolved}; unresolved=true means a referenced var was not
+// found anywhere — callers MUST skip such paths to avoid false positives.
+function expandPath(p, extra = {}) {
   let out = p;
+  let unresolved = false;
   if (out.startsWith('~/')) {
     const home = process.env.HOME || process.env.USERPROFILE || '';
     out = join(home, out.slice(2));
   }
-  // %VAR% (Windows). Expand the first occurrence; loop only a few times.
   let safety = 0;
-  while (safety < 8) {
-    const m = out.match(/%([A-Za-z_][A-Za-z_0-9]*)%/);
+  while (safety < 16) {
+    const m = out.match(/\$\{([A-Za-z_][A-Za-z_0-9]*)\}|%([A-Za-z_][A-Za-z_0-9]*)%/);
     if (!m) break;
-    const value = process.env[m[1]] || '';
+    const key = m[1] || m[2];
+    let value;
+    if (Object.prototype.hasOwnProperty.call(extra, key)) value = extra[key];
+    else if (process.env[key] != null) value = process.env[key];
+    else { unresolved = true; value = ''; }
     out = out.replace(m[0], value);
     safety++;
   }
-  return out;
+  return {path: out, unresolved};
 }
 
 function extractFilePathArg(command) {
@@ -130,26 +150,104 @@ function extractFilePathArg(command) {
   const tokens = command.match(/"[^"]+"|\S+/g) || [];
   // Scan right-to-left: the last token that looks like a file path is the candidate.
   for (let i = tokens.length - 1; i >= 0; i--) {
-    let t = tokens[i].replace(/^"|"$/g, '');
-    if (/^(\/|~\/|%[A-Za-z_][A-Za-z_0-9]*%|[A-Za-z]:[\\/])/.test(t)) {
+    const t = tokens[i].replace(/^"|"$/g, '');
+    if (/^(\/|~\/|\$\{[A-Za-z_][A-Za-z_0-9]*\}|%[A-Za-z_][A-Za-z_0-9]*%|[A-Za-z]:[\\/])/.test(t)) {
       return t;
     }
   }
   return null;
 }
 
+// A Claude Code hooks config is an event-map: { EventName: [ {matcher?, hooks:[{type,command}]} ] }.
+// Extract every command string from it.
+function collectHookCommandsFromConfig(cfg) {
+  const out = [];
+  if (!cfg || typeof cfg !== 'object') return out;
+  for (const event of Object.keys(cfg)) {
+    const matchers = cfg[event];
+    if (!Array.isArray(matchers)) continue;
+    for (const m of matchers) {
+      const hs = Array.isArray(m && m.hooks) ? m.hooks : [];
+      for (const h of hs) {
+        if (h && typeof h.command === 'string') out.push(h.command);
+      }
+    }
+  }
+  return out;
+}
+
+// Hook commands for a plugin. Inline plugin.hooks (array of {command}) wins —
+// used by tests and any future CLI that inlines them. Otherwise read the
+// on-disk layout: .claude-plugin/plugin.json `.hooks` + conventional hooks/hooks.json.
+function discoverHookCommands(plugin) {
+  if (Array.isArray(plugin.hooks)) {
+    return plugin.hooks.map(h => h && h.command).filter(c => typeof c === 'string');
+  }
+  const ip = pluginPath(plugin);
+  if (!ip || !existsSync(ip)) return [];
+  const cmds = [];
+  const manifest = readJSONSafe(join(ip, '.claude-plugin', 'plugin.json')) || readJSONSafe(join(ip, 'plugin.json'));
+  if (manifest && manifest.hooks != null) {
+    if (typeof manifest.hooks === 'string') {
+      const hp = isAbsolute(manifest.hooks) ? manifest.hooks : join(ip, manifest.hooks);
+      const cfg = readJSONSafe(hp);
+      cmds.push(...collectHookCommandsFromConfig(cfg && cfg.hooks ? cfg.hooks : cfg));
+    } else {
+      cmds.push(...collectHookCommandsFromConfig(manifest.hooks));
+    }
+  }
+  const hooksJson = join(ip, 'hooks', 'hooks.json');
+  if (existsSync(hooksJson)) {
+    const cfg = readJSONSafe(hooksJson);
+    cmds.push(...collectHookCommandsFromConfig(cfg && cfg.hooks ? cfg.hooks : cfg));
+  }
+  return cmds;
+}
+
+// Skill names a plugin provides. Inline plugin.skills (array of {name}) wins;
+// otherwise enumerate the on-disk skills/*/ directories.
+function discoverSkillNames(plugin) {
+  if (Array.isArray(plugin.skills)) {
+    return plugin.skills.map(s => s && s.name).filter(n => typeof n === 'string');
+  }
+  const ip = pluginPath(plugin);
+  if (!ip) return [];
+  const skillsDir = join(ip, 'skills');
+  if (!existsSync(skillsDir)) return [];
+  try {
+    return readdirSync(skillsDir, {withFileTypes: true}).filter(d => d.isDirectory()).map(d => d.name);
+  } catch { return []; }
+}
+
+// Inline shell programs (statement separators, command substitution, pipelines,
+// or an explicit `sh -c`) have no single target file to validate — extracting a
+// "path" from them yields glob fragments and false positives (e.g. claude-mem's
+// `export PATH=…; ls …/[0-9]*/; exec node …`). We only validate simple
+// "runner <script-file>" commands; anything script-like is skipped.
+function isInlineShellScript(command) {
+  if (/(^|\s)(sh|bash|zsh|dash)\s+(-[A-Za-z]*c\b|--command\b)/.test(command)) return true;
+  return /;|\$\(|`|&&|\|\|/.test(command);
+}
+
 function checkBrokenHooks(plugin) {
   const findings = [];
-  const hooks = Array.isArray(plugin.hooks) ? plugin.hooks : [];
-  for (const h of hooks) {
-    const candidate = extractFilePathArg(h.command);
+  const ip = pluginPath(plugin);
+  const extra = {};
+  if (ip) { extra.CLAUDE_PLUGIN_ROOT = ip; extra.PLUGIN_ROOT = ip; }
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  extra.CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || join(home, '.claude');
+  for (const command of discoverHookCommands(plugin)) {
+    if (isInlineShellScript(command)) continue;  // inline program, no single file to check
+    const candidate = extractFilePathArg(command);
     if (!candidate) continue;  // raw shell command, nothing to validate
-    const expanded = expandHomeAndEnv(candidate);
+    if (/[*?[\]]/.test(candidate)) continue;  // glob pattern — can't existence-check, stay conservative
+    const {path: expanded, unresolved} = expandPath(candidate, extra);
+    if (unresolved) continue;  // referenced an unknown var — can't verify, stay conservative
     if (!existsSync(expanded)) {
       findings.push({
         level: 'error',
         type: 'broken_hook',
-        plugin: plugin.name,
+        plugin: pluginName(plugin),
         message: `hook command references missing file: ${candidate}`,
         path: expanded,
       });
@@ -159,25 +257,24 @@ function checkBrokenHooks(plugin) {
 }
 
 function checkMissingManifest(plugin) {
-  if (!plugin.path || typeof plugin.path !== 'string') return [];
-  if (existsSync(plugin.path)) return [];
+  const ip = pluginPath(plugin);
+  if (!ip || typeof ip !== 'string') return [];
+  if (existsSync(ip)) return [];
   return [{
     level: 'error',
     type: 'missing_manifest',
-    plugin: plugin.name,
-    message: `plugin path does not exist: ${plugin.path}`,
-    path: plugin.path,
+    plugin: pluginName(plugin),
+    message: `plugin path does not exist: ${ip}`,
+    path: ip,
   }];
 }
 
 function checkSkillConflicts(plugins) {
   const skillOwners = new Map();  // skill name → [plugin names]
   for (const p of plugins) {
-    const skills = Array.isArray(p.skills) ? p.skills : [];
-    for (const s of skills) {
-      if (!s || typeof s.name !== 'string') continue;
-      if (!skillOwners.has(s.name)) skillOwners.set(s.name, []);
-      skillOwners.get(s.name).push(p.name);
+    for (const name of discoverSkillNames(p)) {
+      if (!skillOwners.has(name)) skillOwners.set(name, []);
+      skillOwners.get(name).push(pluginName(p));
     }
   }
   const findings = [];
@@ -187,7 +284,8 @@ function checkSkillConflicts(plugins) {
         level: 'warn',
         type: 'skill_conflict',
         plugin: null,
-        message: `skill "${skillName}" registered by multiple plugins: ${owners.join(', ')}`,
+        message: `skill "${skillName}" provided by multiple plugins: ${owners.join(', ')} `
+          + `(Claude Code namespaces plugin skills as plugin:skill, so this is informational)`,
         owners,
       });
     }
@@ -196,7 +294,7 @@ function checkSkillConflicts(plugins) {
 }
 
 function auditPlugins(pluginList) {
-  const plugins = Array.isArray(pluginList?.plugins) ? pluginList.plugins : [];
+  const plugins = normalizePluginList(pluginList);
   const findings = [];
   for (const p of plugins) {
     findings.push(...checkBrokenHooks(p));
