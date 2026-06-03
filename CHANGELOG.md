@@ -4,6 +4,33 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.0] - 2026-06-03
+
+Lifecycle + command-consolidation. v5.1 stamps the project-master lifecycle changes that shipped in docs after v5.0, and adds a panel-vetted command-consolidation pass under one governing rule: **automate cheap, deterministic DETECTION (nudge-only); keep EXECUTION manual** (LLM-judged / mutating / installing / blocking). Every new check rides the existing 24h-throttled SessionStart freshness sweep — **no new hot-path latency**.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v5.0 → v5.1".
+
+### Project-master lifecycle (formalized)
+- **Project-master is now default-on** in `/prism-bootstrap` — the project-master phase runs non-interactively and wires `master-<slug>` as the session `agent:`. Opt out with `--no-master`; `--with-deep-dive` is an accepted no-op.
+- **claude-mem-aware two-mode memory** — PRISM detects the optional `claude-mem` tier and either stands down its save-nudge (Mode A) or runs the PRISM-native fallback with `/prism-clean append-summary` + resume handoff docs (Mode B). `/prism-bootstrap` offers an opt-in install during the health phase.
+
+### Command consolidation — detection automated, execution manual
+- **Freshness sweep — three new detection checks** (`hooks/lib/prism-freshness-sweep.mjs`), all nudge-only, fail-open, 24h-throttled:
+  - **A1 hook integrity** — fs wiring sanity (every `prism-*.mjs` referenced in settings.json resolves on disk) + empty-file check, always; plus a **change-gated** `node --check` of only the hooks whose mtime advanced since the last sweep (node cold-start is ~2-3s on Windows, so steady state spawns nothing; bounded by an 8s budget + 3s per-hook timeout when it does run). Nudges `/prism-doctor` for the deep pass.
+  - **A2 roster orphans** — roster entries whose agent file is missing on disk (honors `file_path`, falls back to `~/.claude/agents/<name>.md`) → nudges `/prism-bootstrap` / `/prism-roster --reconcile`.
+  - **A3 audit staleness** — `/prism-audit` now stamps `~/.claude/.prism-audit-last.json`; the sweep nudges a re-run once it's >30d old. Silent when never audited.
+- **A5 — index auto-rebuild (E1/F4).** When the sweep detects the per-project KB index or the cross-project knowledge index is behind its source docs out-of-band, it now **rebuilds inline** (lockfile-guarded via `.prism-kb-rebuild.lock` / `.prism-kb-knowledge-rebuild.lock`, ≤1×/24h, 60s ceiling) instead of only nudging. Degrades to the prior manual nudge if the rebuild tool is absent or another session holds the lock. The `--preview` CLI stays non-mutating (never rebuilds). Removes `/prism-index`'s KB-rebuild from the routine surface.
+- **New `/prism-fresh`** (`commands/prism-fresh.md`) — refresh-only alias for `/prism-deep-dive --refresh` (regenerates the project-master `MEMORY.md`). **Never** rewrites the learned agent body; that stays the separate diff-confirmed `/prism-deep-dive --upgrade <slug>`.
+- **`/prism-help` tidy** — `/prism-deps`, `/prism-index`, `/prism-validate-plugins`, `/prism-audit-full` regrouped under **Maintenance** (nothing removed; all callable).
+
+### Explicitly NOT done (panel-killed — would compromise speed/quality)
+Audit as a blocking pre-commit gate; doctor/health full pass every session; auto-recommend; unattended update-apply; auto-upgrade of the master agent body; auto-install of deps. Rationale: each adds per-session latency, trains `--no-verify`, nags with no "done" state, or silently rewrites tuned state with no rollback trail.
+
+### Tests
+- `tests/v3/state/test-prism-freshness-sweep.mjs` extended to **41** (A1/A2/A3/A5 + the existing C3/E1/E2/Q-series).
+- New `tests/v3/state/test-prism-fresh.mjs` (**7**) — command contract + manifest + help-index wiring.
+- Full suite **55/55** suites green; installer dry-run 102 files; `prism-audit-runner` 29/29.
+
 ## [5.0.0] - 2026-06-01
 
 The v5.0 foundational bet: a **dep-free, offline cross-project knowledge index** (F4) — BM25 lexical retrieval + a default-on `claude -p` re-rank (silent BM25 fallback), a default-deny per-corpus-type sharing model, and a stable `queryKnowledge()` API. This is the topology shift from a self-aware single-project orchestration to a substrate that can learn across projects. The verdict-regression scanner (A5) that consumes the index is deferred to v5.1.

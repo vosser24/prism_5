@@ -5,10 +5,10 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 
 # /prism-help — PRISM command index
 
-This is the user-facing index for PRISM as of v5.0. Commands are grouped by
+This is the user-facing index for PRISM as of v5.1. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v5.0** — the cross-project knowledge index (F4): opt-in, dep-free, offline BM25 retrieval + default-on `claude -p` re-rank (silent BM25 fallback), default-deny per-corpus-type sharing via `/prism-recall --share-project`, consumed explicitly via `/prism-recall --cross-project`, plus a stable `queryKnowledge()` API. Builds on v4.7 (the `PRISM_PARALLEL_CAP` knob + C3/E1/E2 freshness nudges). The verdict-regression scanner (A5) that consumes the index is deferred to v5.1. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v5.1** — lifecycle + command-consolidation. The project-master is now **default-on** in `/prism-bootstrap` (`--no-master` opts out), with claude-mem-aware two-mode memory. The SessionStart freshness sweep (24h-throttled) gained **detection** automations — hook-integrity, roster-orphan, and audit-staleness checks — and now **auto-rebuilds** the KB / cross-project knowledge index inline when it falls behind out-of-band (replacing the old E1/F4 manual-rebuild nudge). New `/prism-fresh` is a refresh-only alias for `/prism-deep-dive --refresh`, and the occasional-upkeep commands are grouped under **Maintenance**. Built on the v5.0 cross-project knowledge index (F4): opt-in, dep-free, offline BM25 retrieval + default-on `claude -p` re-rank (silent BM25 fallback), default-deny per-corpus-type sharing via `/prism-recall --share-project`, consumed via `/prism-recall --cross-project`, plus a stable `queryKnowledge()` API. The verdict-regression scanner that consumes the F4 index remains deferred. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -26,6 +26,7 @@ Active version: **v5.0** — the cross-project knowledge index (F4): opt-in, dep
 | Command | What it does |
 |---|---|
 | `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Manual entry point; `/prism-bootstrap` also creates the project-master by default (v5.1). |
+| `/prism-fresh` | Refresh the project-master's `MEMORY.md` from the current codebase — memory-only. Thin alias for `/prism-deep-dive --refresh`. Does **not** rewrite the learned agent body (that's `/prism-deep-dive --upgrade <slug>`, a separate diff-confirmed action). |
 
 The `master-orchestrator` skill (Phase E) is loaded automatically by every
 `master-<slug>` agent — no slash command needed. Its navigation index lives at
@@ -48,19 +49,29 @@ reference files replacing the previous 770-line monolith).
 
 | Command | What it does |
 |---|---|
-| `/prism-validate-plugins` | Audit installed Claude Code plugins for broken hooks, missing manifests, skill-name conflicts. Report-only in v3.11.0; `--fix` deferred to v3.12.0. |
 | `/prism-audit` | Fast hygiene scan of PRISM's own configuration surface. |
-| `/prism-audit-full` | Comprehensive end-to-end audit; runs synthetic scenarios via `tools/prism-audit-runner.mjs`. Multi-minute deep audit with timing/coverage/trigger-correlation matrix. |
 | `/prism-doctor` | Symptom-driven PRISM diagnostic + guided fix. Reads recent routing log; checks env, roster integrity, settings.json wiring, hook syntax. Confirms before applying any fix. |
-| `/prism-deps` | Scan system for PRISM optional dependencies; report status; offer installs. |
 
 ## Knowledge + telemetry
 
 | Command | What it does |
 |---|---|
 | `/prism-archive` | Consolidate agent learnings into RAG-queryable sources. |
-| `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. Run to make the orchestrator and `blueprint-prompt` aware of resources not created via `agent-factory`. |
 | `/prism-telemetry` | Local-only telemetry aggregation. Aggregates `~/.claude/.prism-routing.jsonl` into a structured rollup. **No network** — export-to-JSON for manual sharing only. |
+
+## Maintenance
+
+Occasional upkeep commands. Most users rarely need these directly — the
+SessionStart freshness sweep (24h-throttled) now **detects** when they're
+due and nudges you, and `/prism-index`'s KB-rebuild runs automatically when
+the corpus changes. All remain callable on demand.
+
+| Command | What it does |
+|---|---|
+| `/prism-index` | Scan installed agents, skills, tools, and MCPs; populate the unified resource-index in `roster.json`. The freshness sweep nudges this when the plugin set or tools-registry drifts. |
+| `/prism-deps` | Scan system for PRISM optional dependencies; report status; offer installs. |
+| `/prism-validate-plugins` | Audit installed Claude Code plugins for broken hooks, missing manifests, skill-name conflicts. Report-only in v3.11.0; `--fix` deferred to v3.12.0. |
+| `/prism-audit-full` | Comprehensive end-to-end audit; runs synthetic scenarios via `tools/prism-audit-runner.mjs`. Multi-minute deep audit with timing/coverage/trigger-correlation matrix. |
 
 ### Installer tools
 

@@ -421,6 +421,86 @@ test('E1 KB stale: no index file → no nudge (KB not in use)', async () => {
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+// ── A5: KB index auto-rebuild on out-of-band corpus change ────────────
+test('A5 KB auto-rebuild: stale index → injected rebuild runs, notice says rebuilt', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-kb-index.json'), {
+      version: 2,
+      source_mtime_max: Math.floor((Date.now() - 7 * 86400000) / 1000),
+      entry_count: 10,
+    });
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'fresh.md'), '# fresh\n');
+    let called = 0;
+    const rebuildKb = (h) => { called++; return {ok: true}; };
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true, rebuildKb});
+    assertEq(called, 1, 'rebuild should run exactly once');
+    const n = r.notices.find((x) => /KB index/i.test(x));
+    assert(n, 'expected a KB-index notice; got: ' + JSON.stringify(r.notices));
+    assert(/rebuilt automatically/i.test(n), 'notice should report auto-rebuild; got: ' + n);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A5 KB auto-rebuild: rebuild reports locked → no notice (another session)', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-kb-index.json'), {
+      version: 2,
+      source_mtime_max: Math.floor((Date.now() - 7 * 86400000) / 1000),
+      entry_count: 10,
+    });
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'fresh.md'), '# fresh\n');
+    const rebuildKb = () => ({ok: false, reason: 'locked'});
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true, rebuildKb});
+    assert(!r.notices.some((x) => /KB index/i.test(x)), 'locked → silent; got: ' + JSON.stringify(r.notices));
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A5 KB auto-rebuild: rebuild fails/unavailable → falls back to manual nudge', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-kb-index.json'), {
+      version: 2,
+      source_mtime_max: Math.floor((Date.now() - 7 * 86400000) / 1000),
+      entry_count: 10,
+    });
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'fresh.md'), '# fresh\n');
+    const rebuildKb = () => ({ok: false, reason: 'tool-missing'});
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true, rebuildKb});
+    const n = r.notices.find((x) => /KB index/i.test(x));
+    assert(n, 'expected fallback nudge; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-kb-rebuild');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A5 knowledge auto-rebuild: stale → injected knowledge rebuild runs, notice says rebuilt', async () => {
+  const home = makeHome();
+  try {
+    // Knowledge index claims sources maxed 7d ago; a home-global verdict log is newer.
+    mkdirSync(join(home, '.prism-kb'), {recursive: true});
+    writeJson(join(home, '.prism-kb', 'knowledge-index.json'), {
+      version: 1,
+      source_mtime_max: Math.floor((Date.now() - 7 * 86400000) / 1000),
+      projects: {},
+    });
+    touch(join(home, '.prism-phase-1-5-verdicts.jsonl'), '{"v":1}\n');  // mtime = now
+    let called = 0;
+    const rebuildKnowledge = () => { called++; return {ok: true}; };
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true, rebuildKnowledge});
+    assertEq(called, 1, 'knowledge rebuild should run once');
+    const n = r.notices.find((x) => /knowledge index/i.test(x));
+    assert(n, 'expected knowledge-index notice; got: ' + JSON.stringify(r.notices));
+    assert(/rebuilt automatically/i.test(n), 'notice should report auto-rebuild; got: ' + n);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 // ── E2: tools-registry.md ↔ roster index-sync ─────────────────────────
 test('E2 registry sync: registry modified after last_indexed → nudge /prism-index', async () => {
   const home = makeHome();
@@ -465,6 +545,183 @@ test('E2 registry sync: never indexed (last_indexed null) → no nudge', async (
     const {runFreshnessSweep} = await importSweep(home);
     const r = runFreshnessSweep({home, force: true});
     assert(!r.notices.some((x) => /registry/i.test(x) && /prism-index/i.test(x)), 'never indexed → no nag (bootstrap covers it)');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── A1: hook-integrity + settings-wiring check ────────────────────────
+test('A1 hook integrity: a CHANGED hook failing node --check → nudges /prism-doctor', async () => {
+  const home = makeHome();
+  try {
+    // Seed a prior snapshot mark in the past so a freshly-written hook counts
+    // as "changed" and triggers the (change-gated) node --check syntax pass.
+    writeJson(join(home, '.claude', '.prism-freshness-last.json'), {
+      ts: Date.now() - 48 * 60 * 60 * 1000,
+      plugin_dirs: [],
+      tools_registry_mtime: null,
+      hooks_mtime_max: Date.now() - 24 * 60 * 60 * 1000,
+    });
+    writeFileSync(join(home, '.claude', 'hooks', 'prism-broken.mjs'), 'const x = ( ;;; not valid\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /hook integrity/i.test(x));
+    assert(n, 'expected hook-integrity notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-broken.mjs');
+    assertContains(n, '/prism-doctor');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A1 hook integrity: first sweep records mtime, skips syntax spawn (broken hook NOT flagged without prior mark)', async () => {
+  const home = makeHome();
+  try {
+    // No prior snapshot → first run → syntax pass is skipped (the gate).
+    writeFileSync(join(home, '.claude', 'hooks', 'prism-broken.mjs'), 'const x = ( ;;; not valid\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /hook integrity/i.test(x)), 'first run must not syntax-check; got: ' + JSON.stringify(r.notices));
+    // ...and it must have recorded a mark for next time.
+    const snap = JSON.parse(readFileSync(join(home, '.claude', '.prism-freshness-last.json'), 'utf-8'));
+    assert(typeof snap.hooks_mtime_max === 'number', 'snapshot should record hooks_mtime_max');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A1 hook integrity: an empty hook file → flagged (fs-only, always runs)', async () => {
+  const home = makeHome();
+  try {
+    writeFileSync(join(home, '.claude', 'hooks', 'prism-empty.mjs'), '');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /hook integrity/i.test(x));
+    assert(n, 'expected empty-file notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-empty.mjs');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A1 hook integrity: settings references a hook missing on disk → flags it', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', 'settings.json'), {
+      hooks: {
+        SessionStart: [{hooks: [{type: 'command', command: 'node ~/.claude/hooks/prism-ghost.mjs'}]}],
+      },
+    });
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /hook integrity/i.test(x));
+    assert(n, 'expected hook-integrity notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, 'prism-ghost.mjs');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A1 hook integrity: all hooks valid + wired → no nudge', async () => {
+  const home = makeHome();
+  try {
+    // Only the valid sweep file exists; settings references it (present in lib).
+    writeJson(join(home, '.claude', 'settings.json'), {
+      hooks: {
+        SessionStart: [{hooks: [{type: 'command', command: 'node ~/.claude/hooks/lib/prism-freshness-sweep.mjs'}]}],
+      },
+    });
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /hook integrity/i.test(x)), 'clean hooks → silent; got: ' + JSON.stringify(r.notices));
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── A2: roster-orphan detection ───────────────────────────────────────
+test('A2 roster orphan: roster agent with no file on disk → nudges reconcile', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {
+      agents: {
+        'ghost-agent': {status: 'available', file_path: '~/.claude/agents/ghost-agent.md'},
+        'real-agent': {status: 'available', file_path: '~/.claude/agents/real-agent.md'},
+        '_schema_example_agent': {file_path: '~/.claude/agents/nope.md'},
+      },
+    });
+    // Only real-agent has a file on disk.
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'real-agent.md'), '# real\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /no agent file|orphan/i.test(x));
+    assert(n, 'expected roster-orphan notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, '@ghost-agent');
+    assert(!n.includes('@real-agent'), 'agent with a file must not be flagged');
+    assert(!n.includes('schema_example'), 'underscore schema-example key must be ignored');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A2 roster orphan: all agents have files → no nudge', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {
+      agents: {'a': {file_path: '~/.claude/agents/a.md'}},
+    });
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    touch(join(home, '.claude', 'agents', 'a.md'), '# a\n');
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /no agent file|orphan/i.test(x)), 'no orphan → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A2 roster orphan: falls back to ~/.claude/agents/<name>.md when no file_path', async () => {
+  const home = makeHome();
+  try {
+    const refs = join(home, '.claude', 'skills', 'prism-plan', 'references');
+    writeJson(join(refs, 'roster.json'), {agents: {'noPathAgent': {status: 'available'}}});
+    // No file written → orphan via the default-path fallback.
+    mkdirSync(join(home, '.claude', 'agents'), {recursive: true});
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /no agent file|orphan/i.test(x));
+    assert(n, 'expected orphan notice via fallback path; got: ' + JSON.stringify(r.notices));
+    assertContains(n, '@noPathAgent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A2 roster orphan: no roster → no nudge (fail-open)', async () => {
+  const home = makeHome();
+  try {
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /no agent file|orphan/i.test(x)), 'no roster → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ── A3: audit-staleness reminder ──────────────────────────────────────
+test('A3 audit stale: marker older than 30d → nudges /prism-audit', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-audit-last.json'), {
+      ts: new Date(Date.now() - 45 * 86400000).toISOString(),
+    });
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    const n = r.notices.find((x) => /audit/i.test(x));
+    assert(n, 'expected audit-staleness notice; got: ' + JSON.stringify(r.notices));
+    assertContains(n, '/prism-audit');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A3 audit stale: fresh marker → no nudge', async () => {
+  const home = makeHome();
+  try {
+    writeJson(join(home, '.claude', '.prism-audit-last.json'), {ts: new Date().toISOString()});
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /last \/prism-audit|audit was/i.test(x)), 'fresh marker → silent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('A3 audit stale: no marker → no nudge (never audited; bootstrap owns first run)', async () => {
+  const home = makeHome();
+  try {
+    const {runFreshnessSweep} = await importSweep(home);
+    const r = runFreshnessSweep({home, force: true});
+    assert(!r.notices.some((x) => /last \/prism-audit|audit was/i.test(x)), 'no marker → silent');
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

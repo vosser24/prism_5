@@ -86,6 +86,12 @@ Format:
 ### Step 6 — Save results
 Write to ~/.claude/skills/prism-plan/references/audit-log.json
 
+Also stamp the freshness marker so the SessionStart freshness sweep can
+track audit recency: write ~/.claude/.prism-audit-last.json with
+`{"ts": "<ISO-8601 now>"}` (overwrite). The daily sweep reads this and
+nudges a re-run once it is >30 days old. (Absent marker = never audited;
+the sweep stays silent so fresh installs aren't nagged.)
+
 ## FLAGS
 /prism-audit              → full scan
 /prism-audit --fix        → auto-fix safe issues (gitignore, dirs)

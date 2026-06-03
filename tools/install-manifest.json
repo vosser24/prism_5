@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.0.0",
+  "prism_version": "5.1.0",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
@@ -90,6 +90,7 @@
     {"src": "commands/prism-deep-dive.md", "dst": "commands/prism-deep-dive.md", "executable": false},
     {"src": "commands/prism-deps.md", "dst": "commands/prism-deps.md", "executable": false},
     {"src": "commands/prism-doctor.md", "dst": "commands/prism-doctor.md", "executable": false},
+    {"src": "commands/prism-fresh.md", "dst": "commands/prism-fresh.md", "executable": false},
     {"src": "commands/prism-health.md", "dst": "commands/prism-health.md", "executable": false},
     {"src": "commands/prism-help.md", "dst": "commands/prism-help.md", "executable": false},
     {"src": "commands/prism-index.md", "dst": "commands/prism-index.md", "executable": false},

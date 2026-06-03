@@ -57,6 +57,20 @@ PRISM now detects the optional `claude-mem` ambient-memory tier (`~/.claude-mem/
 
 `/prism-bootstrap` offers to install `claude-mem` (opt-in, NotebookLM-style) during the health phase. **Nothing is lost in either mode** — they're mutually exclusive fallbacks. No action required.
 
+### 3. Command consolidation — automate detection, keep execution manual
+
+The governing rule: **automate cheap, deterministic DETECTION (nudge-only); keep EXECUTION manual** (LLM-judged / mutating / installing / blocking). Everything below rides the existing 24h-throttled SessionStart freshness sweep — **no new hot-path latency**.
+
+- **Three new detection checks in the freshness sweep** (all nudge-only, silent unless the condition holds, fail-open, 24h-throttled):
+  - **Hook integrity** — fs wiring sanity (settings.json hook references resolve on disk) + empty-file check, plus a change-gated `node --check` of only hooks that changed since the last sweep (zero spawns in steady state) → nudges `/prism-doctor` for the deep pass.
+  - **Roster orphans** — roster entries with no agent file on disk → nudges `/prism-bootstrap` (roster phase) / `/prism-roster --reconcile`.
+  - **Audit staleness** — `/prism-audit` now stamps `~/.claude/.prism-audit-last.json`; the sweep nudges a re-run once it's >30 days old (silent if you've never audited).
+- **Index auto-rebuild (E1/F4).** When the sweep detects the KB index *or* the cross-project knowledge index is behind its source docs out-of-band, it now **rebuilds inline** (lockfile-guarded, ≤1×/24h) instead of only nudging — so `/prism-index`'s KB-rebuild leaves the routine surface. If the rebuild tool is missing or another session holds the lock, it degrades to the old manual nudge.
+- **New `/prism-fresh`** — a refresh-only alias for `/prism-deep-dive --refresh` (regenerates the project-master's `MEMORY.md` from the current codebase). It **never** rewrites the learned agent body; that stays the separate, diff-confirmed `/prism-deep-dive --upgrade <slug>`.
+- **`/prism-help` tidy** — `/prism-deps`, `/prism-index`, `/prism-validate-plugins`, and `/prism-audit-full` move into a **Maintenance** group. Nothing is removed; all remain callable.
+
+**No action required.** All checks are additive and throttled; the only behavioural change you may notice is a rare one-time ~9s index rebuild on the first session after a `git pull` that changed the corpus (previously a nudge).
+
 ### Verifying the v5.1 upgrade
 
 ```bash
@@ -105,7 +119,7 @@ export PRISM_RECALL_RERANK_TIMEOUT_MS=25000   # default 8000
 Disable the re-rank entirely with `--no-rerank` or `PRISM_RECALL_RERANK=off`.
 
 #### Freshness — automatic
-Writes to a shared project's corpus mark a dedicated `~/.claude/.prism-kb-knowledge-dirty` flag; the index rebuilds detached at session end (zero per-turn latency). A SessionStart nudge fires if the index falls behind its source docs out-of-band (e.g. a `git pull`). Manual rebuild: `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync`.
+Writes to a shared project's corpus mark a dedicated `~/.claude/.prism-kb-knowledge-dirty` flag; the index rebuilds detached at session end (zero per-turn latency). If the index falls behind its source docs out-of-band (e.g. a `git pull`), the SessionStart sweep **auto-rebuilds it inline** as of v5.1 (lockfile-guarded, ≤1×/24h; falls back to a manual nudge if the rebuild tool is absent or already running). Manual rebuild: `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync`.
 
 #### Not in v5.0
 No vector embeddings (BM25 + re-rank only), no new hosted egress beyond the existing subscription-auth `claude -p` channel, no cross-machine sync, no automatic/implicit cross-project surfacing. The verdict-regression scanner (A5) that consumes this index is deferred to v5.1.
@@ -138,7 +152,7 @@ Default is **unchanged at 4** — do nothing and behavior is identical. When you
 #### New SessionStart freshness nudges (C3 / E1 / E2)
 The daily freshness sweep gained three checks. All are silent unless the condition holds, all reuse the existing 24h throttle, and all fail open:
 - **C3** — if your installed PRISM version is behind the clone you're working in, it nudges `node tools/prism-installer.mjs update`.
-- **E1** — if the KB index is behind its source docs, it nudges a `prism-kb-rebuild --sync`.
+- **E1** — if the KB index is behind its source docs, it nudges a `prism-kb-rebuild --sync`. *(v5.1 upgrades this to an inline auto-rebuild — see [§v5.0 → v5.1](#v50--v51).)*
 - **E2** — if `tools-registry.md` changed after your last `/prism-index`, it nudges `/prism-index`.
 
 #### Staleness preview (G1)
