@@ -14,9 +14,13 @@ Usage:
 
 Read `~/.claude/skills/prism-plan/references/roster.json`.
 
-Display table: Agent | Version | Domains | Tasks | Corrections | Status | Last Used | Team
+Display table: Agent | Version | Domains | Tasks | Corrections | Status | Scope | Last Used | Team
 
 (Team column added v3.1+. Shows `team_id` field if set, blank otherwise.)
+
+**Scope column (v5.2.0):** show each agent's `scope` — `broad` (reusable, protected) or `project:<home_project>` (targeted; auto-archived when its project is gone/stale, see [[D008]]). A missing `scope` displays as `broad` (the safe default). Core PRISM agents (agent-factory, master-orchestrator, prism-updater, *-oob-reviewer) are `broad`.
+
+**Archived agents (v5.2.0):** entries with `archived: true` were auto-archived by the freshness sweep (their file is in `~/.claude/agents/retired/`). List them in a separate "Archived" section below the live table with their `archived_reason`, and note: restore by moving `retired/<name>.md` back to `~/.claude/agents/` and clearing `archived`/`archived_at`/`archived_reason` in roster.json. Do NOT count archived agents as orphans.
 
 ## --by-domain mode (v4.1+)
 

@@ -56,9 +56,10 @@
 // Atomic write, fail-open on every read. Never throws — callers can
 // `try { ... } catch {}` safely; the helper does too.
 
-import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync, rmSync} from 'fs';
-import {join, basename} from 'path';
+import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync, rmSync, mkdirSync} from 'fs';
+import {join, basename, dirname} from 'path';
 import {spawnSync} from 'child_process';
+import {projectStatus, evaluateSurvival} from '../../tools/lib/prism-agent-scope.mjs';
 
 const STALE_AGENT_DAYS = 90;
 const UPDATE_LOG_AGE_DAYS = 15;
@@ -195,6 +196,60 @@ function checkStaleAgents(home, now) {
   const top = stale.slice(0, 3).map((s) => `@${s.name} (${s.days}d)`).join(', ');
   const more = stale.length > 3 ? ` (+${stale.length - 3} more)` : '';
   return `PRISM FRESHNESS: ${stale.length} agent${stale.length === 1 ? '' : 's'} unused ≥${STALE_AGENT_DAYS}d: ${top}${more}. Review with /prism-roster, retire with /prism-retire @<name> if no longer needed.`;
+}
+
+// ── v5.2.0: scope-aware agent survival (the ONLY mutating sweep check, [[D008]])
+// scope:"project" agents whose home project is gone (absent) or dormant (stale)
+// are MOVED to agents/retired/ and marked archived in the roster — reversible,
+// SMB-guarded (offline mount → keep), broad-protected (only explicit project
+// scope is eligible). apply=false (dry-run) → decision-only notice, no mutation.
+function checkProjectScopedSurvival(home, now, apply) {
+  const rosterPath = join(home, ...ROSTER_REL);
+  const roster = readJsonSafe(rosterPath);
+  if (!roster || !roster.agents || typeof roster.agents !== 'object') return null;
+  const parsed = parseInt(process.env.PRISM_AGENT_PROJECT_STALE_DAYS || '', 10);
+  const staleDays = (Number.isFinite(parsed) && parsed > 0) ? parsed : 90;
+  const statusFn = (name, agent) => {
+    let hp = typeof agent.home_project_path === 'string' ? agent.home_project_path.trim() : '';
+    if (!hp) return 'unknown';
+    hp = hp.replace(/^~(?=$|[/\\])/, home);
+    const dirExists = existsSync(hp);
+    const parentExists = existsSync(dirname(hp));
+    let lastSyncMs = null;
+    if (dirExists) {
+      const st = readJsonSafe(join(hp, '.claude', '.prism-state.json'));
+      if (st && st.last_sync_at) {
+        const t = new Date(st.last_sync_at).getTime();
+        if (t && !Number.isNaN(t)) lastSyncMs = t;
+      }
+    }
+    return projectStatus({homePath: hp, dirExists, parentExists, lastSyncMs, now, staleDays});
+  };
+  const {archive} = evaluateSurvival(roster, statusFn);
+  if (!archive.length) return null;
+  if (!apply) {
+    const top = archive.slice(0, 3).map((a) => `@${a.name}`).join(', ');
+    const more = archive.length > 3 ? ` (+${archive.length - 3} more)` : '';
+    return `PRISM SURVIVAL (dry-run): ${archive.length} project-scoped agent(s) WOULD be auto-archived (home project gone/stale): ${top}${more}.`;
+  }
+  const retiredDir = join(home, ...AGENTS_DIR_REL, 'retired');
+  const done = [];
+  for (const {name, reason} of archive) {
+    try {
+      mkdirSync(retiredDir, {recursive: true});
+      const src = resolveAgentFile(home, name, roster.agents[name]);
+      if (existsSync(src)) renameSync(src, join(retiredDir, `${name}.md`));
+      roster.agents[name].archived = true;
+      roster.agents[name].archived_at = new Date(now).toISOString();
+      roster.agents[name].archived_reason = reason;
+      done.push(name);
+    } catch { /* fail-open: skip this one, continue */ }
+  }
+  if (!done.length) return null;
+  atomicWrite(rosterPath, JSON.stringify(roster, null, 2));
+  const top = done.slice(0, 3).map((n) => `@${n}`).join(', ');
+  const more = done.length > 3 ? ` (+${done.length - 3} more)` : '';
+  return `PRISM SURVIVAL: auto-archived ${done.length} project-scoped agent(s) whose project is gone/stale: ${top}${more}. Files moved to ~/.claude/agents/retired/ (reversible — restore by moving the file back and clearing "archived" in roster.json).`;
 }
 
 // ── Check Q11: tools-registry rotations ────────────────────────────────
@@ -622,6 +677,12 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
     if (n) notices.push(n);
   } catch {}
 
+  // v5.2.0 — scope-aware agent survival (the one MUTATING check; [[D008]])
+  try {
+    const n = checkProjectScopedSurvival(home, now, true);
+    if (n) notices.push(n);
+  } catch {}
+
   // Q11
   try {
     const r = checkToolsRegistryRotations(home, prior);
@@ -691,6 +752,8 @@ export function freshnessSweepDryRun({home, now = Date.now(), cwd = undefined} =
   try { const n = checkUpdateLogAge(home, now); if (n) notices.push(n); } catch {}
   try { const n = checkClaudeMdMtime(home, now); if (n) notices.push(n); } catch {}
   try { const n = checkStaleAgents(home, now); if (n) notices.push(n); } catch {}
+  // Survival preview is non-mutating: apply=false → decision-only notice.
+  try { const n = checkProjectScopedSurvival(home, now, false); if (n) notices.push(n); } catch {}
   try {
     const r = checkToolsRegistryRotations(home, prior);
     if (r.notice) notices.push(r.notice);

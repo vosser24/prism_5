@@ -18,6 +18,7 @@ const REPO_ROOT = join(__dirname, '..', '..', '..');
 const SWEEP_REPO = join(REPO_ROOT, 'hooks', 'lib', 'prism-freshness-sweep.mjs');
 const SESSION_START = join(REPO_ROOT, 'hooks', 'prism-session-start.mjs');
 const FLAG_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-flag-file.mjs');
+const SCOPE_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-agent-scope.mjs');
 
 let pass = 0, fail = 0;
 
@@ -55,6 +56,12 @@ function makeHome() {
   writeFileSync(
     join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs'),
     readFileSync(FLAG_HELPER_REPO, 'utf-8'),
+  );
+  // v5.2.0: the sweep now imports the scope-survival decision lib — copy it so
+  // the temp-home import (../../tools/lib/prism-agent-scope.mjs) resolves.
+  writeFileSync(
+    join(home, '.claude', 'tools', 'lib', 'prism-agent-scope.mjs'),
+    readFileSync(SCOPE_HELPER_REPO, 'utf-8'),
   );
   return home;
 }

@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.0] - 2026-06-03
+
+Feature — **scope-aware agent survival** (brainstormed + designed this session; spec `docs/prism/plans/2026-06-03-agent-scope-survival-design.md`, adjudication [[D008]]). Resolves the standing tension that project-specific specialists (e.g. `coffee-ledger-expert`) live in the global pool forever with no lifecycle tied to the project they were built for.
+
+- **Scope decision at creation.** The creator (agent-factory / commissioning master) now declares each agent's `scope`: `"broad"` (reusable, protected) or `"project"` (targeted, with `home_project` + `home_project_path`). Rule added to `agents/agent-factory.md`; roster `_schema_example_agent` documents the new fields (`scope`, `home_project`, `home_project_path`, `archived`/`archived_at`/`archived_reason`). **Absent `scope` ⇒ treated as `broad`** (safe default — existing agents are untouched on upgrade).
+- **Auto-archive of project-orphaned agents.** The 24h freshness sweep gains its FIRST mutating check (`checkProjectScopedSurvival`): a `scope:"project"` agent whose home project is **absent** (dir gone, parent reachable) or **stale** (`last_sync_at` older than `PRISM_AGENT_PROJECT_STALE_DAYS`, default 90) is **moved** to `~/.claude/agents/retired/` and marked `archived` in the roster. Safety rails (per [[D008]]): reversible (move, never delete; entry retained), **SMB guard** (offline mount/parent ⇒ NOT archived), broad-protected, notify-after, dry-run stays read-only (`apply` flag).
+- **`/prism-roster`** shows each agent's scope and lists archived agents separately with restore instructions.
+- New: `tools/lib/prism-agent-scope.mjs` (pure decision core). Tests: `test-prism-agent-scope.mjs` (14, pure logic), `test-prism-agent-survival-sweep.mjs` (12, real archive + SMB guard + dry-run safety + reversibility); freshness-sweep harness copies the new dep.
+
 ## [5.1.9] - 2026-06-03
 
 Bugfix (UAT — `/prism-recall` hard-failed on fresh installs). A Tier-1 semantic query (the default for most questions) routes to `prism-kb-query.mjs`, which hard-requires the NotebookLM KB (`meta missing … run prism-kb-notebook-init.mjs first`, exit 1). That KB is an **opt-in, heavyweight cloud feature** — not initialized on a default/manual install — so the headline recall command emitted a scary `ERROR: meta missing: C:\…\.prism-kb-meta.json` (leaked path, looked like a crash, never said "optional") for the most common query type. Tiers 2 (state) and 3 (analytics) were unaffected (local).

@@ -54,7 +54,14 @@
     "learns": false,
     "domain_memory_file": null,
     "owned_skills": [],
-    "file_path": "~/.claude/agents/<name>/agent.md"
+    "file_path": "~/.claude/agents/<name>/agent.md",
+    "scope": "broad",
+    "_scope_doc": "v5.2.0: 'broad' (reusable, protected — never auto-archived) | 'project' (targeted; auto-archived reversibly when its home project is gone/stale, see [[D008]]). ABSENT ⇒ treated as 'broad'. Set by the creator (agent-factory/master) at creation.",
+    "home_project": null,
+    "home_project_path": null,
+    "archived": false,
+    "archived_at": null,
+    "archived_reason": null
   },
   "_schema_example_skill": {
     "__comment": "Skill entries: discovery metadata only. Populated by /prism-index from scanning ~/.claude/skills/ and ~/.claude/plugins/*/skills/. Never hand-edited — re-run /prism-index to refresh.",

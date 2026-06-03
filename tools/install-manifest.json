@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.1.9",
+  "prism_version": "5.2.0",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
@@ -63,6 +63,7 @@
     {"src": "tools/prism-telemetry-aggregate.mjs", "dst": "tools/prism-telemetry-aggregate.mjs", "executable": true},
     {"src": "tools/prism-uninstall-cleanup.mjs", "dst": "tools/prism-uninstall-cleanup.mjs", "executable": true},
     {"src": "tools/prism-validate-plugins.mjs", "dst": "tools/prism-validate-plugins.mjs", "executable": true},
+    {"src": "tools/lib/prism-agent-scope.mjs", "dst": "tools/lib/prism-agent-scope.mjs", "executable": true},
     {"src": "tools/lib/prism-bm25.mjs", "dst": "tools/lib/prism-bm25.mjs", "executable": true},
     {"src": "tools/lib/prism-flag-file.mjs", "dst": "tools/lib/prism-flag-file.mjs", "executable": true},
     {"src": "tools/lib/prism-kb-knowledge-query.mjs", "dst": "tools/lib/prism-kb-knowledge-query.mjs", "executable": true},

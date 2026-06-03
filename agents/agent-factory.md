@@ -312,6 +312,17 @@ If available:
      Detect via bash: installed_via=$([ -n "$CLAUDE_PLUGIN_ROOT" ] && echo plugin || echo manual)
      This field enables /prism-uninstall-cleanup to identify agents created while PRISM was installed as a plugin.
      Missing field on legacy entries is treated as "manual" (safe default — never wiped).
+   - **scope (v5.2.0 — DECIDE THIS AT CREATION):** `"broad"` or `"project"`.
+     * `"broad"` — the agent is reusable across projects (a stack/domain/tool
+       expert: "React", "Postgres tuning", "debt-settlement algorithms"). Stays
+       in the global pool, PROTECTED — never auto-archived. **Default when unsure.**
+     * `"project"` — the agent only makes sense for THIS one codebase (a
+       single-app expert: "acme-billing-internals"). ALSO set
+       `home_project: "<slug>"` and `home_project_path: "<absolute project root>"`.
+       Project-scoped agents are AUTO-ARCHIVED (reversibly, to agents/retired/)
+       by the freshness sweep once their home project is gone or dormant ([[D008]]).
+     The commissioning master makes this call: "reusable specialist → broad;
+     one-app expert → project". Omitting scope ⇒ treated as broad (safe).
 5. Report to orchestrator
 6. EVOLVE TEMPLATES:
    - If a new domain template was created (custom Q1-Q5):
