@@ -270,12 +270,18 @@ project).
 **Cause:** a pre-v5.1.3 turn-counter clobbered the bootstrap state, a
 partial bootstrap, or a manual edit. Breaks `/prism-deep-dive --refresh`,
 `/prism-sync`, and re-bootstrap across restarts.
-**Fix:** re-synthesize the state from filesystem evidence, then
-re-validate (expect `status: ok`):
+**Fix:** the file exists but is garbage, and `adopt` refuses to overwrite
+an existing file (`state already exists; use reset first`). So delete the
+corrupt file, re-synthesize from filesystem evidence, then re-validate
+(expect `status: ok`):
 ```
-node ~/.claude/tools/prism-state.mjs adopt
-node ~/.claude/tools/prism-state.mjs validate
+node ~/.claude/tools/prism-state.mjs reset      # deletes the corrupt file
+node ~/.claude/tools/prism-state.mjs adopt      # rebuilds from filesystem
+node ~/.claude/tools/prism-state.mjs validate   # expect status: ok
 ```
+(`reset` only removes `.prism-state.json`; `adopt` immediately rebuilds it
+from the project's identity / structure / discovery / roster / health
+evidence. Pass `--root <path>` to operate on a project other than the cwd.)
 
 ### Step 4 — Report format
 

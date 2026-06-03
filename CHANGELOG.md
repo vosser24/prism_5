@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.6] - 2026-06-03
+
+Bugfix (found while *applying* v5.1.5's own fix — the Symptom-11 recipe was broken). `/prism-doctor` Symptom #11 ("bootstrap state corrupt / clobbered") recommended `prism-state.mjs adopt` then `validate`, but `adopt` **refuses to overwrite an existing file** (`state already exists; use reset first`). Symptom #11 ALWAYS describes an *existing* corrupt file, so `adopt` alone always failed for the exact scenario it targets.
+
+- **Fix (`commands/prism-doctor.md`):** Symptom-11 recipe is now `reset` (delete the corrupt file) → `adopt` (rebuild from filesystem) → `validate`, with a note that `reset` only removes `.prism-state.json` and `adopt` immediately rebuilds it, plus the `--root` hint.
+- Regression test: `tests/v3/state/test-prism-doctor-fix-recipes.mjs` (now 11) asserts the recipe sequences `reset` before `adopt`.
+- Verified end-to-end against the live UAT project (`test_prism_5`): `reset`→`adopt`→`validate` took its clobbered `.prism-state.json` from `invalid_schema` to `status: ok`.
+
 ## [5.1.5] - 2026-06-03
 
 Bugfix (UAT finding — doctor had no bootstrap-state signal). The v5.1.3 handoff advertises `/prism-doctor` as the *guided alt* for repairing a clobbered `.claude/.prism-state.json`, but the doctor's 12 signals covered hooks/roster/settings/env — **never the bootstrap state machine itself**. So a corrupt/clobbered state (the exact v5.1.3 bug) produced a clean doctor report.

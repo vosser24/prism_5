@@ -3,9 +3,10 @@
 > **Read first.** Self-contained resume point. Re-verify any "pending" claim against the repo before trusting it — handoff claims decay ([[feedback-handoff-backlog-reverify]]).
 
 ## TL;DR — where we are
-- **Shipped v5.1.0** (command-consolidation) → then **v5.1.1, v5.1.2, v5.1.3, v5.1.4, v5.1.5** as live-UAT bug fixes. All merged + pushed to `main` (`vosser24/prism_master`). **Live `~/.claude` install synced to v5.1.5.**
-- **Running the 30-prompt live UAT** of PRISM v5.1 inside **`test_prism_5`** (coffee-ledger app, scaffolded this session). **Section A prompts 1–5 PASS; `/prism-deep-dive --refresh` exposed a real bug (fixed in v5.1.3); `/prism-doctor` run exposed two more (fixed in v5.1.4 + v5.1.5).**
-- **Next:** exit + restart `test_prism_5` on v5.1.5 → re-run `/prism-doctor` (Symptom-1 prism.env should NOT appear with node-on-PATH; if state was clobbered it now appears as Symptom #11) → continue the UAT prompts (6–30).
+- **Shipped v5.1.0** (command-consolidation) → then **v5.1.1 … v5.1.6** as live-UAT bug fixes. All merged + pushed to `main` (`vosser24/prism_master`). **Live `~/.claude` install synced to v5.1.6.**
+- **Running the 30-prompt live UAT** of PRISM v5.1 inside **`test_prism_5`** (coffee-ledger app, scaffolded this session). **Section A prompts 1–5 PASS; `/prism-deep-dive --refresh` exposed a real bug (v5.1.3); `/prism-doctor` runs exposed bugs #4, #5, #6 (fixed v5.1.4 / v5.1.5 / v5.1.6).**
+- **test_prism_5 state REPAIRED** this session: `reset`→`adopt`→`validate` → `status: ok` (was clobbered pre-v5.1.3, never repaired — confirmed STALE damage, not a regression: clobbered `.prism-state.json` frozen at 11:17Z while the live turn-counter correctly writes `.prism-turn-state.json`). Stale tier sentinels cleaned (37→2).
+- **Next:** exit + restart `test_prism_5` on v5.1.6 → (optional) re-run `/prism-doctor` to confirm only Symptom-2 resource-index remains → continue the UAT prompts (6–30).
 
 ## RESUME STEPS (do these in `test_prism_5`, not this repo)
 1. **Restart** the test_prism_5 terminal (`/exit` + `claude`) so it loads v5.1.3 hooks (stops the state-clobber).
@@ -30,6 +31,7 @@
 3. **State-file collision** — `.prism-state.json` clobbered by the turn-counter every session start; broke `/prism-deep-dive --refresh` / `/prism-sync` / `/prism-doctor` across restarts. Fix v5.1.3. Test: `test-prism-turn-state-collision.mjs` (3/3). See [[feedback-prism-state-filename-collision]].
 4. **Doctor phantom/retired fix-recipes** — `/prism-doctor` Symptom-1 recommended `cd ~/PRISM && bash scripts/bootstrap-prism-env.sh` (script never existed; `~/PRISM` stale; `prism.env` is an optional pin so a missing one with node-on-PATH is healthy, not a symptom). Symptoms 5+7 pointed at the retired `install-merge.sh`. Fix v5.1.4. Test: `test-prism-doctor-fix-recipes.mjs` (incl. a general guard: no command file may reference a non-existent `scripts/*.{sh,ps1}`).
 5. **Doctor blind to bootstrap-state corruption** — the handoff advertised `/prism-doctor` as the guided alt for repairing a clobbered `.prism-state.json`, but the doctor had no signal for it (12 signals, none on the state machine). Fix v5.1.5: signal #13 + Symptom #11 (existence-guarded). Test: `test-prism-doctor-fix-recipes.mjs` (now 10).
+6. **Doctor state-repair recipe broken** — Symptom-11's fix (`adopt`→`validate`, v5.1.5) failed in practice: `adopt` refuses to overwrite an existing file (`state already exists; use reset first`), and Symptom-11 ALWAYS describes an existing corrupt file. Found while applying the fix to test_prism_5. Fix v5.1.6: recipe is now `reset`→`adopt`→`validate`. Test asserts reset-before-adopt (now 11). Verified live: test_prism_5 → `status: ok`.
 
 ## UAT PROMPT RESULTS SO FAR (Section A)
 - **1** `/prism-bootstrap` → blocked first (bug #1), passed after v5.1.1. Created `master-test-prism-5`.

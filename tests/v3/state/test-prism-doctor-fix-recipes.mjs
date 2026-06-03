@@ -86,6 +86,12 @@ check('doctor has a corrupt/clobbered bootstrap-state symptom with the adopt fix
 check('bootstrap-state check is existence-guarded (no false-flag on non-projects)',
   /\.prism-state\.json[\s\S]{0,400}?\bexists?\b/i.test(doctor) ||
   /\bif\b[\s\S]{0,80}?\.prism-state\.json/i.test(doctor));
+// 5b: the repair must sequence `reset` BEFORE `adopt` (v5.1.6). Symptom #11
+// ALWAYS describes an existing corrupt file, and `prism-state.mjs adopt` refuses
+// with "state already exists; use reset first" when the file is present. So a
+// recipe of `adopt` alone is broken for the exact scenario it targets.
+check('bootstrap-state repair sequences reset BEFORE adopt (adopt refuses on an existing corrupt file)',
+  symBlocks.some(b => /\.prism-state\.json/.test(b) && /\breset\b[\s\S]*?\badopt\b/.test(b)));
 
 // ── Final ───────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
