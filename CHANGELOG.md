@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.2] - 2026-06-03
+
+Docs (UAT finding): added a **shell-hygiene note** to `commands/prism-bootstrap.md` Phase 4 — inspect project files with the Read/Grep/Glob tools, and never mix bash + PowerShell in one command (the bootstrap discovery probe emitted `ls` + `Test-Path`/`Get-Content`/`if (...) {…}` to git-bash, which errored). Behavioural nudge only; the error was already self-correcting and non-blocking.
+
 ## [5.1.1] - 2026-06-03
 
 Bugfix (UAT finding): **`/prism-bootstrap` (and the other parent-driven state-machine commands) were missing from the classifier's `OPUS_ORCHESTRATION_COMMANDS` allowlist** (`hooks/lib/prism-opus-classifier.mjs`). They fell to keyword-floor scoring → low tier → the parent-dispatch-guard then **denied their own deterministic `git`/`node` calls** (e.g. bootstrap Step 0 git guard on a fresh project). Added `/prism-bootstrap`, `/prism-sync`, `/prism-deep-dive`, `/prism-fresh`, `/prism-clean`, `/prism-doctor`, `/prism-index`, `/prism-deps`, `/prism-validate-plugins`, `/prism-audit-full`, `/prism-telemetry`, `/prism-uninstall-cleanup` — they now route to opus with the `orchestration command /prism-…` rationale the dispatch-guard's carve-out recognizes, so the parent runs its own state machine. Regression-guarded by a new A4 block in `tests/v3/state/test-prism-routing-chaos.mjs` (now 30 tests).

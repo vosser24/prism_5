@@ -345,6 +345,13 @@ If `--skip-discover`: log "skipped per --skip-discover" and continue.
 Otherwise: invoke the existing `/prism-discover` logic (parallelized
 codebase scan + schema introspection + API surface). DO NOT re-implement.
 
+> **Shell hygiene (esp. Windows).** Inspect project files (README, package.json,
+> manifests, source) with the **Read / Grep / Glob tools**, not shell probes.
+> If you must use a shell, pick ONE dialect — never mix bash and PowerShell in a
+> single command (e.g. `ls` + `Test-Path`/`Get-Content`/`if (...) {…}`), which
+> errors out in git-bash. This applies to the identity phase's README/package.json
+> reads too.
+
 Skip-condition: D001 §Phases table says skip if last successful run < 24h
 unless `--force`. Implement this by checking `state.phases.discovery.completed_at`:
 

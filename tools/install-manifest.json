@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.1.1",
+  "prism_version": "5.1.2",
   "files": [
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
