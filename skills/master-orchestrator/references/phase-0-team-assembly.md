@@ -89,7 +89,7 @@ Before evaluating whether to hire an agent, check the tools-registry:
 Read ~/.claude/skills/prism-plan/references/tools-registry.md
 
 For the current step's domain, check:
-1. Tier 1 tool (auto-installed by /prism-init) handles this?
+1. Tier 1 tool (auto-installed by /prism-bootstrap) handles this?
    → Route step to that tool directly. No agent needed.
    → Example: "write tests with TDD" → use superpowers
    → Example: "design landing page" → use ui-ux-pro-max

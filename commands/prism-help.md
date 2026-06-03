@@ -106,7 +106,6 @@ them directly:
 
 | Legacy command | Subsumed by | Notes |
 |---|---|---|
-| `/prism-init` | `/prism-bootstrap` (identity phase) | Initial project setup |
 | `/prism-discover` | `/prism-bootstrap` (discovery phase) | Codebase + DB + API scan |
 | `/prism-roster --reconcile` | `/prism-bootstrap` (roster phase) | Orphan-agent reconciliation. `/prism-roster` itself stays visible for display modes. |
 | `/prism-health` | `/prism-bootstrap` (health phase) | Wiring health check |

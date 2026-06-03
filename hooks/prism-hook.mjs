@@ -70,7 +70,7 @@ try {
     } catch {}
     try {
       const pcmd = j(process.cwd(), 'CLAUDE.md');
-      if (!e(pcmd)) messages.push('PRISM NOTICE: No project CLAUDE.md found. Run /prism-init to set up project identity and install companion tools.');
+      if (!e(pcmd)) messages.push('PRISM NOTICE: No project CLAUDE.md found. Run /prism-bootstrap to set up project identity.');
     } catch {}
   }
 

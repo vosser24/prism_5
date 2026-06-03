@@ -49,10 +49,6 @@
       "dest": "~/.claude/commands/prism-index.md"
     },
     {
-      "src": "commands/prism-init.md",
-      "dest": "~/.claude/commands/prism-init.md"
-    },
-    {
       "src": "commands/prism-recall.md",
       "dest": "~/.claude/commands/prism-recall.md"
     },

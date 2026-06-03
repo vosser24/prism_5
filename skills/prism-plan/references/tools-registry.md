@@ -4,7 +4,7 @@ This registry is consulted by:
 - prism-hook.mjs for intent detection on every user prompt
 - /prism-recommend for project-fit scoring
 - @agent-factory --skill-research as the first lookup before external research
-- /prism-init for which companions to auto-install
+- /prism-bootstrap for which companions to auto-install
 - @master-orchestrator before creating a new agent (check if external skill handles it)
 
 PRISM's compose-first stance (permanent): we recommend and invoke, we don't replicate.
@@ -13,7 +13,7 @@ PRISM's compose-first stance (permanent): we recommend and invoke, we don't repl
 
 ## Tier classification
 
-TIER 1 (auto-installed during /prism-init):
+TIER 1 (auto-installed during /prism-bootstrap):
   Pre-vetted, high-fit, broadly useful. Hook uses INVOCATION tone.
 
 TIER 2 (registered, not auto-installed):
@@ -24,7 +24,7 @@ TIER 3 (discovered via skill-research, pending promotion):
 
 ---
 
-# TIER 1 — Auto-installed during /prism-init
+# TIER 1 — Auto-installed during /prism-bootstrap
 
 ## 1. obra/superpowers
 Category: Coding workflow (TDD, debugging, code review, git worktrees)
@@ -65,7 +65,7 @@ Install: /plugin marketplace add https://github.com/affaan-m/everything-claude-c
          /plugin install everything-claude-code@everything-claude-code
 Stars: 159k | License: MIT | Maintained: Active
 
-Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-init.
+Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-bootstrap.
 Why: 100+ skills catalog imposes a large per-turn token tax (~12k tokens of
 skill index on every session). High context costs outweigh benefits for
 everyday work. Install manually via `/prism-recommend --include-optional`
@@ -86,7 +86,7 @@ Category: General browser automation library
 Install: uv init && uv add browser-use && uv sync && uvx browser-use install
 Stars: 83.5k | License: MIT | Maintained: Active
 
-Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-init.
+Status: OPTIONAL, Tier 2 as of PRISM 2.4.0 — NOT auto-installed during /prism-bootstrap.
 Why: pulls in a full browser stack (~400MB chromium) and a python runtime.
 Only install when the project genuinely needs general-purpose browser
 automation (scraping, form-filling, booking flows). For app-scoped screenshot

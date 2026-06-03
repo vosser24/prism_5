@@ -59,7 +59,7 @@ scaffold gaps were filled (someone may have deleted PRISM directories).
 
 If CLAUDE.md was modified since last sync (per Step 1's `claude_md_changed`):
 re-verify it has a `## PRISM Operating Rules` section. If absent, append the
-template per `/prism-init` Step 2's "append, don't reorder" rule.
+template per `/prism-bootstrap` Phase 1's "append, don't reorder" rule.
 
 DO NOT regenerate the file. DO NOT prompt the user — just verify + append if needed.
 

@@ -94,12 +94,179 @@ If `--dry-run`: skip the deterministic helper writes; print what would happen.
 Goal: ensure `CLAUDE.md` exists and is well-formed.
 
 Logic:
-- If `CLAUDE.md` is missing → invoke the existing `/prism-init` FAST-mode
-  template logic (see `commands/prism-init.md` Step 3). DO NOT re-implement;
-  reuse that template verbatim.
-- If `CLAUDE.md` exists → read it. Count lines. Verify it has a `## PRISM
-  Operating Rules` section. If absent, append the template per `/prism-init`
-  Step 2's "append, don't reorder" rule.
+- If `CLAUDE.md` is missing → create it from the canonical template below,
+  substituting `{name}` / `{domain}` / `{stack}` from the project (read README/
+  package.json/etc. to detect them).
+- If `CLAUDE.md` exists → read it, count lines, and verify it has a
+  `## PRISM Operating Rules` section. If absent, APPEND the template's
+  `## PRISM Operating Rules` section at the end (do not reorder existing content).
+
+**Canonical CLAUDE.md template:**
+
+```markdown
+# {name}
+
+## Project Identity
+- **Domain:** {domain}
+- **Stack:** {stack}
+- **Related projects:** (list siblings that share infra or conventions, if any)
+
+## PRISM Operating Rules
+
+PRISM is active on this project. These rules govern every prompt.
+
+### 1. Classification — every prompt is tier-routed
+
+The UserPromptSubmit hook classifies each prompt via
+`hooks/lib/prism-opus-classifier.mjs` (Opus primary → Sonnet fallback →
+24h cache → keyword floor). The classification is written to
+`~/.claude/.prism-turn-tier-<session>.json` and drives downstream behaviour.
+
+| Tier | Budget | Who executes | Example |
+|---|---|---|---|
+| **LIGHTWEIGHT** | ~2k tokens | Parent directly | "What's the flexbox centering syntax?" |
+| **ROUTINE** | ~15k tokens | Single subagent (Haiku or Sonnet) | "Review this React component for bugs." |
+| **NOVEL** | ~50k+ tokens | Master-orchestrator + expert panel | "Plan a real-time analytics dashboard." |
+
+### 2. Orchestrator pattern — parent plans, subagents execute
+
+The parent conversation (Opus) does: classification, planning, evaluation,
+dispatch, synthesis. Subagents do: the actual work (reads, edits, searches,
+tests). The mutation-guard (`hooks/prism-mutation-guard.mjs`) and
+parent-dispatch-guard (`hooks/prism-parent-dispatch-guard.mjs`) enforce this
+boundary for ROUTINE+ tiers:
+
+- Parent calling `Edit`/`Write`/`MultiEdit` directly on ROUTINE/NOVEL tiers
+  → blocked with a dispatch-first nudge.
+- Subagent calls always pass (detected via `parent_tool_use_id`,
+  `CLAUDE_CODE_ENTRYPOINT=subagent`, or `sentinel.dispatched=true`).
+- Override for one-shot mutations: prefix prompt with `!opus-force:`.
+
+### 3. Model selection — cheapest viable
+
+Use the cheapest model that clears the quality bar. The
+agent-model-guard (`hooks/prism-agent-model-guard.mjs`) nudges you on
+every `Agent()` call without an explicit `model` field.
+
+| Work | Model | Cost vs Opus |
+|---|---|---|
+| Typo fix, rename, docstring, trivial edit | `haiku` | ~1/15 |
+| Single-file implementation, standard review | `sonnet` | ~1/5 |
+| Cross-cutting architecture, novel domain, adversarial review | `opus` | 1× |
+
+Always pass `model=` explicitly on `Agent()` calls. No default implicit to Opus.
+
+### 4. NOVEL flow — panel of experts + master orchestrator
+
+When the classifier returns `opus` tier OR the prompt contains novel
+architectural stakes, the flow is:
+
+1. `@master-orchestrator` is invoked (Opus).
+2. It reads `~/.claude/skills/prism-plan/references/model-matrix.md`,
+   `roster.json`, `mcp-registry.md`, `tools-registry.md`.
+3. It identifies required specialists. For each gap it checks
+   `tools-registry.md` FIRST (compose-first — see rule 7).
+4. It assembles a panel (3–5 expert subagents, each pick their own stance).
+5. It chairs **adversarial review** — every position must survive at least
+   two substantive challenges before making the final plan.
+6. It presents a phased plan with explicit "Deliberately NOT doing" section
+   and waits for user approval.
+7. On approval, it dispatches work to subagents in parallel where
+   dependencies allow.
+
+### 5. Parallel execution
+
+When you have independent work, send multiple `Agent()` tool uses in a
+single message. One turn = N parallel subagents, not N sequential turns.
+This is the primary speed lever.
+
+### 6. Memory + context hygiene
+
+The session-start hook runs a daily context tax audit. The
+UserPromptSubmit hook counts turns per session and nudges:
+
+- **Turn 15:** `/clear` reminder + `memory-save-nudge` fires (save durable
+  lessons to `tasks/lessons-*.md` BEFORE clearing).
+- **Turn 20+:** strong `/clear` recommendation — quality degrades in long
+  sessions.
+- **Every 5 turns after 15:** repeat memory-save nudge.
+- **Stop hook:** writes a rich session summary to
+  `~/.claude/.prism-sessions/<session_id>.md`.
+
+When you see a memory-save nudge, review the session and write any durable
+insights to:
+- `tasks/lessons-tactical.md` — code-level patterns, gotchas, fixes
+- `tasks/lessons-strategic.md` — architecture decisions, trade-off rationale
+
+### 7. Compose-first (Tier 1 tools)
+
+Before building a new specialist agent, check
+`~/.claude/skills/prism-plan/references/tools-registry.md`. If a Tier 1
+tool handles the need, invoke it. If not, check Tier 2 and consider
+installing via `/prism-recommend`. Only spawn the agent-factory when no
+existing tool fits.
+
+### 8. Safety
+
+`hooks/prism-safety.mjs` hard-blocks: `rm -rf`, `DROP TABLE/DATABASE/SCHEMA`,
+`TRUNCATE TABLE`, `git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No
+override. Run these manually outside Claude Code if genuinely required.
+
+### 9. Persistence + evolution
+
+- `~/.claude/.prism-routing.jsonl` — every hook decision appended here. Use
+  `tools/prism-monitor` to tail it.
+- `skills/prism-plan/references/roster.json` — agent usage counts,
+  effectiveness, last-used dates. Updated by `hooks/prism-subagent-stop.mjs`.
+- `/prism-roster` — inspect the roster.
+- `/prism-health` — overall PRISM state.
+- `/prism-retire @name` — archive unused specialists.
+- `/prism-update` — self-update (model-matrix, registries) every ~15 days.
+
+### 10. CLAUDE.md sizing discipline
+
+This file is a **routing table, not a knowledge base**. Claude Code loads
+every CLAUDE.md along the path from cwd up on every turn, so growth here
+is paid on every prompt forever. Detail lives elsewhere.
+
+- **Target: ≤200 lines for this root CLAUDE.md.** Over that, move
+  detail OUT to one of the destinations below.
+- **What stays here:** project identity, stack summary, operating
+  rules, build/test/lint commands, 1–2 line routing pointers like
+  *"for DB schema, read `.claude/references/db-index.md`"*.
+- **What moves OUT:**
+  - Indexed scans (DB schema, codebase map, API specs) →
+    `.claude/references/<domain>-{index,full}.md` via `/prism-discover`.
+  - Subdomain-specific conventions (backend vs frontend stack rules) →
+    nested `CLAUDE.md` in that subdir (auto-loaded only when working
+    there — not always-on). `/prism-discover` detects candidates.
+  - Accumulated code-level lessons → `tasks/lessons-tactical.md`
+    (append-only).
+  - Architecture decisions + trade-off rationale → `tasks/lessons-strategic.md`.
+  - Per-session recap → written by the Stop hook to
+    `~/.claude/.prism-sessions/<session_id>.md`.
+  - Personal overrides that must not be committed → `CLAUDE.local.md`
+    (gitignored).
+- **Nested CLAUDE.md files** (only when subdomains diverge):
+  - Each stays ≤100 lines.
+  - Covers ONLY what differs from root — never repeats project-wide
+    rules (those cascade from root automatically).
+  - `/prism-discover` proposes nested files when it detects distinct
+    tech-stack subdomains; user approves per-subdomain.
+  - Scaffolded subdomain map lives at `.claude/references/subdomain-map.md`.
+- **Health check:** `/prism-discover --check-claude-chain` walks the
+  repo and warns on size or duplication violations.
+
+## Build / Test / Lint
+
+(fill in per stack — `npm run dev`, `pytest`, `ruff`, etc. Keep to the
+exact shell commands PRISM subagents should run — nothing else.)
+
+## Conventions
+
+(Project-wide conventions that apply everywhere. Subdomain-specific
+ones go in nested `CLAUDE.md` files if needed.)
+```
 - Report line count.
 - Soft warning if line count exceeds 200 (D001 phase 7 calls for ≤200; the
   CLAUDE.md update phase 7 is folded into the discovery refinement step).

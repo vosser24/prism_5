@@ -145,7 +145,6 @@ Every command, grouped by workflow, with a concrete use case. Run `/prism-help` 
 | Command | Use case | Key flags |
 |---|---|---|
 | `/prism-bootstrap` | Run **once on any new or freshly-cloned project** to fully initialize PRISM through the 7-phase machine. Idempotent. | `--dry-run`, `--interactive`, `--force`, `--skip-discover`, `--no-master`, `--no-telemetry` |
-| `/prism-init` | When you only need the `CLAUDE.md` operating-rules template + directory scaffold, without the full 7-phase run. (Subsumed by bootstrap.) | `full` |
 
 ### Daily
 

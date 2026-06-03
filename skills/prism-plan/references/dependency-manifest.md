@@ -4,7 +4,7 @@ Source of truth for `/prism-deps`. Lists every optional dependency PRISM can
 use, the capability each unlocks, the install command per OS, and the
 detection check.
 
-**Core requirements** (blocking — `/prism-init` fails without these):
+**Core requirements** (blocking — `/prism-bootstrap` fails without these):
 - `node` >= 18
 - `python` >= 3.10
 - `git` (any recent version)

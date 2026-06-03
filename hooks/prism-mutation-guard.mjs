@@ -35,10 +35,10 @@
 //
 // Override: if the user prompt contains "!opus-force:", pass through silently.
 //
-// Bootstrap allowlist (v2.2.1): `/prism-init`, `/prism-update`, and
-// `/prism-archive` are legitimate write contexts — these commands MUST
-// write new project files by design. If the user's current prompt is one
-// of these slash commands, the guard passes through.
+// Bootstrap allowlist (v2.2.1): `/prism-update` and `/prism-archive` are
+// legitimate write contexts — these commands MUST write new project files
+// by design. If the user's current prompt is one of these slash commands,
+// the guard passes through.
 //
 // Logs to ~/.claude/.prism-routing.jsonl.
 
@@ -109,7 +109,7 @@ const BASH_WRITE_PATTERNS = [
 const BOM_SAFE_RE = /-Encoding\s+(UTF8NoBOM|ASCII|Utf8NoBOM)\b|UTF8Encoding\]::new\s*\(\s*\$false\s*\)/i;
 
 // Bootstrap/write commands — these legitimately need to write project files.
-const BOOTSTRAP_COMMANDS = ['/prism-init', '/prism-update', '/prism-archive'];
+const BOOTSTRAP_COMMANDS = ['/prism-update', '/prism-archive'];
 
 function sentinelPath(sessionId) {
   return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);

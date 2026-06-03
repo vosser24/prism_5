@@ -153,7 +153,7 @@ AFTER:  6/7 installed (1 failed: kokoro model download — see details above)
 
 - Does NOT manage Node or Python versions (use nvm/fnm/pyenv).
 - Does NOT install MCP servers (that's `/prism-recommend`).
-- Does NOT install Tier 1 or Tier 2 companion tools (that's `/prism-init`
+- Does NOT install Tier 1 or Tier 2 companion tools (that's `/prism-bootstrap`
   and `/prism-recommend` respectively).
 - Does NOT touch the core requirements (`node`, `python`, `git`) — those
   are install-time blockers checked by `scripts/verify.mjs`.

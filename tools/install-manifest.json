@@ -93,7 +93,6 @@
     {"src": "commands/prism-health.md", "dst": "commands/prism-health.md", "executable": false},
     {"src": "commands/prism-help.md", "dst": "commands/prism-help.md", "executable": false},
     {"src": "commands/prism-index.md", "dst": "commands/prism-index.md", "executable": false},
-    {"src": "commands/prism-init.md", "dst": "commands/prism-init.md", "executable": false},
     {"src": "commands/prism-recall.md", "dst": "commands/prism-recall.md", "executable": false},
     {"src": "commands/prism-recommend.md", "dst": "commands/prism-recommend.md", "executable": false},
     {"src": "commands/prism-retire.md", "dst": "commands/prism-retire.md", "executable": false},

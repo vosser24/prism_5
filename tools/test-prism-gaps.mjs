@@ -1106,15 +1106,14 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     // Fresh per-test cache so no state leaks across assertions.
     const makeCache = () => join(tmpdir(), `prism-v220-cache-${Math.random().toString(36).slice(2, 8)}.json`);
 
-    // V220.1 — `/prism-init` routes to opus via allowlist (the user's
-    // reported bug: `/prism-init full` landed in haiku in 2.1.3).
+    // V220.1 — `/prism-update` routes to opus via allowlist.
     {
       const cp = makeCache();
       // Ensure no API key — we want to exercise the short-circuit.
       const savedKey = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
-      const r = await mod.classifyPrompt({prompt: '/prism-init full', cachePath: cp});
+      const r = await mod.classifyPrompt({prompt: '/prism-update full', cachePath: cp});
       if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
-      assert('V220.1 /prism-init → opus via allowlist (REGRESSION from 2.1.3 haiku bug)',
+      assert('V220.1 /prism-update → opus via allowlist',
         r.tier === 'opus' && r.source === 'allowlist',
         `tier=${r.tier} source=${r.source} rationale=${r.rationale}`);
     }
@@ -1329,31 +1328,31 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
     if (existsSync(p)) try { unlinkSync(p); } catch {}
   }
 
-  // V221.1 — /prism-init prompt + mutation-guard → allowed (no deny).
+  // V221.1 — /prism-update prompt + mutation-guard → allowed (no deny).
   {
     const sid = testSessionId + '-v221-1';
-    // Simulate the sentinel the prompt-tier-router would write for /prism-init.
+    // Simulate the sentinel the prompt-tier-router would write for /prism-update.
     writeSentinel(sid, {
       ts: new Date().toISOString(),
       tier: 'opus',
       score: 0, h: 0, s: 0, o: 0, compound: false,
       force_opus: false, dispatched: false,
-      rationale: 'orchestration command /prism-init',
+      rationale: 'orchestration command /prism-update',
       source: 'allowlist',
     });
-    // Payload: parent context mutation with /prism-init still in prompt.
-    // PRISM_MUTATION_GUARD defaults to hard, so a non-init mutation would be
+    // Payload: parent context mutation with /prism-update still in prompt.
+    // PRISM_MUTATION_GUARD defaults to hard, so a non-bootstrap mutation would be
     // blocked. With the new bypass, this must pass.
     const prev = process.env.PRISM_MUTATION_GUARD;
     process.env.PRISM_MUTATION_GUARD = 'hard';
     const res = runHook('prism-mutation-guard.mjs', {
       tool_name: 'Write',
-      tool_input: {file_path: '/tmp/test-init-out.md'},
+      tool_input: {file_path: '/tmp/test-update-out.md'},
       session_id: sid,
-      user_prompt: '/prism-init full',
+      user_prompt: '/prism-update',
     });
     if (prev === undefined) delete process.env.PRISM_MUTATION_GUARD; else process.env.PRISM_MUTATION_GUARD = prev;
-    assert('V221.1 /prism-init prompt + mutation-guard → allowed (exit 0, no deny)',
+    assert('V221.1 /prism-update prompt + mutation-guard → allowed (exit 0, no deny)',
       res.status === 0 && !/permissionDecision":"deny"/.test(res.stdout || ''),
       `status=${res.status} stdout=${(res.stdout || '').slice(0, 120)}`);
     cleanSentinel(sid);

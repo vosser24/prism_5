@@ -40,7 +40,7 @@ ECC (Tier 2 — OPTIONAL, high token tax; recommend only when fit ≥ 4):
   +1 if sensitive config (secrets, auth, payments)
   +1 if compliance mentioned (GDPR, SOC2, HIPAA)
   Note: NOT shown in default output unless fit ≥ 4 AND user passes
-  --include-optional. Never auto-installed by /prism-init.
+  --include-optional. Never auto-installed by /prism-bootstrap.
 
 BROWSER-USE (Tier 2 — OPTIONAL, ~400 MB chromium):
   +2 if scraping/automation/web-testing context

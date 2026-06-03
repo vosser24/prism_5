@@ -53,7 +53,6 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // opus with zero API cost, zero latency. Extend with care: any command
 // added here bypasses the classifier entirely.
 export const OPUS_ORCHESTRATION_COMMANDS = new Set([
-  '/prism-init',
   '/prism-plan',
   '/prism-app-expert',
   '/prism-update',

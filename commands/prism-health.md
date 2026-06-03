@@ -75,7 +75,7 @@ Read tools-registry.md. For each entry, check install status:
 
 Output:
   EXTERNAL TOOLS
-    Tier 1 (auto-installed by /prism-init):
+    Tier 1 (auto-installed by /prism-bootstrap):
       ✓ obra/superpowers                     installed, active
       ✓ nextlevelbuilder/ui-ux-pro-max-skill installed, active
 
