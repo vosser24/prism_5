@@ -90,6 +90,15 @@ Run these in parallel where possible:
 12. **Hard-mode env** — `${PRISM_MODEL_GUARD:-}`. If set to `hard`,
     confirm the user knows this is the v2.9.1+ default-deny mode.
 
+13. **Bootstrap state validity** — if the current project has a
+    `.claude/.prism-state.json` (the bootstrap state machine — distinct
+    from the `.claude/.prism-turn-state.json` turn-counter), validate it:
+    `node ~/.claude/tools/prism-state.mjs validate`. A `status:` other
+    than `ok` means the state is corrupt or clobbered. If the file does
+    not exist, the dir simply isn't a bootstrapped PRISM project — that
+    is NOT a symptom; skip it (do not run `validate`, which reports
+    `invalid_schema` for a missing file).
+
 ### Step 2 — Symptom → fix mapping
 
 For each detected symptom, emit ONE proposal in this exact format:
@@ -249,6 +258,23 @@ cp "${CLAUDE_PLUGIN_ROOT}"/skills/prism-plan/references/{adversarial-review.md,m
 [ -f ~/.claude/skills/prism-plan/references/roster.json ] || \
    cp "${CLAUDE_PLUGIN_ROOT}/skills/prism-plan/references/roster.json" \
       ~/.claude/skills/prism-plan/references/roster.json
+```
+
+#### 11. Bootstrap state corrupt / clobbered
+**Detect:** the project has `.claude/.prism-state.json` **and**
+`node ~/.claude/tools/prism-state.mjs validate` reports a `status:`
+other than `ok` (e.g. `invalid_schema` — missing `schema_version` /
+`phases` / `project_slug`, BOM corruption, or unparseable JSON). If the
+file does not exist this is NOT a symptom (the dir isn't a bootstrapped
+project).
+**Cause:** a pre-v5.1.3 turn-counter clobbered the bootstrap state, a
+partial bootstrap, or a manual edit. Breaks `/prism-deep-dive --refresh`,
+`/prism-sync`, and re-bootstrap across restarts.
+**Fix:** re-synthesize the state from filesystem evidence, then
+re-validate (expect `status: ok`):
+```
+node ~/.claude/tools/prism-state.mjs adopt
+node ~/.claude/tools/prism-state.mjs validate
 ```
 
 ### Step 4 — Report format

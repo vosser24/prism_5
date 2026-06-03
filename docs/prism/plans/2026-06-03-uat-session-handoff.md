@@ -3,9 +3,9 @@
 > **Read first.** Self-contained resume point. Re-verify any "pending" claim against the repo before trusting it — handoff claims decay ([[feedback-handoff-backlog-reverify]]).
 
 ## TL;DR — where we are
-- **Shipped v5.1.0** (command-consolidation) → then **v5.1.1, v5.1.2, v5.1.3** as live-UAT bug fixes. All merged + pushed to `main` (`vosser24/prism_master`). **Live `~/.claude` install synced to v5.1.3.**
-- **Running the 30-prompt live UAT** of PRISM v5.1 inside **`test_prism_5`** (coffee-ledger app, scaffolded this session). **Section A prompts 1–5 PASS; `/prism-deep-dive --refresh` exposed a real bug (fixed in v5.1.3).**
-- **Next:** restart `test_prism_5` on v5.1.3 → repair its clobbered state → continue the UAT prompts.
+- **Shipped v5.1.0** (command-consolidation) → then **v5.1.1, v5.1.2, v5.1.3, v5.1.4, v5.1.5** as live-UAT bug fixes. All merged + pushed to `main` (`vosser24/prism_master`). **Live `~/.claude` install synced to v5.1.5.**
+- **Running the 30-prompt live UAT** of PRISM v5.1 inside **`test_prism_5`** (coffee-ledger app, scaffolded this session). **Section A prompts 1–5 PASS; `/prism-deep-dive --refresh` exposed a real bug (fixed in v5.1.3); `/prism-doctor` run exposed two more (fixed in v5.1.4 + v5.1.5).**
+- **Next:** exit + restart `test_prism_5` on v5.1.5 → re-run `/prism-doctor` (Symptom-1 prism.env should NOT appear with node-on-PATH; if state was clobbered it now appears as Symptom #11) → continue the UAT prompts (6–30).
 
 ## RESUME STEPS (do these in `test_prism_5`, not this repo)
 1. **Restart** the test_prism_5 terminal (`/exit` + `claude`) so it loads v5.1.3 hooks (stops the state-clobber).
@@ -21,11 +21,15 @@
 - `a78a6e0b5` — **v5.1.1** UAT-fix: `/prism-bootstrap` + parent-driven commands added to `OPUS_ORCHESTRATION_COMMANDS` (they were blocked by the dispatch-guard on their own git/node calls).
 - `7fb3eec33` — **v5.1.2** UAT-fix: bootstrap Phase-4 shell-hygiene nudge (Read/Grep/Glob, no mixed bash+PowerShell).
 - `364f1cda9` — **v5.1.3** UAT-fix: turn-counter moved to `.claude/.prism-turn-state.json` so it stops clobbering bootstrap `.prism-state.json`.
+- `cadeaaf5c` — **v5.1.4** UAT-fix: `/prism-doctor` fix-recipes no longer point at retired/phantom installer scripts (`bootstrap-prism-env.sh` never existed; `install-merge.sh` retired). Symptom-1 detection now node-guarded; Symptoms 5+7 use `node tools/prism-installer.mjs update`. New test `test-prism-doctor-fix-recipes.mjs` (incl. general dangling-script guard).
+- **v5.1.5** UAT-fix (this commit): `/prism-doctor` now actually validates the bootstrap `.prism-state.json` (signal #13 + Symptom #11, existence-guarded) — it previously had NO state signal despite being the advertised "guided alt" for state repair. Test extended to 10.
 
 ## BUGS FOUND BY THE UAT (all FIXED + TDD'd + shipped)
 1. **Dispatch-guard blocked `/prism-bootstrap`** (Step-0 git guard denied on fresh projects) — `/prism-bootstrap` etc. weren't in the classifier opus-allowlist. Fix v5.1.1. Test: `test-prism-routing-chaos.mjs` A4 block.
 2. **Bootstrap discovery shell-mixing** (`ls` + `Test-Path`/`Get-Content` to git-bash → syntax error) — benign/self-correcting; added a doc nudge. Fix v5.1.2.
 3. **State-file collision** — `.prism-state.json` clobbered by the turn-counter every session start; broke `/prism-deep-dive --refresh` / `/prism-sync` / `/prism-doctor` across restarts. Fix v5.1.3. Test: `test-prism-turn-state-collision.mjs` (3/3). See [[feedback-prism-state-filename-collision]].
+4. **Doctor phantom/retired fix-recipes** — `/prism-doctor` Symptom-1 recommended `cd ~/PRISM && bash scripts/bootstrap-prism-env.sh` (script never existed; `~/PRISM` stale; `prism.env` is an optional pin so a missing one with node-on-PATH is healthy, not a symptom). Symptoms 5+7 pointed at the retired `install-merge.sh`. Fix v5.1.4. Test: `test-prism-doctor-fix-recipes.mjs` (incl. a general guard: no command file may reference a non-existent `scripts/*.{sh,ps1}`).
+5. **Doctor blind to bootstrap-state corruption** — the handoff advertised `/prism-doctor` as the guided alt for repairing a clobbered `.prism-state.json`, but the doctor had no signal for it (12 signals, none on the state machine). Fix v5.1.5: signal #13 + Symptom #11 (existence-guarded). Test: `test-prism-doctor-fix-recipes.mjs` (now 10).
 
 ## UAT PROMPT RESULTS SO FAR (Section A)
 - **1** `/prism-bootstrap` → blocked first (bug #1), passed after v5.1.1. Created `master-test-prism-5`.

@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.5] - 2026-06-03
+
+Bugfix (UAT finding — doctor had no bootstrap-state signal). The v5.1.3 handoff advertises `/prism-doctor` as the *guided alt* for repairing a clobbered `.claude/.prism-state.json`, but the doctor's 12 signals covered hooks/roster/settings/env — **never the bootstrap state machine itself**. So a corrupt/clobbered state (the exact v5.1.3 bug) produced a clean doctor report.
+
+- **Fix (`commands/prism-doctor.md`):** added **signal #13** (validate `.claude/.prism-state.json` via `node ~/.claude/tools/prism-state.mjs validate` when the file exists) and **Symptom #11** ("bootstrap state corrupt / clobbered" → fix `prism-state.mjs adopt` then re-validate). Both are **existence-guarded** — a missing file means "not a bootstrapped project," not a symptom (`validate` returns `invalid_schema` for a missing file, which would otherwise false-flag every non-PRISM dir, including the PRISM repo).
+- Regression test: `tests/v3/state/test-prism-doctor-fix-recipes.mjs` extended to 10 tests (bootstrap-state coverage + existence-guard assertions).
+
 ## [5.1.4] - 2026-06-03
 
 Bugfix (UAT finding — stale doctor fix-recipes). Live UAT of `/prism-doctor` (in `test_prism_5`) surfaced Symptom-1 ("prism.env missing") recommending `cd ~/PRISM && bash scripts/bootstrap-prism-env.sh` — a script that **never existed in git history**, behind a stale `~/PRISM` clone path. No `.mjs` writes `prism.env`; it is an **optional** node-resolution pin (step 2 of the `prism-exec` fallback chain), so with `node` on PATH a missing pin is the *normal healthy state*, not a symptom. Two sibling fix-recipes (Symptoms 5 and 7) also pointed at the retired `scripts/install-merge.sh` (the shell installer was retired in v5.1 / `5da140f3f`).

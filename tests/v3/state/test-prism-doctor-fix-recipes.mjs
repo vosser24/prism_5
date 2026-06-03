@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Doctor fix-recipe gate (PRISM v5.1.4 UAT-fix).
+// Doctor command-correctness gate (PRISM v5.1.4 / v5.1.5 UAT-fixes).
 // Run: node tests/v3/state/test-prism-doctor-fix-recipes.mjs
 // Exit: 0 = all pass; 1 = any failure.
 //
@@ -67,6 +67,25 @@ check('Symptom-1 detection is guarded on node being unresolvable (not bare prism
   /node/.test(sym1) && /(unresolvable|not\b[^.]*\bPATH|--version\b[^.]*fail|fails)/i.test(sym1));
 check('Symptom-1 still references prism.env (the pin it is about)',
   /prism\.env/.test(sym1));
+
+// 5: bootstrap-state coverage (v5.1.5). The handoff advertises /prism-doctor as
+// the guided alt for repairing a clobbered `.prism-state.json`, but pre-5.1.5 the
+// doctor had NO signal for it (its 12 signals covered hooks/roster/settings/env,
+// not the bootstrap state machine). Assert the command now validates that state
+// and recommends the real repair (`prism-state.mjs adopt`), existence-guarded so
+// it never false-flags a non-bootstrapped dir (e.g. the PRISM repo itself, where
+// `prism-state.mjs validate` returns invalid_schema for a missing file).
+check('doctor validates bootstrap state via prism-state.mjs validate',
+  /prism-state\.mjs\s+validate/.test(doctor));
+check('doctor recommends prism-state.mjs adopt as the repair',
+  /prism-state\.mjs\s+adopt/.test(doctor));
+const symBlocks = doctor.match(/####\s*\d+\.[^\n]*\n[\s\S]*?(?=\n####\s*\d|\n###\s)/g) || [];
+const hasStateSymptom = symBlocks.some(b =>
+  /\.prism-state\.json/.test(b) && /(corrupt|clobber|invalid)/i.test(b) && /adopt/.test(b));
+check('doctor has a corrupt/clobbered bootstrap-state symptom with the adopt fix', hasStateSymptom);
+check('bootstrap-state check is existence-guarded (no false-flag on non-projects)',
+  /\.prism-state\.json[\s\S]{0,400}?\bexists?\b/i.test(doctor) ||
+  /\bif\b[\s\S]{0,80}?\.prism-state\.json/i.test(doctor));
 
 // ── Final ───────────────────────────────────────────────────────────────────
 console.log(`tests passed: ${pass}/${total}`);
