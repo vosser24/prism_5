@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.3] - 2026-06-03
+
+Bugfix (UAT — classifier over-escalated **any** prompt mentioning `ledger` to opus + summon_panel). The money/payments `STAKES_SIGNALS` line in `tools/lib/prism-tier-classify.mjs` carried a **bare, unanchored `ledger`** token — directly violating the file's own stated rule (lines 86–91: "Each pattern carries a CONTEXT ANCHOR … not everyday dev vocabulary"). In a coffee-**ledger** app the word is in every file path, README, and read query, so trivial prompts — `what is the current ledger balance?`, `fix the typo in the ledger README`, `rename the ledger app folder` — all routed **opus + panel**.
+
+- Surfaced by UAT prompt 18 (the sonnet-calibration test): pasting its transcript back into the dev session fired `summon_panel=true` ("novel architectural request") off the `backend/ledger/…` paths in the pasted text. Root-caused via the classifier directly — the bare prompt routes haiku, but **any** ledger mention (pasted or typed) tripped `detectStakes` → panel.
+- **Fix:** removed bare `ledger` from the money signal and added an **anchored** ledger-mutation pattern — `(reconcil|rebalanc|recomput|settl|void|revers)…\s+(the|all|a/an)?\s+ledger`. Reads and cosmetic edits pass; genuine ledger mutations (`reconcile the ledger`, `reverse a ledger entry`) still escalate. No test depended on the bare token.
+- Regression tests: `test-prism-v4-6-classifiers.mjs` 13→20 — four benign `ledger` prompts (incl. prompt-18) must NOT escalate; two genuine ledger mutations must still fire `stakes`. All related suites stay green (panel-paste-dampening 9, sonnet-routing 5, routing-chaos 30, classifier-uat 15, release-screen-panel 7, panel-deadlock 8).
+- **Known limitation (noted, not fixed):** transcript-style pastes (prose / file paths, no code fences) don't reach the v5.1.7 `pastedRatio ≥ 0.6` dampening threshold, so paste content is still scored. This fix removes the specific `ledger` trigger; a broader transcript-aware paste detector is a separate enhancement.
+
 ## [5.2.2] - 2026-06-03
 
 Bugfix (UAT — `/prism-validate-plugins` audited **0 of 15** active plugins and returned a false "✅ all healthy"). `tools/prism-validate-plugins.mjs` was written + tested against an assumed schema the installed `claude` CLI never emits: it expected `{plugins:[{name, path, hooks:[{command}], skills:[{name}]}]}`, but `claude plugin list --json` returns a **top-level array** of `{id, version, scope, enabled, installPath, …}` that exposes **neither hooks nor skills**. So `pluginList.plugins` was `undefined` → 0 audited, and the entire test fixture set encoded the fiction (green tests, real-world blind).

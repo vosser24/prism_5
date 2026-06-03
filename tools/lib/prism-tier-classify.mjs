@@ -104,7 +104,12 @@ const STAKES_SIGNALS = [
   /\b(secret|credential|password)s?\b[\w\s]{0,25}\b(rotat\w*|leak\w*|expos\w*|revoke)\b/i,
   // Money / payments with action context (NOT mere page/feature names)
   /\b(charg(e|ing|ed)|refund|payout|chargeback|invoic(e|ing))\b/i,
-  /\b(process\w*\s+(a\s+)?payment|bill\w*\s+(the\s+)?(customer|card)|financial\s+transaction|ledger)\b/i,
+  /\b(process\w*\s+(a\s+)?payment|bill\w*\s+(the\s+)?(customer|card)|financial\s+transaction)\b/i,
+  // "ledger" is the DOMAIN NOUN of ledger/finance apps — it appears in every file
+  // path, README, and read query. A bare mention is everyday vocabulary, not
+  // high-stakes work (it over-escalated "ledger balance", "ledger README typo",
+  // "rename the ledger folder" → opus+panel). Anchor to genuine ledger MUTATIONS.
+  /\b(reconcil\w*|rebalanc\w*|recomput\w*|settl\w*|void\w*|revers\w*)\s+(the\s+|all\s+|an?\s+)?ledger\b/i,
   // Production / sensitive data
   /\b(production\s+(deploy\w*|release|rollout|incident|outage)|deploy\w*\s+to\s+prod\w*|prod(uction)?\s+(db|database|data)|customer\s+data|\bPII\b|data\s?loss)\b/i,
 ];

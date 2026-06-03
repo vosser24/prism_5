@@ -36,6 +36,16 @@ check('D1 trivial prompt unaffected', classifyWithScore('rename this variable to
 check('D1 benign "token" prompt not over-escalated', classifyWithScore('parse the JWT token from the request header', '').stakes === false);
 check('D1 benign "migrate React component" not over-escalated', classifyWithScore('migrate this React component from class to hooks', '').stakes === false);
 check('D1 credential rotation (plural) detected', classifyWithScore('rotate the production API credentials', '').stakes === true);
+// D1 "ledger" must be ANCHORED — a bare domain noun in any ledger/finance app
+// (it appears in every file path) must NOT escalate everyday reads/cosmetic edits.
+check('D1 "ledger balance" read not over-escalated', classifyWithScore('what is the current ledger balance for Alice?', '').stakes === false);
+check('D1 "ledger README typo" not over-escalated', classifyWithScore('fix the typo in the ledger README', '').stakes === false);
+check('D1 "rename ledger folder" not over-escalated', classifyWithScore('rename the ledger app folder', '').stakes === false);
+check('D1 "ledger summary column" not over-escalated', classifyWithScore('add a column to the ledger summary table', '').stakes === false);
+check('D1 Purchase note field (prompt-18) not over-escalated', (() => { const r = classifyWithScore('add an optional note field to the Purchase model and expose it in the API', ''); return r.stakes === false && r.summon_panel === false; })());
+// genuine high-stakes ledger MUTATIONS must still escalate (anchor, not delete)
+check('D1 "reconcile the ledger" still detected', classifyWithScore('reconcile the ledger', '').stakes === true);
+check('D1 "reverse a ledger entry" still detected', classifyWithScore('reverse a ledger entry', '').stakes === true);
 
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);
