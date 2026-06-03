@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.8] - 2026-06-03
+
+Bugfix (UAT papercut — `/prism-clean append-decision` rejected un-padded D-numbers). `tools/prism-clean.mjs` validated `--d-number` with `/^\d{3,}$/` (≥3 digits), so the natural call `--d-number 1` (the number lifted from "D001") was rejected with a misleading `(digits only)` message — "1" *is* digits. Observed live: the model passed `1`, got rejected, retried `001`.
+
+- **Fix:** validator is now `/^\d+$/` and the value is zero-padded to the canonical 3-digit form (`String(dNumber).padStart(3,'0')`) before building the `[[D###]]` pointer. Error message clarified (`<N> (digits only, e.g. 1 or 001)`).
+- Regression test: `tests/v3/state/test-prism-clean.mjs` — new case asserts `--d-number 1` → `[[D001]]` (now 22 tests).
+
 ## [5.1.7] - 2026-06-03
 
 Two UAT-surfaced false-positive fixes (found by feeding `/prism-doctor` and `/prism-audit` transcripts back into a live PRISM session).

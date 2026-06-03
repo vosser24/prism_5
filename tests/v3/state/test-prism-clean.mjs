@@ -219,6 +219,20 @@ test('append-decision: happy path appends pointer line under the D### anchor', (
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+// v5.1.8 UAT-fix: the slash command / model naturally passes the raw number from
+// "D001" (i.e. "1"), but the validator required ≥3 digits and rejected it with a
+// misleading "(digits only)" message. Accept any digit string and zero-pad.
+test('append-decision: accepts un-padded --d-number 1 and zero-pads to D001', () => {
+  const root = makeTestbed('append-dec-unpadded');
+  try {
+    seedMemoryMd(root, 'foo');
+    const r = run(root, 'append-decision', '--slug', 'foo', '--d-number', '1', '--title', 'Unpadded decision');
+    assertEq(r.status, 0, r.stderr);
+    const body = readMemoryMd(root);
+    assert(/- \[\[D001\]\] Unpadded decision/.test(body), 'un-padded d-number not zero-padded to D001');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('append-decision: trims to last 10 pointers (oldest dropped)', () => {
   const root = makeTestbed('append-dec-trim');
   try {

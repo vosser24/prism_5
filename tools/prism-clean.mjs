@@ -202,11 +202,15 @@ function parseShortstat(text) {
 
 function appendDecision({root, slug, dNumber, title}) {
   if (!slug) die('append-decision requires --slug <s>', 5);
-  if (!/^\d{3,}$/.test(dNumber || '')) die('append-decision requires --d-number <NNN> (digits only)', 5);
+  // Accept any digit string (e.g. "1" derived from "D001") and zero-pad to the
+  // canonical 3-digit form. The old /^\d{3,}$/ rejected "1" with a misleading
+  // "(digits only)" message — "1" IS digits — forcing callers to pre-pad.
+  if (!/^\d+$/.test(dNumber || '')) die('append-decision requires --d-number <N> (digits only, e.g. 1 or 001)', 5);
   if (!title) die('append-decision requires --title <text>', 5);
   if (/[\n\r]/.test(title)) die('append-decision: --title must not contain newlines', 5);
+  const padded = String(dNumber).padStart(3, '0');
   const {path, body} = readMemoryMd(root);
-  const newLine = `- [[D${dNumber}]] ${title}`;
+  const newLine = `- [[D${padded}]] ${title}`;
   const updated = appendUnderAnchor({
     body,
     anchor: DECISION_ANCHOR,
