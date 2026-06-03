@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.1] - 2026-06-03
+
+Bugfix (UAT — skill-suggestion nudges over-fired on pasted content; the unfinished half of v5.1.7). `hooks/prism-hook.mjs` matched its TDD / debugging / code-review / git-worktree / parallelizable / MCP-intent / KB-router nudges against the **raw** prompt, with none of the pasted-content dampening v5.1.7 added to the classifier. So pasting a `/prism-*` transcript fired skill nudges off the *transcript's* vocabulary.
+
+- **Fix:** `prism-hook.mjs` now derives `ownPrompt = pastedRatio(prompt) ≥ 0.6 ? stripPastedContent(prompt) : prompt` (graceful dynamic import of `tools/lib/prism-tier-classify.mjs`; identity fallback if absent) and matches all nudge/MCP/router intent against `ownPrompt`/`ownPromptLC` instead of the raw prompt. Genuine requests (no paste) are unaffected.
+- Regression test: `tests/v3/state/test-prism-hook-paste-nudge.mjs` (4) — paste-dominated transcript fires NO TDD/debug/worktree nudge; a genuine "implement … with TDD" still does. Drives the hook as a real subprocess.
+
 ## [5.2.0] - 2026-06-03
 
 Feature — **scope-aware agent survival** (brainstormed + designed this session; spec `docs/prism/plans/2026-06-03-agent-scope-survival-design.md`, adjudication [[D008]]). Resolves the standing tension that project-specific specialists (e.g. `coffee-ledger-expert`) live in the global pool forever with no lifecycle tied to the project they were built for.
