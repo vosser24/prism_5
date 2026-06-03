@@ -63,6 +63,23 @@ export const OPUS_ORCHESTRATION_COMMANDS = new Set([
   '/prism-roster',
   '/prism-retire',
   '/prism-recall',
+  // Parent-driven state-machine commands (v5.1 UAT fix). The conversation
+  // model runs their deterministic node helpers (git guard, init-state,
+  // phase-* subcommands) + LLM-judged phases DIRECTLY — not subagent work.
+  // Without opus routing, the parent-dispatch-guard blocks their own git/node
+  // calls (e.g. /prism-bootstrap Step 0 git guard was denied on fresh projects).
+  '/prism-bootstrap',
+  '/prism-sync',
+  '/prism-deep-dive',
+  '/prism-fresh',
+  '/prism-clean',
+  '/prism-doctor',
+  '/prism-index',
+  '/prism-deps',
+  '/prism-validate-plugins',
+  '/prism-audit-full',
+  '/prism-telemetry',
+  '/prism-uninstall-cleanup',
 ]);
 
 // v2.7.0: cache key drops `dirty` (too volatile — every file save flipped

@@ -101,5 +101,27 @@ for (const p of [
   check(`A3 guard "${p.slice(0, 32)}…" stays opus`, r.tier === 'opus');
 }
 
+// ── A4: parent-driven orchestration commands must route to opus ──────────
+// These run a parent-driven state machine (the conversation model runs the
+// deterministic node helpers + LLM-judged phases directly — NOT subagent
+// work). If they don't route to opus, the parent-dispatch-guard blocks their
+// own git/node calls. Regression guard for the v5.1 UAT finding: /prism-bootstrap
+// was missing from OPUS_ORCHESTRATION_COMMANDS, so its Step-0 git guard got denied.
+for (const cmd of [
+  '/prism-bootstrap',
+  '/prism-sync',
+  '/prism-deep-dive',
+  '/prism-fresh',
+  '/prism-clean',
+  '/prism-doctor',
+  '/prism-index',
+]) {
+  const r = await c(cmd);
+  check(`A4 orchestration "${cmd}" → opus`, r.tier === 'opus');
+  // ...and the rationale must be the form the dispatch-guard's carve-out detects.
+  check(`A4 orchestration "${cmd}" → guard-recognizable rationale`,
+    /orchestration command \/prism-/i.test(r.rationale || ''));
+}
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

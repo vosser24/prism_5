@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.1] - 2026-06-03
+
+Bugfix (UAT finding): **`/prism-bootstrap` (and the other parent-driven state-machine commands) were missing from the classifier's `OPUS_ORCHESTRATION_COMMANDS` allowlist** (`hooks/lib/prism-opus-classifier.mjs`). They fell to keyword-floor scoring → low tier → the parent-dispatch-guard then **denied their own deterministic `git`/`node` calls** (e.g. bootstrap Step 0 git guard on a fresh project). Added `/prism-bootstrap`, `/prism-sync`, `/prism-deep-dive`, `/prism-fresh`, `/prism-clean`, `/prism-doctor`, `/prism-index`, `/prism-deps`, `/prism-validate-plugins`, `/prism-audit-full`, `/prism-telemetry`, `/prism-uninstall-cleanup` — they now route to opus with the `orchestration command /prism-…` rationale the dispatch-guard's carve-out recognizes, so the parent runs its own state machine. Regression-guarded by a new A4 block in `tests/v3/state/test-prism-routing-chaos.mjs` (now 30 tests).
+
 ## [5.1.0] - 2026-06-03
 
 Lifecycle + command-consolidation. v5.1 stamps the project-master lifecycle changes that shipped in docs after v5.0, and adds a panel-vetted command-consolidation pass under one governing rule: **automate cheap, deterministic DETECTION (nudge-only); keep EXECUTION manual** (LLM-judged / mutating / installing / blocking). Every new check rides the existing 24h-throttled SessionStart freshness sweep — **no new hot-path latency**.
