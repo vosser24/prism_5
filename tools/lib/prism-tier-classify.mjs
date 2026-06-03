@@ -201,10 +201,33 @@ export function detectCompound(prompt, description) {
   return COMPOUND_VERB_RE.test(hay);
 }
 
-// v2.7.0: detect panel-summoning signals from the keyword floor.
-// Triggers when the floor is strong enough to warrant orchestrator
-// involvement without needing the Opus API.
-export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
+// v5.1.7: PASTED/QUOTED-content detection. When a user pastes a transcript or
+// report (e.g. a /prism-doctor or /prism-audit run) into a PRISM session, that
+// pasted text carries trigger vocabulary (architecture, security audit, migrate,
+// panel…) that is NOT the user's own request. Scoring it the same as a genuine
+// ask over-fired summon_panel repeatedly (UAT 2026-06-03). These helpers let the
+// PANEL decision (and only the panel decision) fall back to the user's own words.
+const FENCE_RE = /```[\s\S]*?```/g;
+// Lines that are clearly pasted CC/tool transcript or table chrome — blockquotes,
+// CC transcript markers (●, ⎿), box-drawing/table rules, and status glyphs — not
+// prose the user typed.
+const PASTE_LINE_RE = /^\s*(?:>|●|⎿|│|┃|┌|┐|└|┘|├|┤|┬|┴|┼|━|─|═|╔|╗|╚|╝|╠|╣|✅|❌|⚠|🔴|🟢|🟡|🩺|ℹ)/u;
+
+export function stripPastedContent(prompt) {
+  const noFences = String(prompt || '').replace(FENCE_RE, ' ');
+  return noFences.split(/\r?\n/).filter(line => !PASTE_LINE_RE.test(line)).join('\n');
+}
+
+export function pastedRatio(prompt) {
+  const full = String(prompt || '').replace(/\s/g, '');
+  if (!full.length) return 0;
+  const kept = stripPastedContent(prompt).replace(/\s/g, '').length;
+  return 1 - kept / full.length;
+}
+
+// v2.7.0 panel-signal core (unchanged logic). Triggers when the floor is strong
+// enough to warrant orchestrator involvement without needing the Opus API.
+function summonPanelCore(prompt, description, {h, s, o, compound}) {
   const hay = `${prompt || ''} ${description || ''}`;
   // UAT-3/5: explicit user request for a panel — honor it directly.
   if (EXPLICIT_PANEL_RE.test(hay)) return true;
@@ -216,6 +239,24 @@ export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
   // compound verb chain on opus-tier prompt — likely multi-stage novel work.
   if (compound && Number(o) >= 1) return true;
   return false;
+}
+
+export function detectSummonPanel(prompt, description, sig) {
+  // v5.1.7: a prompt dominated by pasted/quoted transcript content (a report the
+  // user pasted, not their own request) must not auto-summon a panel from the
+  // pasted vocabulary. Re-scoring the stripped remainder is too leaky — a single
+  // unmarked prose line ("PRISM Security Audit…", "re-architect the platform")
+  // survives and re-fires. So on a pasted-dominated prompt we honor ONLY an
+  // EXPLICIT panel request in the user's own (non-pasted) words. The tier is
+  // still scored from the full prompt (a maintenance paste routing to opus is
+  // fine and the cost-ratchet nudge covers it) — only the PANEL is suppressed.
+  // A genuine architecture ask should be its own prompt, or just say "run the
+  // panel".
+  if (pastedRatio(prompt) >= 0.6) {
+    const own = `${stripPastedContent(prompt)} ${description || ''}`;
+    return EXPLICIT_PANEL_RE.test(own);
+  }
+  return summonPanelCore(prompt, description, sig);
 }
 
 // --- Phase 5.1 score compression ---

@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.7] - 2026-06-03
+
+Two UAT-surfaced false-positive fixes (found by feeding `/prism-doctor` and `/prism-audit` transcripts back into a live PRISM session).
+
+- **Panel-summon over-fires on pasted content (`tools/lib/prism-tier-classify.mjs`).** Pasting a command transcript/report into a PRISM session repeatedly tripped `summon_panel=true` — the keyword floor scored the pasted report's vocabulary ("security audit", "architecture", "re-architect", "migrate") as if it were the user's own request, demanding a master-orchestrator panel for a result paste. Fix: `detectSummonPanel` now detects pasted/quoted-dominated prompts (`pastedRatio ≥ 0.6` via `stripPastedContent`, which strips fenced blocks, blockquotes, Claude Code transcript markers ●/⎿, box-drawing/table chrome, and status glyphs) and on those honors ONLY an explicit panel request in the user's own words. Tier scoring is deliberately untouched — only the panel decision is dampened. New test: `tests/v3/state/test-prism-panel-paste-dampening.mjs` (9).
+- **`/prism-audit` false-positives on framework OOB reviewers (`commands/prism-audit.md`).** The Agent-YAML check flagged PRISM's own `*-oob-reviewer` agents for "missing model/maxTurns". False positive — they are not Agent-dispatched: `hooks/prism-phase-0d-oob.mjs` spawns `claude -p --model claude-sonnet-4-6` (model hardcoded in the hook), `hooks/prism-phase-1-5-oob.mjs` reads model from frontmatter, and both are one-shot `claude -p` calls so `maxTurns` (an Agent turn-loop cap) is meaningless. Fix: the check now exempts `*-oob-reviewer` agents from the model/maxTurns requirement. New test: `tests/v3/state/test-prism-audit-oob-exemption.mjs` (6, incl. source-fact guards).
+
 ## [5.1.6] - 2026-06-03
 
 Bugfix (found while *applying* v5.1.5's own fix — the Symptom-11 recipe was broken). `/prism-doctor` Symptom #11 ("bootstrap state corrupt / clobbered") recommended `prism-state.mjs adopt` then `validate`, but `adopt` **refuses to overwrite an existing file** (`state already exists; use reset first`). Symptom #11 ALWAYS describes an *existing* corrupt file, so `adopt` alone always failed for the exact scenario it targets.

@@ -52,9 +52,16 @@ For each match: file + line, redacted value, severity.
 
 Agent YAML:
 - Required frontmatter: name, description, model, maxTurns
+  - EXEMPTION — out-of-band reviewers: agents whose name matches
+    `*-oob-reviewer` (phase-0d-oob-reviewer, phase-1-5-oob-reviewer,
+    phase-1-5-oob-reviewer-lite) are NOT Agent-dispatched. They run as a
+    one-shot `claude -p` from a hook, which sets the model at invocation
+    (hardcoded in `hooks/prism-phase-0d-oob.mjs`, or read from frontmatter by
+    `hooks/prism-phase-1-5-oob.mjs`) and has no turn loop. For these, `model`
+    and `maxTurns` are OPTIONAL — do not flag them as missing.
 - If body references notebooklm_notebook_id, must be in frontmatter
 - If agent directory exists, flat .md must also exist
-- maxTurns > 0
+- maxTurns > 0 (except the *-oob-reviewer exemption above)
 
 Roster integrity:
 - Valid JSON
