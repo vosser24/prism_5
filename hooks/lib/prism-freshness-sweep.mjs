@@ -1,6 +1,9 @@
-// PRISM SessionStart daily freshness sweep (v4.1 Phase B).
+// PRISM SessionStart daily freshness sweep (v4.1 Phase B; extended v4.7,
+// v5.0, and the v5.1 command-consolidation).
 //
-// Closes 6 audit questions in one throttled (24h) pass:
+// Runs all checks in one throttled (24h) pass. Detection-only checks emit a
+// NOTICE; the lone EXECUTION check (A5 index rebuild) runs inline when — and
+// only when — the index is genuinely stale out-of-band (rare). Original set:
 //   Q1  — plugin coverage drift   → nudge /prism-index when plugin
 //                                    cache dirs change since last sweep
 //   Q5  — stale agents             → list roster.json agents whose
@@ -14,6 +17,29 @@
 //   Q11 — tools-registry rotations → surface newly-promoted tools when
 //                                    tools-registry.md mtime advanced
 //                                    since last sweep
+// v4.7/v5.0 additions:
+//   C3  — installed-version lag    → nudge installer update when the cwd
+//                                    PRISM clone ships a newer version
+//   E1  — KB index staleness       → A5: auto-REBUILD the per-project KB
+//                                    index inline when source docs are
+//                                    newer than its source_mtime_max
+//                                    (manual-nudge fallback if the tool is
+//                                    absent / a rebuild is already locked)
+//   E2  — registry ↔ roster sync   → nudge /prism-index when the registry
+//                                    changed after the last index run
+//   F4  — knowledge index stale    → A5: auto-REBUILD the cross-project
+//                                    knowledge index inline (same fallback)
+// v5.1 command-consolidation additions (all detection-only, nudge):
+//   A1  — hook integrity           → fs wiring sanity (settings refs exist)
+//                                    + empty-file check, ALWAYS; plus a
+//                                    CHANGE-GATED node --check of only the
+//                                    hooks newer than the last sweep (node
+//                                    cold-start is ~2-3s on Windows, so the
+//                                    steady state spawns nothing) → nudge
+//                                    /prism-doctor for the deep pass
+//   A2  — roster orphans           → roster entries with no agent file on
+//                                    disk → nudge /prism-bootstrap reconcile
+//   A3  — audit staleness          → /prism-audit marker > 30d → nudge
 //
 // Q7 (factory writes globally / only master-<slug> is project-local) is
 // closed by a README + /prism-help prose addition, not a runtime check.
@@ -30,12 +56,14 @@
 // Atomic write, fail-open on every read. Never throws — callers can
 // `try { ... } catch {}` safely; the helper does too.
 
-import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync} from 'fs';
-import {join} from 'path';
+import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync, rmSync} from 'fs';
+import {join, basename} from 'path';
+import {spawnSync} from 'child_process';
 
 const STALE_AGENT_DAYS = 90;
 const UPDATE_LOG_AGE_DAYS = 15;
 const CLAUDE_MD_AGE_DAYS = 60;
+const AUDIT_AGE_DAYS = 30;
 
 const SNAPSHOT_REL = ['.claude', '.prism-freshness-last.json'];
 const VERSION_MARKER_REL = ['.claude', '.prism-version'];
@@ -52,6 +80,19 @@ const UPDATE_LOG_REL = ['.claude', 'skills', 'prism-plan', 'references', 'update
 const CLAUDE_MD_REL = ['.claude', 'CLAUDE.md'];
 const TOOLS_REGISTRY_REL = ['.claude', 'skills', 'prism-plan', 'references', 'tools-registry.md'];
 const ROSTER_REL = ['.claude', 'skills', 'prism-plan', 'references', 'roster.json'];
+const AUDIT_MARKER_REL = ['.claude', '.prism-audit-last.json'];
+const AGENTS_DIR_REL = ['.claude', 'agents'];
+const HOOKS_DIR_REL = ['.claude', 'hooks'];
+const SETTINGS_REL = ['.claude', 'settings.json'];
+const HOOK_CHECK_BUDGET_MS = 8000;     // overall cap on the node --check sweep
+const HOOK_CHECK_TIMEOUT_MS = 3000;    // per-hook spawn timeout
+// A5: index auto-rebuild plumbing.
+const KB_REBUILD_TOOL_REL = ['.claude', 'tools', 'prism-kb-rebuild.mjs'];
+const KNOWLEDGE_REBUILD_TOOL_REL = ['.claude', 'tools', 'prism-kb-knowledge-rebuild.mjs'];
+const KB_REBUILD_LOCK_REL = ['.claude', '.prism-kb-rebuild.lock'];
+const KNOWLEDGE_REBUILD_LOCK_REL = ['.claude', '.prism-kb-knowledge-rebuild.lock'];
+const REBUILD_TIMEOUT_MS = 60000;        // hard ceiling on a single rebuild
+const REBUILD_LOCK_STALE_MS = 10 * 60 * 1000;  // a lock older than this is abandoned
 
 function atomicWrite(path, content) {
   try {
@@ -231,7 +272,39 @@ function walkMdMaxMtimeSec(root, budget) {
   return max;
 }
 
-function checkKbIndexStale(home) {
+// A5: a single rebuild invocation, guarded by a lockfile so two near-
+// simultaneous sessions don't both spawn the indexer. spawnSync (the
+// rebuild is the one ≤1×/24h step the user accepted as inline). Returns
+// {ok} on success, {ok:false, reason} otherwise so the caller can pick the
+// right notice (rebuilt / locked / fall-back-nudge).
+function spawnRebuild(home, toolRel, lockRel) {
+  const tool = join(home, ...toolRel);
+  if (!existsSync(tool)) return {ok: false, reason: 'tool-missing'};
+  const lock = join(home, ...lockRel);
+  const lockMtime = safeMtime(lock);
+  if (lockMtime !== null && (Date.now() - lockMtime) < REBUILD_LOCK_STALE_MS) {
+    return {ok: false, reason: 'locked'};  // another session is mid-rebuild
+  }
+  try { writeFileSync(lock, String(Date.now())); } catch {}
+  let status = 1;
+  try {
+    const r = spawnSync(process.execPath, [tool, '--sync'], {
+      timeout: REBUILD_TIMEOUT_MS,
+      encoding: 'utf-8',
+      env: {...process.env, HOME: home, USERPROFILE: home},
+    });
+    status = r && typeof r.status === 'number' ? r.status : 1;
+  } catch { status = 1; }
+  try { rmSync(lock, {force: true}); } catch {}
+  return status === 0 ? {ok: true} : {ok: false, reason: 'failed'};
+}
+
+function defaultRebuildKb(home) { return spawnRebuild(home, KB_REBUILD_TOOL_REL, KB_REBUILD_LOCK_REL); }
+function defaultRebuildKnowledge(home) { return spawnRebuild(home, KNOWLEDGE_REBUILD_TOOL_REL, KNOWLEDGE_REBUILD_LOCK_REL); }
+// Non-mutating stand-in for the --preview dry run (never rebuilds).
+const noopRebuild = () => ({ok: false, reason: 'dry-run'});
+
+function checkKbIndexStale(home, rebuild = defaultRebuildKb) {
   const index = readJsonSafe(join(home, ...KB_INDEX_REL));
   if (!index || typeof index.source_mtime_max !== 'number') return null;  // no index / pre-v2 schema
   const budget = {n: 4000};  // hard ceiling on files walked per sweep
@@ -243,7 +316,14 @@ function checkKbIndexStale(home) {
     if (m > newest) newest = m;
   }
   if (newest <= index.source_mtime_max) return null;
-  return 'PRISM FRESHNESS: KB index is behind its source docs (a skill/agent/command/rule changed since the last build). Run `node ~/.claude/tools/prism-kb-rebuild.mjs --sync` to refresh semantic recall (/prism-recall).';
+  // A5: stale → rebuild inline (≤1×/24h via the sweep throttle + lockfile).
+  const res = rebuild(home);
+  if (res && res.ok) {
+    return 'PRISM FRESHNESS: KB index was behind its source docs — rebuilt automatically. Semantic recall (/prism-recall) is current.';
+  }
+  if (res && res.reason === 'locked') return null;  // another session is handling it
+  // tool missing / rebuild failed → degrade to a manual nudge.
+  return 'PRISM FRESHNESS: KB index is behind its source docs (a skill/agent/command/rule changed since the last build) and auto-rebuild did not run. Run `node ~/.claude/tools/prism-kb-rebuild.mjs --sync` to refresh semantic recall (/prism-recall).';
 }
 
 // ── Check F4: cross-project KNOWLEDGE index staleness ─────────────────
@@ -311,12 +391,19 @@ function knowledgeCorpusNewestSec(index, home) {
   return newest;
 }
 
-export function checkKnowledgeIndexStale(home) {
+export function checkKnowledgeIndexStale(home, rebuild = defaultRebuildKnowledge) {
   const index = readJsonSafe(join(home, ...KNOWLEDGE_INDEX_REL));
   if (!index || typeof index.source_mtime_max !== 'number') return null;  // no index ⇒ feature unused
   const newest = knowledgeCorpusNewestSec(index, home);
   if (newest <= index.source_mtime_max) return null;
-  return 'PRISM FRESHNESS: cross-project knowledge index is behind its source docs (a shared adjudication/lesson/plan/panel or a verdict log changed since the last build). Run `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync` to refresh /prism-recall --cross-project.';
+  // A5: stale → rebuild inline (≤1×/24h via the sweep throttle + lockfile).
+  const res = rebuild(home);
+  if (res && res.ok) {
+    return 'PRISM FRESHNESS: cross-project knowledge index was behind its source docs — rebuilt automatically. /prism-recall --cross-project is current.';
+  }
+  if (res && res.reason === 'locked') return null;  // another session is handling it
+  // tool missing / rebuild failed → degrade to a manual nudge.
+  return 'PRISM FRESHNESS: cross-project knowledge index is behind its source docs (a shared adjudication/lesson/plan/panel or a verdict log changed since the last build) and auto-rebuild did not run. Run `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync` to refresh /prism-recall --cross-project.';
 }
 
 // ── Check E2: tools-registry.md ↔ roster index-sync ───────────────────
@@ -338,8 +425,165 @@ function checkToolsRegistrySync(home) {
   return 'PRISM FRESHNESS: tools-registry.md changed after the last /prism-index — roster.tools may be out of sync. Run /prism-index to resolve registry changes into the roster.';
 }
 
+// ── Check A2: roster-orphan detection ─────────────────────────────────
+// A roster entry whose agent .md file no longer exists on disk is an
+// "orphan" — the roster claims an agent the filesystem can't back. Prefer
+// the entry's explicit file_path (with ~ expansion); fall back to the
+// canonical ~/.claude/agents/<name>.md location. Silent when there's no
+// roster (bootstrap owns first-time population) and when nothing is
+// orphaned. Pure fs — no spawn, no network.
+function resolveAgentFile(home, name, agent) {
+  let fp = agent && typeof agent.file_path === 'string' ? agent.file_path.trim() : '';
+  if (fp) {
+    // Expand a leading ~ (optionally ~/.) to the home dir.
+    fp = fp.replace(/^~(?=$|[/\\])/, home);
+    return fp;
+  }
+  return join(home, ...AGENTS_DIR_REL, `${name}.md`);
+}
+
+function checkRosterOrphans(home) {
+  const roster = readJsonSafe(join(home, ...ROSTER_REL));
+  if (!roster || !roster.agents || typeof roster.agents !== 'object') return null;
+  const orphans = [];
+  for (const [name, agent] of Object.entries(roster.agents)) {
+    if (!agent || typeof agent !== 'object' || name.startsWith('_')) continue;
+    const fp = resolveAgentFile(home, name, agent);
+    if (!existsSync(fp)) orphans.push(name);
+  }
+  if (!orphans.length) return null;
+  const top = orphans.slice(0, 3).map((n) => `@${n}`).join(', ');
+  const more = orphans.length > 3 ? ` (+${orphans.length - 3} more)` : '';
+  return `PRISM FRESHNESS: ${orphans.length} roster agent${orphans.length === 1 ? '' : 's'} have no agent file on disk (orphan${orphans.length === 1 ? '' : 's'}): ${top}${more}. Run /prism-bootstrap (roster phase) or /prism-roster --reconcile to resolve.`;
+}
+
+// ── Check A3: audit-staleness reminder ────────────────────────────────
+// /prism-audit stamps ~/.claude/.prism-audit-last.json {ts} on completion.
+// If that stamp is older than AUDIT_AGE_DAYS, nudge a re-run. Silent when
+// the marker is absent (never audited — bootstrap/first-run owns the
+// initial scan; nagging a fresh install would be noise).
+function checkAuditStaleness(home, now) {
+  const marker = readJsonSafe(join(home, ...AUDIT_MARKER_REL));
+  if (!marker) return null;
+  const tsRaw = marker.ts || marker.last_audit;
+  if (!tsRaw) return null;
+  let ms;
+  try { ms = typeof tsRaw === 'number' ? tsRaw : new Date(tsRaw).getTime(); } catch { return null; }
+  if (!ms || Number.isNaN(ms)) return null;
+  const days = daysSince(ms, now);
+  if (days === null || days < AUDIT_AGE_DAYS) return null;
+  return `PRISM FRESHNESS: last /prism-audit was ${days}d ago (>${AUDIT_AGE_DAYS}d threshold). Run /prism-audit for a hygiene scan of PRISM's configuration surface.`;
+}
+
+// ── Check A1: hook-integrity + settings-wiring ────────────────────────
+// Mirrors the routine structural part of /prism-doctor so the daily sweep
+// catches a broken hook before it silently no-ops a whole session. Three
+// deterministic checks, ordered cheapest-first:
+//   (1) wiring sanity (fs) — every prism-*.mjs filename referenced in
+//       settings.json's hooks block must resolve to a real file under
+//       hooks/ or hooks/lib/; a dangling reference (partial upgrade,
+//       renamed hook) is flagged. ALWAYS runs (pure fs, no spawn).
+//   (2) empty-file (fs) — a present prism hook that is 0 bytes (a botched
+//       / truncated write). ALWAYS runs.
+//   (3) syntax (node --check) — flags syntax errors. CHANGE-GATED: each
+//       `node --check` is a process cold-start (~2-3s on Windows under
+//       AV/AppLocker), so we only syntax-check hooks whose mtime is newer
+//       than the last sweep's recorded `hooks_mtime_max`. First sweep (no
+//       prior mark) records the mtime and skips the spawn entirely;
+//       steady state (no hook changed) = ZERO spawns. After an edit/
+//       upgrade only the changed files are checked, bounded by
+//       HOOK_CHECK_BUDGET_MS. The deep, exhaustive node --check stays
+//       /prism-doctor's on-demand job (where the nudge points).
+// Returns {notice, hooks_mtime_max} so the caller can persist the mark.
+function listPrismHookFiles(hooksDir) {
+  const files = [];
+  const stack = [hooksDir];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try { entries = readdirSync(d, {withFileTypes: true}); } catch { continue; }
+    for (const e of entries) {
+      const full = join(d, e.name);
+      if (e.isDirectory()) { stack.push(full); continue; }
+      if (/^prism-[\w-]+\.mjs$/.test(e.name)) files.push(full);
+    }
+  }
+  return files;
+}
+
+// Pull every prism-*.mjs filename referenced anywhere inside the settings
+// hooks block (format-agnostic — works for ~/.claude paths, prism-exec
+// wrappers, ${CLAUDE_PLUGIN_ROOT}, etc.).
+function referencedHookFilenames(settings) {
+  if (!settings || !settings.hooks) return [];
+  let blob;
+  try { blob = JSON.stringify(settings.hooks); } catch { return []; }
+  const out = new Set();
+  const re = /prism-[\w-]+\.mjs/g;
+  let m;
+  while ((m = re.exec(blob)) !== null) out.add(m[0]);
+  return [...out];
+}
+
+function checkHookIntegrity(home, snapshot) {
+  const hooksDir = join(home, ...HOOKS_DIR_REL);
+  if (!existsSync(hooksDir)) return {notice: null, hooks_mtime_max: null};
+  const files = listPrismHookFiles(hooksDir);
+
+  // Newest hook mtime drives the change-gate for the syntax pass.
+  let newest = 0;
+  const empty = [];
+  for (const f of files) {
+    const m = safeMtime(f);
+    if (m !== null && m > newest) newest = m;
+    try { if (statSync(f).size === 0) empty.push(basename(f)); } catch {}
+  }
+
+  // (1) wiring — referenced prism hooks must exist on disk (top-level or lib/).
+  const present = new Set(files.map((f) => basename(f)));
+  const libDir = join(hooksDir, 'lib');
+  const missing = [];
+  const settings = readJsonSafe(join(home, ...SETTINGS_REL));
+  for (const fn of referencedHookFilenames(settings)) {
+    if (present.has(fn)) continue;
+    if (existsSync(join(hooksDir, fn)) || existsSync(join(libDir, fn))) continue;
+    missing.push(fn);
+  }
+
+  // (3) syntax — only for hooks changed since the last sweep. First run
+  // (prev === null) just records the mark; nothing changed → skip spawns.
+  const prev = snapshot && typeof snapshot.hooks_mtime_max === 'number' ? snapshot.hooks_mtime_max : null;
+  const broken = [];
+  if (prev !== null && newest > prev) {
+    const changed = files.filter((f) => { const m = safeMtime(f); return m !== null && m > prev; });
+    const start = Date.now();
+    for (const f of changed) {
+      if (Date.now() - start > HOOK_CHECK_BUDGET_MS) break;
+      try {
+        const r = spawnSync(process.execPath, ['--check', f], {
+          timeout: HOOK_CHECK_TIMEOUT_MS,
+          encoding: 'utf-8',
+        });
+        if (r.status !== 0) broken.push(basename(f));
+      } catch {}
+    }
+  }
+
+  if (!broken.length && !missing.length && !empty.length) {
+    return {notice: null, hooks_mtime_max: newest};
+  }
+  const parts = [];
+  if (broken.length) parts.push(`${broken.length} hook(s) fail node --check (${broken.slice(0, 3).join(', ')}${broken.length > 3 ? '…' : ''})`);
+  if (empty.length) parts.push(`${empty.length} hook file(s) empty (${empty.slice(0, 3).join(', ')}${empty.length > 3 ? '…' : ''})`);
+  if (missing.length) parts.push(`${missing.length} wired hook(s) missing on disk (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''})`);
+  return {
+    notice: `PRISM FRESHNESS: hook integrity issue — ${parts.join('; ')}. Run /prism-doctor to diagnose, or re-run the installer (\`node tools/prism-installer.mjs install\`).`,
+    hooks_mtime_max: newest,
+  };
+}
+
 // ── Main entry point ───────────────────────────────────────────────────
-export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), force = false, cwd = undefined} = {}) {
+export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), force = false, cwd = undefined, rebuildKb = defaultRebuildKb, rebuildKnowledge = defaultRebuildKnowledge} = {}) {
   if (!home) return {notices: [], snapshot: null, skipped: true};
 
   const snapshotPath = join(home, ...SNAPSHOT_REL);
@@ -351,7 +595,7 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
   }
 
   const notices = [];
-  const newSnapshot = {ts: now, plugin_dirs: [], tools_registry_mtime: null};
+  const newSnapshot = {ts: now, plugin_dirs: [], tools_registry_mtime: null, hooks_mtime_max: null};
 
   // Q1
   try {
@@ -391,15 +635,15 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
     if (n) notices.push(n);
   } catch {}
 
-  // E1 — KB index staleness
+  // E1 — KB index staleness (A5: auto-rebuilds inline when behind)
   try {
-    const n = checkKbIndexStale(home);
+    const n = checkKbIndexStale(home, rebuildKb);
     if (n) notices.push(n);
   } catch {}
 
-  // F4 — cross-project knowledge index staleness
+  // F4 — cross-project knowledge index staleness (A5: auto-rebuilds inline)
   try {
-    const n = checkKnowledgeIndexStale(home);
+    const n = checkKnowledgeIndexStale(home, rebuildKnowledge);
     if (n) notices.push(n);
   } catch {}
 
@@ -407,6 +651,25 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
   try {
     const n = checkToolsRegistrySync(home);
     if (n) notices.push(n);
+  } catch {}
+
+  // A2 — roster-orphan detection
+  try {
+    const n = checkRosterOrphans(home);
+    if (n) notices.push(n);
+  } catch {}
+
+  // A3 — audit-staleness reminder
+  try {
+    const n = checkAuditStaleness(home, now);
+    if (n) notices.push(n);
+  } catch {}
+
+  // A1 — hook-integrity + settings-wiring (change-gated syntax pass)
+  try {
+    const r = checkHookIntegrity(home, prior);
+    newSnapshot.hooks_mtime_max = r.hooks_mtime_max;
+    if (r.notice) notices.push(r.notice);
   } catch {}
 
   atomicWrite(snapshotPath, JSON.stringify(newSnapshot));
@@ -433,9 +696,13 @@ export function freshnessSweepDryRun({home, now = Date.now(), cwd = undefined} =
     if (r.notice) notices.push(r.notice);
   } catch {}
   try { const n = checkVersionLag(home, cwd); if (n) notices.push(n); } catch {}
-  try { const n = checkKbIndexStale(home); if (n) notices.push(n); } catch {}
-  try { const n = checkKnowledgeIndexStale(home); if (n) notices.push(n); } catch {}
+  // Preview is non-mutating: pass noopRebuild so --preview never triggers a rebuild.
+  try { const n = checkKbIndexStale(home, noopRebuild); if (n) notices.push(n); } catch {}
+  try { const n = checkKnowledgeIndexStale(home, noopRebuild); if (n) notices.push(n); } catch {}
   try { const n = checkToolsRegistrySync(home); if (n) notices.push(n); } catch {}
+  try { const n = checkRosterOrphans(home); if (n) notices.push(n); } catch {}
+  try { const n = checkAuditStaleness(home, now); if (n) notices.push(n); } catch {}
+  try { const r = checkHookIntegrity(home, prior); if (r.notice) notices.push(r.notice); } catch {}
 
   return {notices, snapshot: prior};
 }
