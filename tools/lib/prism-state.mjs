@@ -346,6 +346,20 @@ export function readState(projectRoot) {
 
 // ---------- Write (atomic) ----------
 
+// Retry an atomic rename across transient Windows/SMB locks (EPERM/EBUSY) where
+// a file-watcher/AV momentarily holds the target. renameFn lets tests inject failures.
+export function renameWithRetry(renameFn, tmp, dst, { retries = 5, delayMs = 25 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { renameFn(tmp, dst); return; }
+    catch (e) {
+      const transient = e && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES');
+      if (!transient || attempt >= retries) throw e;
+      // synchronous backoff (this is a sync function): Atomics.wait on a throwaway buffer
+      try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs * attempt); } catch { /* fallback: busy spin */ }
+    }
+  }
+}
+
 export function writeStateAtomic(projectRoot, state) {
   const v = validateState(state);
   if (!v.ok) {
@@ -372,7 +386,7 @@ export function writeStateAtomic(projectRoot, state) {
     }
   }
   try {
-    renameSync(tmp, path);
+    renameWithRetry(renameSync, tmp, path);
   } catch (e) {
     try { unlinkSync(tmp); } catch { /* ignore */ }
     throw e;

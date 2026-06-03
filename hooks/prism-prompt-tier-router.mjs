@@ -76,6 +76,11 @@ function shouldInheritPreviousTier(prompt, previousSentinel) {
   const ageMs = previousSentinel.ts ? (Date.now() - new Date(previousSentinel.ts).getTime()) : Infinity;
   const isFresh = ageMs < 5 * 60 * 1000; // 5 min
 
+  // FIX-A (v5.x): an empty/whitespace prompt is a notification / non-user turn,
+  // not a real continuation — never inherit (would otherwise re-lock a panel
+  // turn on a turn the user never typed). v5.0 stress-test finding.
+  if (wordCount === 0) return false;
+
   return (isShort || isApproval) && isFresh;
 }
 
@@ -158,7 +163,17 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId) {
   // v3.2.0: append self-override directive when keyword-floor classified this
   // prompt and the tier is not allowlist/force-opus (those are explicit intent
   // and should not be overrideable by the conversation model).
-  if (source === 'keyword-floor') {
+  //
+  // v5.0.x: do NOT append it on hard-mode PANEL turns. On those turns the
+  // parent-dispatch-guard denies the very Write the protocol instructs (Write is
+  // not in the guard's ALWAYS_ALLOW set), so the sentinel-write self-override is
+  // unfollowable there — and panels are deliberately human-gated. The panel
+  // branch above already gives the correct escape (spawn @master-orchestrator,
+  // or the human prefixes !opus-force: / sets PRISM_DISPATCH_GUARD=off), so the
+  // v3.2.0 text would only contradict it. Suppressing it removes the
+  // advertise-an-escape-the-guard-forbids contradiction.
+  const panelHardBlocked = mode === 'hard' && tier === 'opus' && summonPanel;
+  if (source === 'keyword-floor' && !panelHardBlocked) {
     advice += '\n' + buildOverrideDirective(tier, summonPanel, sessionId);
   }
   return advice;
@@ -183,6 +198,11 @@ async function main() {
         source: 'continuation-inherit',
         rationale: `inherited from previous turn (${prevSentinel.tier}); short or approval-phrase`,
         dispatched: false, // reset dispatch flag for new turn
+        // FIX-A (v5.x): inherit the (expensive) TIER to keep work going, but
+        // NEVER re-summon a panel — the panel already fired on the original
+        // turn; carrying it forward deadlocks approval/continuation turns.
+        summon_panel: false,
+        orchestrator_dispatched: false,
       };
       try {
         const p = sentinelPath(sessionId);

@@ -5,10 +5,10 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 
 # /prism-help — PRISM command index
 
-This is the user-facing index for PRISM as of v4.7. Commands are grouped by
+This is the user-facing index for PRISM as of v5.0. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v4.7** — deferred-backlog cleanup + the parallel-dispatch cap becomes the `PRISM_PARALLEL_CAP` knob (K1, default still 4). New SessionStart freshness nudges: version-lag (C3), KB-index staleness (E1), tools-registry↔roster sync (E2). On-demand staleness preview (G1: `prism-freshness-sweep.mjs --preview`). Installer polish: aligned summary (I3) + opt-in local install telemetry (I8). Builds on v4.6's telemetry-driven calibration + classifiers. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v5.0** — the cross-project knowledge index (F4): opt-in, dep-free, offline BM25 retrieval + default-on `claude -p` re-rank (silent BM25 fallback), default-deny per-corpus-type sharing via `/prism-recall --share-project`, consumed explicitly via `/prism-recall --cross-project`, plus a stable `queryKnowledge()` API. Builds on v4.7 (the `PRISM_PARALLEL_CAP` knob + C3/E1/E2 freshness nudges). The verdict-regression scanner (A5) that consumes the index is deferred to v5.1. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -16,7 +16,7 @@ Active version: **v4.7** — deferred-backlog cleanup + the parallel-dispatch ca
 
 | Command | What it does |
 |---|---|
-| `/prism-bootstrap` | One-command setup. Runs the 7-phase state machine (identity → structure → plugin-validate → discovery → roster → project-master → health). Idempotent. Pass `--with-deep-dive` to opt into the project-master phase. |
+| `/prism-bootstrap` | One-command setup. Runs the 7-phase state machine (identity → structure → plugin-validate → discovery → roster → project-master → health). Idempotent. The project-master phase is **default-on** (v5.1); pass `--no-master` to opt out (`--with-deep-dive` is an accepted no-op). |
 | `/prism-sync` | Refresh PRISM's project index — re-runs discovery, roster reconcile, and health checks. Stamps `last_sync_at`. Conservative drift detection (always re-scans). |
 | `/prism-clean` | Capture durable session knowledge into `docs/prism/`. Applies a 5-level importance classifier; surfaces candidates as a checklist; writes approved artifacts with locked headers. Use before `/clear` or at session end. |
 | `/prism-recall <query>` | Unified recall across PRISM knowledge base (semantic), session state, and spend/metrics (analytical). Auto-routes to the right tier. |
@@ -25,7 +25,7 @@ Active version: **v4.7** — deferred-backlog cleanup + the parallel-dispatch ca
 
 | Command | What it does |
 |---|---|
-| `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Opt-in entry point. |
+| `/prism-deep-dive` | Generate this project's `master-<slug>` agent. Discovery + ≤5 clarifying questions; writes `<project>/.claude/agents/master-<slug>.md`, seeded `MEMORY.md`, and `settings.json` `agent:` field. Manual entry point; `/prism-bootstrap` also creates the project-master by default (v5.1). |
 
 The `master-orchestrator` skill (Phase E) is loaded automatically by every
 `master-<slug>` agent — no slash command needed. Its navigation index lives at
@@ -150,6 +150,6 @@ invoke them with a slash command, you trigger them by intent:
 ## See also
 
 - `README.md` — top-level PRISM overview
-- `docs/prism/MIGRATION.md` — upgrade recipes (v3.x → v4.0 through v4.6 → v4.7)
+- `docs/prism/MIGRATION.md` — upgrade recipes (v3.x → v4.0 through v4.7 → v5.0)
 - `CHANGELOG.md` — release-by-release change history
 - `docs/prism/adjudications/D004-v4-product-vision.md` — locked v4.0 design

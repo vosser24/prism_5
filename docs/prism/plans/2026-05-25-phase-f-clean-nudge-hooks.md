@@ -183,7 +183,6 @@ Subprocess-driven tests for the planned hooks/prism-clean-nudge.mjs:
 
 Tests currently FAIL — hook file doesn't exist yet. Task 2 creates it.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -322,7 +321,6 @@ through wrappers, see scripts/install-merge.mjs §4a for the Windows rewrite).
 Task 1 TDD red tests now pass (7/7). All 8 prior suites still green; total
 143/143 across 9 suites. Settings registration in Task 3.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -407,7 +405,6 @@ SessionEnd uses "matcher": "clear" to fire only on /clear (not logout,
 prompt_input_exit, or other reasons).
 PreCompact has no matcher — fires on every auto-compact.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -521,7 +518,6 @@ Records the additional hook + settings.json merge during Phase F:
 Cleanup commands updated to remove the hook file and a note about reverting
 the settings.json merge.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```

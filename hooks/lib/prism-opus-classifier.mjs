@@ -141,7 +141,14 @@ function matchesOrchestrationCommand(prompt) {
 // `2.2.0` tokens, which caused every prompt mentioning PRISM by name or
 // quoting a version to fire the release-safety screen → summon_panel →
 // dispatch-guard panel demand. Now requires release-like CONTEXT around the token.
-const RELEASE_SAFETY_RE = /\b(push\s+(to|origin)|merge\s+(to|into|main|master)|force[-\s]?push|git\s+push|deploy(ment)?|release|ship(ping)?|tier\s+router|(release|deploy|ship|upgrade|publish|bump)\s+(PRISM|v?\d+\.\d+\.\d+)|PRISM\s+(release|deploy|update|upgrade|v\d|v?\d+\.\d+)|v?\d+\.\d+\.\d+\s+(release|deploy|ship))\b/i;
+// v5.0.x A3: the bare `ship(ping)?` alternative had no context anchor, so
+// common e-commerce domain phrasing ("shipping address", "shipping cost",
+// "shipping options") over-fired to opus. The negative lookahead carves out
+// those domain nouns while keeping every real release form ("ship v5",
+// "ship the release", "ship to origin", "ready to ship?", "shipping the
+// release"). The trailing \b on the group rejects "shipping <domain>" because
+// the no-"ping" backtrack lands mid-word.
+const RELEASE_SAFETY_RE = /\b(push\s+(to|origin)|merge\s+(to|into|main|master)|force[-\s]?push|git\s+push|deploy(ment)?|release|ship(?:ping)?(?!\s+(?:address(?:es)?|cost|costs|option|options|method|methods|fee|fees|rate|rates|label|labels|info|information|carrier|carriers|date|dates|status|zone|zones|polic(?:y|ies)|estimate|estimates|details|provider|providers|partner|partners|calculator|tracking|number))|tier\s+router|(release|deploy|ship|upgrade|publish|bump)\s+(PRISM|v?\d+\.\d+\.\d+)|PRISM\s+(release|deploy|update|upgrade|v\d|v?\d+\.\d+)|v?\d+\.\d+\.\d+\s+(release|deploy|ship))\b/i;
 const MULTI_VERB_CHAIN_RE = /\b(test|check|verify|retest)\b.*\b(and|then)\b.*\b(push|deploy|merge|release|ship)\b/i;
 
 function releaseSafetyScreen(prompt) {
@@ -153,21 +160,25 @@ function releaseSafetyScreen(prompt) {
 
 function keywordFloor(prompt) {
   // Sole classification path in v3.2.0.
-  // Release/meta-work tokens always promote to opus + summon_panel — shipping
-  // a broken release from a haiku-classified prompt is the failure mode that
-  // motivated keyword-floor's promotion to standard mode.
-  //
-  // Keyword floor derives `summon_panel` from PANEL_SIGNALS, compound-verb
-  // chains on opus tier, and ≥3 OPUS_SIGNALS hits (see classifyWithScore).
+  // Release/meta-work tokens promote to opus TIER — shipping a broken release
+  // from a haiku-classified prompt is the failure mode that motivated the
+  // screen. But the DESIGN PANEL is decoupled (v5.0.x): a ship/release token
+  // alone — especially in a readiness QUESTION ("are we ready to ship?") or a
+  // plain ship ACTION — is execution/verification, NOT novel architecture, and
+  // should not force the master-orchestrator design panel. summon_panel is set
+  // ONLY by the genuine novel-architecture signal path (PANEL_SIGNALS, compound-
+  // verb chains on opus tier, stakes, ≥3 OPUS_SIGNALS — see classifyWithScore),
+  // so a real "re-architect + release" prompt still summons it, while a
+  // readiness check does not.
+  const c = classifyWithScore(prompt || '', '');
   const release = releaseSafetyScreen(prompt);
   if (release) {
     return {
       tier: 'opus',
-      summon_panel: true,
-      rationale: `keyword-floor release-screen: ${release}`,
+      summon_panel: !!c.summon_panel,
+      rationale: `keyword-floor release-screen: ${release} (opus; panel=${!!c.summon_panel} from signals)`,
     };
   }
-  const c = classifyWithScore(prompt || '', '');
   const tier = c.tier_by_score === 'haiku' && c.score > 0
     ? 'haiku'
     : (c.tier_by_score || 'sonnet');

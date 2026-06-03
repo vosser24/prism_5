@@ -233,7 +233,6 @@ bump to ≥3), no Phase J prose leakage into the thin-wrapper agent file.
 Six positive assertions currently FAIL; Task 2 introduces the skill
 body structure that makes them green.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -492,7 +491,6 @@ prose lives only in the skill body).
 
 Closes Phase J of the v4.0 phase plan.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -543,7 +541,6 @@ covered by the Phase E + Phase H bulk rows. Adds a single row marking
 the Phase that last touched the file so future readers can locate the
 relevant adjudication (D004 §J).
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```

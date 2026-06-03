@@ -51,6 +51,9 @@
     "skip_next_oob": false,
     "notebooklm_notebook_id": null,
     "team_id": null,
+    "learns": false,
+    "domain_memory_file": null,
+    "owned_skills": [],
     "file_path": "~/.claude/agents/<name>/agent.md"
   },
   "_schema_example_skill": {

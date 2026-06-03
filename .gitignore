@@ -7,16 +7,22 @@ id_rsa*
 credentials.json
 *.pfx
 
-# Local / user overlays (Claude Code convention)
+# Local / user overlays (runtime convention)
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/.prism-state.json
+.claude/scheduled_tasks.lock
 .claude/references/
 
 # Dev cruft
 node_modules/
 .DS_Store
 Thumbs.db
+
+# Stray shell-redirect artifacts — a mis-parsed `2>` / `> 2` drops a 0-byte
+# file named `1` or `2` in the repo root. Ignore them so they never get committed.
+/1
+/2
 
 # Backup directories (install-merge generates these under ~/.claude/
 # but if someone runs the installer with a messed-up HOME they could

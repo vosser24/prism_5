@@ -4,7 +4,7 @@ description: >
   Creates or upgrades expert agents via research. Uses NotebookLM (free)
   as primary research engine with Claude as quality gate.
   Only spawned by master-orchestrator when a needed agent doesn't exist.
-tools: Read, Write, Bash, Grep, Glob, WebSearch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch
 model: opus
 maxTurns: 40
 memory: true
@@ -167,9 +167,13 @@ project-scoped by definition (D004 §1).
 ## THREE-TIER RESEARCH ENGINE
 
 ### TIER 1: NotebookLM (FREE — ALWAYS try first)
-Check: command -v notebooklm
+Check by EXECUTION, not PATH: run `notebooklm --version`; if it fails, try
+`python -m notebooklm --version`. (Windows AppLocker/WDAC on domain machines can
+let `command -v notebooklm` RESOLVE while denying the `.exe` — a PATH check is a
+false positive there.) Use whichever actually runs as the canonical invocation
+`$NLM` for every `notebooklm …` call below (bare `notebooklm` OR `python -m notebooklm`).
 If available:
-  a) Create notebook: notebooklm create "{agent-name} Research"
+  a) Create notebook: $NLM create "{agent-name} Research"
      Store notebook ID in roster.json entry.
   
   b) Import sources — try TWO methods in order:
@@ -178,10 +182,13 @@ If available:
        notebooklm source add-research "{domain-specific research query}"
        
        This triggers NotebookLM's Deep Research which auto-finds 20+ sources.
-       Run 2-3 queries to cover different angles:
-         Query 1: core domain expertise
-         Query 2: tools and implementation
-         Query 3: edge cases and failure modes
+       Run 2-3 queries to cover different angles. Each MUST be a multi-term,
+       targeted string (see construction rule below), NOT a bare domain phrase —
+       the quality of the gathered knowledge framework is CAPPED by the quality
+       of these seed queries:
+         Query 1 (core):     {domain} best practices, canonical methods, expert heuristics
+         Query 2 (tools/impl): {domain} {named tools/libraries} implementation patterns, config, gotchas
+         Query 3 (edge/fail): {domain} failure modes, edge cases, anti-patterns, production pitfalls
        
        KNOWN ISSUE: Deep Research may fail on Windows CLI (HTTP 502 error).
        The Google API for add-research has compatibility issues on Windows.
@@ -200,9 +207,18 @@ If available:
        This is slower (2-3 minutes vs 20 seconds) but produces the same
        result: a notebook with multiple research sources that can be queried.
        
-     Craft research queries with specifics:
-     BAD:  "demand forecasting"
-     GOOD: "retail demand forecasting Greek market seasonality Prophet LightGBM sparse data"
+     RESEARCH-QUERY CONSTRUCTION (mandatory — this seed query determines the
+     whole gathered knowledge base, so it gets the same discipline as the Q1-Q5
+     questioning phase). Each query string MUST embed, as distinct terms, at least:
+       {domain} + {specific methods/algorithms} + {named tools/libraries}
+       + {market/geography or context, if any} + {stack/constraints}
+       + {a failure-mode / pitfall term}
+     Goal: BEST-IN-CLASS researched knowledge NOT already in Claude's training
+     (quality-gate score 5) — not generic Q&A. Reject any query that is just the
+     domain noun.
+       BAD:  "demand forecasting"
+       GOOD: "retail demand forecasting Greek market seasonality Prophet LightGBM
+              sparse-data cold-start backtesting pitfalls"
   
   c) Ask precision questions from prompt templates (FREE):
      Select template from ~/.claude/skills/prism-plan/references/prompt-templates.md
@@ -225,16 +241,28 @@ If available:
 
 ### TIER 3: Fallback (NotebookLM not installed)
   Opus does full research via web search. Most expensive path.
-  Log: "Install notebooklm-py for zero-cost research: pip install notebooklm-py[browser]"
-  Cost: ~$1-3 per agent
+  Cost: ~$1-3 per agent (NOT free — Tier 1 NotebookLM is the $0 path).
+  ⚠ NON-SILENT (v5.x): do NOT merely log this. INCLUDE a prominent recommendation
+  in the result you RETURN to your caller, so the parent surfaces it to the user:
+    "⚠ NotebookLM not installed → this agent was researched with Opus (~$1-3),
+     not the free NotebookLM path. Install the $0 research engine:
+       pip install notebooklm-py[browser]   &&   notebooklm login
+     (or run /prism-deps), then recreate this agent for $0 research."
+  Silently degrading to the paid path without surfacing this is a defect.
 
 ### TIER SELECTION RULES
-1. ALWAYS check notebooklm availability first (command -v notebooklm)
+1. ALWAYS check notebooklm availability first by EXECUTION: `notebooklm --version`
+   || `python -m notebooklm --version`. A bare `command -v notebooklm` PATH check
+   is a FALSE POSITIVE under Windows AppLocker/WDAC (path resolves, `.exe` denied) —
+   v5.x finding on a PRAKGR domain box. Use the form that runs as `$NLM`; if NEITHER
+   runs, NotebookLM is unavailable → Tier 3 (and surface the install/blocked notice).
 2. If available: Tier 1 ALWAYS. Try Deep Research (Method 1) first.
    If Deep Research fails (502/error on Windows): use URL import (Method 2).
    Both methods produce a queryable notebook — same end result.
 3. If Tier 1 answers score <5 on critical questions: Tier 2 fills gaps.
-4. If notebooklm not installed: Tier 3 (but warn user about cost).
+4. If notebooklm not installed: Tier 3 — and you MUST surface the install
+   recommendation in the result you RETURN (see TIER 3 block), not merely log it.
+   Silent degradation to the paid Opus path is a defect (v5.x stress-test finding).
 5. Never skip straight to Tier 3 when Tier 1 is available.
 6. Log which method was used: "Tier 1 Method 1" or "Tier 1 Method 2"
    in prompt-effectiveness.md for tracking.
@@ -274,7 +302,10 @@ If available:
    - total_tasks_completed, total_corrections_received
    - notebooklm_notebook_id (if Tier 1 was used)
    - research_tier: 1/2/3 (which tier was used for creation)
-   - cost_estimate: "$0.00" (Tier 1) or "$X.XX" (Tier 2/3)
+   - cost_estimate: ONLY Tier 1 (NotebookLM, free) is "$0.00". Tier 2 ≈ "$0.30-$0.50",
+     Tier 3 ≈ "$1-3" (Opus full research). NEVER record "$0.00" for Tier 2/3 — that
+     falsely implies the creation was free when it spent real Opus budget (v5.x finding).
+     Match the value to research_tier: tier 1→$0.00, tier 2→~$0.40, tier 3→~$1-3.
    - quality_score: 1-5 from quality gate
    - projects_worked: [{name, date, tasks_completed}]
    - installed_via: "plugin" if $CLAUDE_PLUGIN_ROOT is set in the factory's environment, else "manual".
@@ -470,7 +501,10 @@ If "recommend when" keywords match the NEED: return that entry immediately.
 Log: research_tier = 0 (registry hit)
 
 ### STEP 2: Tier 1 — NotebookLM (free)
-Check: command -v notebooklm
+Check by EXECUTION (not PATH): `notebooklm --version` || `python -m notebooklm --version`.
+A bare `command -v notebooklm` is a FALSE POSITIVE under Windows AppLocker/WDAC (PATH
+resolves, `.exe` denied) — use the form that runs as `$NLM`. (Same fix as the main
+three-tier block above; keep both consistent.)
 If available, create/reuse shared notebook: skill-research-registry
 
   notebooklm ask "For the user need: {NEED_VERBATIM}

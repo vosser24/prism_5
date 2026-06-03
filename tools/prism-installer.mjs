@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PRISM Installer v4.7.0
+// PRISM Installer v5.0.0
 //
 // Subcommands:
 //   detect   — print JSON of current install state, no changes (exit 0 always)
@@ -990,7 +990,7 @@ function verify() {
 // ─── help ─────────────────────────────────────────────────────────────────────
 function help() {
   console.log(`
-PRISM Installer v4.7.0
+PRISM Installer v5.0.0
 
 Usage:
   node tools/prism-installer.mjs <subcommand> [flags]

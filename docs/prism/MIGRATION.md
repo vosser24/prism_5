@@ -6,20 +6,109 @@ adapted from `docs/prism/adjudications/D004-v4-product-vision.md` §Migration
 recipe (lines 165-188).
 
 > **TL;DR**: `git pull` + re-run the installer + `/prism-bootstrap` on each
-> project. The bootstrap is idempotent, detects-and-adopts v3.8.9-style
-> installs, and the project-master phase is opt-in. Nothing breaks silently.
+> project. The bootstrap is idempotent and detects-and-adopts v3.8.9-style
+> installs. As of **v5.1 the project-master phase is default-on** (`--no-master`
+> opts out); it was opt-in through v5.0. Nothing breaks silently.
 
 ## Version map
 
 | You are on | You want | Read |
 |---|---|---|
-| v3.8.x | v4.7.0 | Run v3.11.0 sub-phases, then the v4.0.0 → v4.7 sections in sequence |
-| v3.10.x | v4.7.0 | Same as above starting at v3.11.0 |
-| v3.11.0 | v4.7.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then the v4.x sections through v4.7 |
-| v4.6.x | v4.7.0 | This page, [§v4.6 → v4.7](#v46--v47) below |
-| v4.5.x | v4.7.0 | [§v4.5 → v4.6](#v45--v46) then [§v4.6 → v4.7](#v46--v47) below |
-| v4.4.x | v4.7.0 | [§v4.4 → v4.5](#v44--v45), then v4.5→v4.6, then v4.6→v4.7 |
-| pre-v3.8 | v4.7.0 | Read CHANGELOG entries for v3.8.x first, then this guide in sequence |
+| v5.0.x | v5.1.0 | [§v5.0 → v5.1](#v50--v51) below |
+| v4.7.x | v5.0.0 | This page, [§v4.7 → v5.0](#v47--v50) below |
+| v3.8.x | v5.0.0 | Run v3.11.0 sub-phases, then the v4.0.0 → v4.7 sections in sequence, then [§v4.7 → v5.0](#v47--v50) |
+| v3.10.x | v5.0.0 | Same as above starting at v3.11.0 |
+| v3.11.0 | v5.0.0 | Skip to [§v3.11.0 → v4.0.0](#v3110--v400-project-master), then the v4.x sections through v4.7, then [§v4.7 → v5.0](#v47--v50) |
+| v4.6.x | v5.0.0 | [§v4.6 → v4.7](#v46--v47) then [§v4.7 → v5.0](#v47--v50) below |
+| v4.5.x | v5.0.0 | [§v4.5 → v4.6](#v45--v46), then v4.6→v4.7, then [§v4.7 → v5.0](#v47--v50) |
+| v4.4.x | v5.0.0 | [§v4.4 → v4.5](#v44--v45), then v4.5→v4.6→v4.7→v5.0 |
+| pre-v3.8 | v5.0.0 | Read CHANGELOG entries for v3.8.x first, then this guide in sequence |
+
+---
+
+## v5.0 → v5.1
+
+### Upgrade — run the installer
+
+```bash
+git pull
+node tools/prism-installer.mjs update
+node tools/prism-installer.mjs verify
+```
+
+v5.1 is **backward-compatible and additive**. Two behavioural changes, both with safe defaults:
+
+### 1. Project-master is now DEFAULT-ON
+
+Through v5.0 the `master-<slug>` project-master was opt-in (you ran `/prism-bootstrap --with-deep-dive` or `/prism-deep-dive` directly). **As of v5.1, `/prism-bootstrap` creates the project-master by default** — it is the prerequisite for real dispatched panels (the panel chair must be the session-level agent, since dispatch is main-loop-only).
+
+- **New behaviour:** the project-master phase runs non-interactively (slug-derive → agent-write → memory-seed → settings-write) and wires `master-<slug>` as the session `agent:`.
+- **Opt out:** pass `--no-master` to `/prism-bootstrap`.
+- **`--with-deep-dive`** is now an **accepted no-op** (kept for back-compat; it no longer gates the phase).
+- **Existing project-masters are untouched** — the phase is idempotent and never clobbers a learned `MEMORY.md`.
+- **No action required** on upgrade. Next `/prism-bootstrap` on a project without a master will create one; pass `--no-master` if you don't want it.
+
+### 2. claude-mem-aware two-mode memory
+
+PRISM now detects the optional `claude-mem` ambient-memory tier (`~/.claude-mem/`) and selects a memory mode:
+
+- **Mode A — `claude-mem` present:** it owns continuous session capture + reload; PRISM's save-nudge **stands down** and `/prism-clean` stays manual.
+- **Mode B — `claude-mem` absent (default):** PRISM-native fallback — the save-nudge stays active and `/prism-clean` folds a one-line session summary into the project-master `MEMORY.md` `## Session log` (new `append-summary` subcommand). `/prism-clean` can also write a resume **session handoff doc** for long-running work.
+
+`/prism-bootstrap` offers to install `claude-mem` (opt-in, NotebookLM-style) during the health phase. **Nothing is lost in either mode** — they're mutually exclusive fallbacks. No action required.
+
+### Verifying the v5.1 upgrade
+
+```bash
+node ~/.claude/tools/prism-bootstrap.mjs detect-claude-mem   # {"installed": true|false}
+node ~/.claude/tools/prism-clean.mjs --help                  # lists append-summary
+```
+
+---
+
+## v4.7 → v5.0
+
+### Upgrade — run the installer
+
+```bash
+git pull
+node tools/prism-installer.mjs update
+node tools/prism-installer.mjs verify
+```
+
+If the installer reports `Already at v5.0.0; nothing to do.`, you're done. v5.0 is **backward-compatible and additive** — the cross-project knowledge index (F4) is **opt-in at every layer** and inert until you enable it, so nothing changes for existing recall/workflows after upgrade.
+
+### What changed — F4 cross-project knowledge index (opt-in)
+
+v5.0's foundational bet is a **dep-free, offline cross-project knowledge index**: BM25 lexical retrieval + a default-on `claude -p` re-rank, over each project's shared adjudications / lessons / plans / panel-rationales plus always-on home-global verdict logs. It is **inert by default** — you opt in per project and consume explicitly.
+
+#### Enable sharing for a project (default-deny, per-corpus-type)
+Nothing is shared until you say so. From a project root:
+```bash
+node ~/.claude/tools/prism-recall.mjs --share-project lesson plan   # share only these corpus types
+node ~/.claude/tools/prism-recall.mjs --share-project               # share all four shareable types
+node ~/.claude/tools/prism-recall.mjs --unshare-project             # stop sharing
+```
+This writes/removes `.prism-kb-share.json` in the project root. Withhold sensitive types (e.g. `adjudication`) by simply not listing them. The global store holds **descriptors + lexical postings only — never verbatim bodies** — and runs a fail-closed secret pre-scan.
+
+#### Consume cross-project knowledge (explicit)
+```bash
+node ~/.claude/tools/prism-recall.mjs --cross-project "your query"
+```
+The default 3-tier recall is **unchanged** and never reaches across projects. Results are labeled `(LLM re-ranked)` or `(lexical only — …)` so you always know which stage answered.
+
+#### Re-rank latency on slow-CLI platforms (important)
+The `claude -p` re-rank has an **8 s hard timeout** with instant silent BM25 fallback. On Windows the raw `claude -p` cold-start is ~20 s, so the re-rank routinely **times out and falls back to BM25** — recall still works, just lexical-only. To let the re-rank engage, raise the budget (accepting the ~20 s block per cross-project query):
+```bash
+export PRISM_RECALL_RERANK_TIMEOUT_MS=25000   # default 8000
+```
+Disable the re-rank entirely with `--no-rerank` or `PRISM_RECALL_RERANK=off`.
+
+#### Freshness — automatic
+Writes to a shared project's corpus mark a dedicated `~/.claude/.prism-kb-knowledge-dirty` flag; the index rebuilds detached at session end (zero per-turn latency). A SessionStart nudge fires if the index falls behind its source docs out-of-band (e.g. a `git pull`). Manual rebuild: `node ~/.claude/tools/prism-kb-knowledge-rebuild.mjs --sync`.
+
+#### Not in v5.0
+No vector embeddings (BM25 + re-rank only), no new hosted egress beyond the existing subscription-auth `claude -p` channel, no cross-machine sync, no automatic/implicit cross-project surfacing. The verdict-regression scanner (A5) that consumes this index is deferred to v5.1.
 
 ---
 
@@ -359,6 +448,12 @@ After the above:
 ---
 
 ## v3.11.0 → v4.0.0 (project-master)
+
+> ⚠️ **v5.1 update:** this section describes v4.0, where the project-master was
+> **opt-in**. As of **v5.1 it is default-on** — `/prism-bootstrap` creates it
+> automatically, `--with-deep-dive` is a no-op, and `--no-master` opts out. If
+> you're upgrading straight to v5.1, read the steps below for context but expect
+> the master to be created by default (see [§v5.0 → v5.1](#v50--v51)).
 
 The v4.0.0 release adds the per-project master agent, migrates the
 orchestration protocol from agent file to skill, and ships the Phase J

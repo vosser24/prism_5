@@ -43,6 +43,24 @@ await withRosterLock(rosterPath, async () => { inFn = true; });
 check('stale lock auto-released', inFn);
 check('stale lock file removed after fn', !existsSync(rosterPath + '.lock'));
 
+// 4. First-creation: roster's parent dir does not exist yet (v4.7 regression).
+// withRosterLock must `mkdir -p` the lock's parent before openSync(lockPath,'wx'),
+// otherwise openSync throws ENOENT (not EEXIST) and crashes the caller on first
+// agent auto-registration. Covers the prism-roster-lock.mjs mkdirSync fix directly.
+const nestedRosterPath = join(dir, 'does', 'not', 'exist', 'roster.json');
+check('parent dir absent before lock', !existsSync(join(dir, 'does')));
+let firstCreateRan = false;
+let firstCreateThrew = false;
+try {
+  await withRosterLock(nestedRosterPath, async () => {
+    firstCreateRan = true;
+    check('lock file exists during fn (parent dir auto-created)', existsSync(nestedRosterPath + '.lock'));
+  });
+} catch { firstCreateThrew = true; }
+check('withRosterLock did not throw when parent dir absent', !firstCreateThrew);
+check('fn ran with absent parent dir', firstCreateRan);
+check('lock released after first-creation fn', !existsSync(nestedRosterPath + '.lock'));
+
 rmSync(dir, { recursive: true, force: true });
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

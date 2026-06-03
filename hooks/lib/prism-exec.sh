@@ -45,25 +45,37 @@ _prism_newest() {
   printf '%s\n' "${matches[@]}" | sort -V | tail -n1
 }
 
+# Runnable = exists, executable, AND actually runs. The `-x` bit is an FS
+# permission flag; it does NOT catch a binary denied by Windows AppLocker/WDAC
+# (PATH resolves, `-x` passes, exec fails). So verify by EXECUTION before
+# selecting a fallback candidate — otherwise the wrapper could pick a blocked
+# node and silently no-op EVERY hook ([[feedback-applocker-exe-detection]]).
+_prism_runnable() {
+  [ -n "$1" ] && [ -x "$1" ] && "$1" --version >/dev/null 2>&1
+}
+
 _prism_resolve_node() {
+  # Hot path: an installer-written pin. Kept as a cheap -x check (NO per-hook
+  # --version spawn) — the installer verified it at install time, and this
+  # branch runs on every hook. The execution-verify below covers the unpinned
+  # fallback paths where the AppLocker false-positive actually bites.
   if [ -n "${PRISM_NODE:-}" ] && [ -x "${PRISM_NODE}" ]; then
     printf '%s' "$PRISM_NODE"; return 0
   fi
-  if command -v node >/dev/null 2>&1; then
-    command -v node; return 0
-  fi
   local cand
+  cand=$(command -v node 2>/dev/null || true)
+  if _prism_runnable "$cand"; then printf '%s' "$cand"; return 0; fi
   cand=$(_prism_newest "$HOME/.nvm/versions/node/*/bin/node")
-  if [ -n "$cand" ] && [ -x "$cand" ]; then printf '%s' "$cand"; return 0; fi
+  if _prism_runnable "$cand"; then printf '%s' "$cand"; return 0; fi
   cand=$(_prism_newest "$HOME/.fnm/node-versions/*/installation/bin/node")
-  if [ -n "$cand" ] && [ -x "$cand" ]; then printf '%s' "$cand"; return 0; fi
-  if [ -x "$HOME/.volta/bin/node" ]; then printf '%s' "$HOME/.volta/bin/node"; return 0; fi
+  if _prism_runnable "$cand"; then printf '%s' "$cand"; return 0; fi
+  if _prism_runnable "$HOME/.volta/bin/node"; then printf '%s' "$HOME/.volta/bin/node"; return 0; fi
   if command -v asdf >/dev/null 2>&1; then
     cand=$(asdf which node 2>/dev/null || true)
-    if [ -n "$cand" ] && [ -x "$cand" ]; then printf '%s' "$cand"; return 0; fi
+    if _prism_runnable "$cand"; then printf '%s' "$cand"; return 0; fi
   fi
   for cand in /opt/homebrew/bin/node /usr/local/bin/node; do
-    if [ -x "$cand" ]; then printf '%s' "$cand"; return 0; fi
+    if _prism_runnable "$cand"; then printf '%s' "$cand"; return 0; fi
   done
   return 1
 }

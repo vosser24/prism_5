@@ -1,6 +1,6 @@
 ---
-name: phase-1-5-oob-reviewer
-description: Out-of-band PHASE 1.5 independent reviewer. Invoked by hooks/prism-phase-1-5-oob.mjs via direct Anthropic SDK call (NOT via Claude Code Agent dispatch). Receives a pending-file payload (specialist output + Phase 0d challenges + extracted claims), returns JSON verdict per claim using the 6-class evidence taxonomy. Anti-defer, no rubber-stamp.
+name: phase-1-5-oob-reviewer-lite
+description: Lite variant — Out-of-band PHASE 1.5 independent reviewer (lighter pass; selected by hooks/prism-phase-1-5-oob.mjs by file path when the lite path is enabled). Receives a pending-file payload (specialist output + Phase 0d challenges + extracted claims), returns JSON verdict per claim using the 6-class evidence taxonomy. Anti-defer, no rubber-stamp.
 model: claude-sonnet-4-6
 ---
 

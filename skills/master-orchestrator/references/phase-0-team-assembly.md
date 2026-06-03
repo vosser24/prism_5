@@ -12,6 +12,73 @@ data deletion, client-facing, multi-system, new agent creation.
 STANDARD: internal tooling, docs, tests, scaffolding, exploratory.
 User overrides: "checkpoint this" → high | "run free" → standard
 
+## Panel seat sourcing (v5.x — real, reusable, LEARNING experts)
+
+PANEL seats (PHASE 0d) are sourced differently from ordinary step-agents: each
+seat MUST be a real, rostered expert — not a persona and not a bare
+general-purpose subagent (those belong only to the role-play fast mode). For
+each seat (3–5, with distinct opposed biases):
+
+1. **Match the roster first** (project roster + global). A fitting specialist →
+   REUSE it. Reuse amortises creation cost and — because experts LEARN — each
+   reuse starts sharper than the last.
+2. **Else create + PERSIST.** Spawn `@agent-factory` to research and create the
+   expert; it registers in the roster (auto via `prism-agent-write-register.mjs`).
+   It is now reusable on the next panel — never ephemeral.
+3. **Experts persist AND learn.** Each panel expert carries a per-project domain
+   memory: roster fields `learns: true` + `domain_memory_file` point at its
+   accumulated notes. On reuse, RECALL that memory and inject it into the seat's
+   dispatch prompt; after the task, persist the expert's "what I learned" delta
+   back to `domain_memory_file` — master-brokered (the dispatched expert cannot
+   self-persist reliably, so YOU write it).
+4. **Experts own an evolving skill toolkit.** Roster field `owned_skills` lists
+   the vertical domain skills the expert authored. Equip a worker by INJECTING
+   the named skill file into the worker's dispatch prompt (mid-session skills do
+   not hot-reload). Across sessions those skills become first-class registered
+   skills the expert keeps refining.
+
+These four points are what make the panel "real, independent, reusable experts
+by default" rather than one model role-playing several voices.
+
+### Expert learning write-back (v5.x — reuse the context-adapters convention)
+
+Do NOT create a new memory tree. An expert's `domain_memory_file` IS its existing
+per-project accumulated-knowledge file:
+`~/.claude/agents/<expert>/experience/context-adapters/<project-slug>.md` — the
+path already read at that expert's STARTUP.
+
+- **Recall (on reuse):** before dispatching a returning expert, read that file and
+  inject it into the seat's prompt (belt-and-suspenders with the expert's own
+  STARTUP read).
+- **Write-back (after the task):** APPEND a dated "what I learned about
+  <project>" delta to that file via Edit/Write — master-brokered (the dispatched
+  expert cannot self-persist). On the first write, set the roster entry's
+  `learns: true` and `domain_memory_file` to that path.
+- **Across sessions:** because the file lives in the expert's own dir and is read
+  at STARTUP, the NEXT session's dispatch of that expert automatically carries the
+  accumulated knowledge — this is the "experts learn" loop, with zero new tooling.
+
+### Expert domain skills — author, evolve, equip (v5.x)
+
+Beyond memory, each expert owns a toolkit of vertical, task-specific SKILLS it
+authors and refines (roster `owned_skills`). Mechanics:
+
+- **Author:** during its dispatch an expert may invoke `skill-creator` (or hand-
+  author a `SKILL.md`) to capture a reusable, vertical procedure for its domain.
+  Authored skills live in the PROJECT skills root
+  `<project>/.claude/skills/<expert>-<skill>/SKILL.md` (namespaced by owning
+  expert). Record the skill name in the expert's roster `owned_skills`.
+- **Evolve:** on later sessions the expert refines its skills via skill-creator's
+  modify/improve path — the toolkit compounds, like its memory.
+- **Equip (same session):** mid-session skills do NOT hot-reload (STEP 0c), so to
+  equip a worker now the master INJECTS the authored `SKILL.md` path/content into
+  the worker's dispatch prompt; the worker Reads + follows it.
+- **Equip (next session):** after a reload the authored skill is a first-class
+  REGISTERED, discoverable skill — the worker can invoke it by name normally.
+
+This is the "reusable & evolving skills, assigned to the workers" loop: the expert
+creates the vertical knowledge, the master equips the worker that executes it.
+
 ## Team Assembly
 For each step: identify domain → search PHASE 0a inventory → assess fitness
 
@@ -44,6 +111,23 @@ For the current step's domain, check:
 
 This prevents creating agents for capabilities better external tools provide
 (compose-only stance: never replicate what external tools do well).
+
+**Free-research pre-check (v5.x) — before ANY @agent-factory dispatch that CREATES a new agent:**
+agent-factory's $0 research engine is NotebookLM; without it the factory silently
+falls back to Opus (~$1-3/agent). Because the factory runs as a subagent (which
+cannot prompt the human), this offer MUST happen here in the parent turn:
+- Detect by EXECUTION, not PATH: run `notebooklm --version` (fall back to
+  `python -m notebooklm --version`). Do NOT use `command -v notebooklm` — on Windows
+  AppLocker/WDAC domain machines PATH resolves even when the `.exe` is blocked, so
+  `command -v` is a FALSE POSITIVE (v5.0 stress-test finding; matches agent-factory's
+  own execution-based check).
+- If ABSENT (neither execution form succeeds) → use `AskUserQuestion`: "NotebookLM (free, $0 agent research) is not
+  installed. Install it now for $0 research (`pip install notebooklm-py[browser]`
+  + `notebooklm login`, or run `/prism-deps`), or proceed with Opus (~$1-3)?"
+  On accept: install (reuse `/prism-deps`'s protocol), confirm `notebooklm list`,
+  then dispatch the factory. On decline: dispatch anyway (Tier 3, user-informed).
+- If PRESENT → proceed directly.
+(Skip this pre-check for `--from-notebook` wiring, which already implies NotebookLM.)
 
 **Agent hiring flow:**
 - Agent missing → spawn @agent-factory for creation, wait, hire.

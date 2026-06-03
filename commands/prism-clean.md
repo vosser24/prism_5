@@ -174,6 +174,17 @@ node ~/.claude/tools/prism-clean.mjs append-lesson \
 
 Same exit-code handling as `append-decision` above. Run once per distinct lesson title (not once per file write if multiple lessons land in the same session file).
 
+**After the session summary is finalized** (Step 5), fold a one-line session summary into the project-master MEMORY.md `## Session log` section. This is the **Mode-B** native-memory path — the fallback used when `claude-mem` is NOT installed (see `/prism-bootstrap` § Memory for the two-mode model). When `claude-mem` IS installed (**Mode A**), it owns ambient session memory and this fold is redundant — skip it:
+
+```bash
+node ~/.claude/tools/prism-clean.mjs append-summary \
+  --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
+  --date "$(node -e "process.stdout.write(new Date().toISOString().slice(0,10))")" \
+  --summary "<one-line session summary — what shipped/decided this session, no newlines>"
+```
+
+Same exit-code handling as `append-decision` above. Run once per session; the last 10 summaries are kept and older ones roll off (pointer-only router, never the full narrative).
+
 **Deviation files** (`docs/prism/deviations/`) do not have a MEMORY.md pointer step in v4.0 — D004 §H locked the per-decision + per-session rhythms only. A `append-deviation` subcommand is deferred to a future phase.
 
 **Atomic writes:** use the Write tool for each file. Refuse to overwrite an
@@ -181,6 +192,27 @@ existing file unless the user explicitly confirmed a rename.
 
 **Cross-linking:** if the body references prior adjudications (e.g.
 `[[D002]]`), include them in the `**Related:**` header line.
+
+---
+
+## Step 4b — session handoff doc (long-running / multi-session work)
+
+If this session was part of **long-running or multi-session feature work** (an in-flight feature branch, an unfinished multi-step plan, or a TODO backlog the next session must resume), write or update a **session handoff doc** so the next cleared session can resume without re-reconning. Skip this step for one-off sessions with no carry-over.
+
+**Path:** `docs/prism/plans/<YYYY-MM-DD>-SESSION-HANDOFF.md` (use `docs/prism/lessons/` instead if the work is a lesson log rather than an active plan). If a handoff for today already exists, UPDATE it in place rather than clobbering.
+
+**Format** (model-driven — write the actual content, this is the shape):
+- **TL;DR — what to do next session**: a numbered list of the immediate next actions.
+- **Branch + git state**: current branch, last commit SHA, whether work is committed vs working-tree-only.
+- **DONE this session**: what shipped (with test status).
+- **PENDING — finish these**: each remaining item with exact recon pointers (`file:line`).
+- **KEY DECISIONS / CONSTRAINTS**: anything the next session must NOT re-litigate.
+- **VERIFICATION**: the exact commands to confirm a green baseline.
+- **POINTERS**: plan docs, related memory slugs, evidence agent IDs.
+
+> ⚠️ Handoff "outstanding work" claims **decay** — they were true when written. The next session MUST re-verify each PENDING item against current repo state before treating it as authority (a commit may have already closed it). State this re-verify expectation in the handoff itself.
+
+This is the Write tool, not a helper subcommand — the content is wholly model-synthesized. Use the same atomic-write / no-clobber discipline as Step 4.
 
 ---
 

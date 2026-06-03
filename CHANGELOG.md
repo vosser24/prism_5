@@ -4,6 +4,51 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.0.0] - 2026-06-01
+
+The v5.0 foundational bet: a **dep-free, offline cross-project knowledge index** (F4) — BM25 lexical retrieval + a default-on `claude -p` re-rank (silent BM25 fallback), a default-deny per-corpus-type sharing model, and a stable `queryKnowledge()` API. This is the topology shift from a self-aware single-project orchestration to a substrate that can learn across projects. The verdict-regression scanner (A5) that consumes the index is deferred to v5.1.
+
+Migration guide: `docs/prism/MIGRATION.md` §"v4.7 → v5.0".
+
+### F4 — cross-project knowledge index (foundational bet)
+- **Phases A–D** (committed): dep-free **BM25** lexical lib (`tools/lib/prism-bm25.mjs`); cross-project
+  **knowledge indexer** (`tools/prism-kb-knowledge-indexer.mjs`) with default-deny per-corpus-type
+  `.prism-kb-share.json` opt-in, always-on home-global verdicts, secret pre-scan/redaction (fail-closed),
+  descriptor-not-body storage, provenance, atomic write; **`claude -p` re-rank** wrapper
+  (`tools/lib/prism-kb-rerank.mjs`, default-on-when-available, 8 s timeout, silent BM25 fallback); and the
+  **`queryKnowledge({crossProject, limit, rerank})`** API (`tools/lib/prism-kb-knowledge-query.mjs`) wired
+  into `prism-recall.mjs` (`--cross-project`, `--share-project [types…]`, `--unshare-project`, honest
+  "(LLM re-ranked)" / "(lexical only — …)" labels).
+- **Phase E — freshness/sync + manifest-coverage integration** (this batch):
+  - `tools/prism-kb-knowledge-rebuild.mjs` — drain-at-Stop refresher (`--sync --quiet`); derives changed
+    project root(s) from a dedicated `~/.claude/.prism-kb-knowledge-dirty` flag.
+  - `hooks/prism-kb-autosync.mjs` — writes the dedicated knowledge-dirty flag (separate from the resource
+    `.prism-kb-dirty`); project corpus gated by the project's shared types (default-deny), verdicts always-on.
+  - `hooks/prism-session-end.mjs` — Stop-drain spawns `prism-kb-knowledge-rebuild` detached. Zero per-turn latency.
+  - `hooks/lib/prism-freshness-sweep.mjs` — `checkKnowledgeIndexStale` SessionStart nudge (sibling to the
+    v4.7 E1 per-project check); absorbs the v4.6-deferred cross-project freshness item.
+  - `tools/install-manifest.json` — added the 5 `files[]` entries the A–D phases shipped uninstalled
+    (bm25/indexer/rebuild/query/rerank). New `tests/v3/state/test-manifest-coverage.mjs` enforces this as a
+    build-phase gate.
+- **Known limitation (measured):** on Windows, raw `claude -p` cold-start (~20 s) exceeds the 8 s re-rank
+  budget, so the default-on semantic re-rank silently falls back to BM25. Set
+  `PRISM_RECALL_RERANK_TIMEOUT_MS=25000` to let it engage (accepting ~20 s per `--cross-project` query).
+  Tracked in `docs/prism/lessons/2026-06-01-v5.0-f4-phase-e-handoff.md`.
+
+### Fixed — routing
+- **Release-safety screen no longer force-summons the design panel.** The keyword-floor release/meta-work
+  screen (`hooks/lib/prism-opus-classifier.mjs`) matched bare `ship`/`release` tokens and hardcoded
+  `summon_panel=true`, so a ship-*readiness question* ("are we ready to ship?") was routed through the
+  full `@master-orchestrator` design panel. The screen now promotes to **opus tier** (the real anti-haiku
+  safety) but leaves `summon_panel` to the genuine novel-architecture signal path (`PANEL_SIGNALS` /
+  stakes / ≥3 opus signals) — a real "re-architect + release" prompt still summons it; a readiness check
+  does not. New test: `tests/v3/state/test-prism-release-screen-panel.mjs`.
+- **Tier-override guidance no longer contradicts the dispatch guard on panel turns.** On hard-mode
+  panel-summoning turns the router (`hooks/prism-prompt-tier-router.mjs`) printed the v3.2.0 "write the
+  sentinel as your FIRST action" self-override protocol — a Write the parent-dispatch-guard denies (Write
+  isn't in its `ALWAYS_ALLOW` set). That text is now suppressed on those turns; the panel directive already
+  carries the correct escape (`!opus-force:` / `PRISM_DISPATCH_GUARD=off`).
+
 ## [4.7.0] - 2026-05-29
 
 Stepping-stone minor that clears the small deferred backlog (no v5.0 lift) and turns the parallel-dispatch cap into a real configurable knob. Purely additive — no topology change, no new agents or slash commands, no default flips. `.prism-routing.jsonl` gains a new `install_outcome` event (schema_version 5 on that line only; sibling events stay 4 — additive, older readers ignore unknown event kinds).

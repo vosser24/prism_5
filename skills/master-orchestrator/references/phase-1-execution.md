@@ -60,6 +60,24 @@ the Windows note on Agent Teams.
    all three to return before proceeding."
   "Steps 4a, 4b use Agent Teams (cross-layer coordination required)."
 
+## Model-A execution: experts plan, the master dispatches (v5.x)
+
+Dispatch is **main-loop-only** (STEP 0 spike): a dispatched expert/specialist has
+NO Agent tool and **cannot spawn** workers. So PHASE 1 execution runs as model A:
+
+- The master (session-level chair) assigns each domain workstream to its owning expert.
+- The expert returns a **written worker spec** (tasks, acceptance criteria, file
+  targets) — it does NOT spawn workers.
+- The **master dispatches** the workers on that spec (the sole dispatcher), equipping
+  each with the expert's owned skills by injecting the skill file into the worker
+  prompt (mid-session skills do not hot-reload).
+- The owning expert **reviews** worker output via a master re-dispatch round; the
+  master persists the expert's domain learnings back to its `domain_memory_file`
+  (master-brokered).
+
+Never assume an expert can fan out its own sub-agents — route every fan-out through
+the master. "Experts own planning; the master owns dispatch."
+
 ## Execution Patterns
 
 Standard step (sequential): delegate with full context + "read your references/

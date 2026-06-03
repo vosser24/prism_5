@@ -352,6 +352,28 @@ function emptyRollup() {
   };
 }
 
+// FIX-B (v5.x): guards emit `{event:'<x>_guard', blocked:bool}`; map the event
+// kind to a guard_denies bucket (counted when blocked===true). Legacy code read
+// a non-existent `guard_deny` field, so every bucket stayed 0.
+const GUARD_EVENT_TO_BUCKET = {
+  mutation_guard: 'mutation',
+  dispatch_guard: 'dispatch',
+  dispatch_guard_panel: 'dispatch',
+  agent_model_guard: 'model',
+  task_tier_advisor: 'tier_advisor',
+  safety: 'safety',
+  prism_safety: 'safety',
+  parallel_guard: 'parallel',
+  panel_guard: 'panel',
+  skill_trigger_guard: 'skill_trigger',
+};
+// Subagent bypasses are logged as `reason` strings on guard passthrough events.
+const BYPASS_REASON = {
+  'subagent-parent-tool-use-id-passthrough': 'parent_tool_use_id',
+  'subagent-claude-code-entrypoint-passthrough': 'env',
+  'subagent-sentinel-dispatched-passthrough': 'sentinel.dispatched',
+};
+
 function aggregate(events) {
   const r = emptyRollup();
   if (!events.length) return r;
@@ -361,14 +383,30 @@ function aggregate(events) {
       if (!r.first_event || e.ts < r.first_event) r.first_event = e.ts;
       if (!r.last_event || e.ts > r.last_event) r.last_event = e.ts;
     }
+    const isRouting = e.event === 'prompt_tier_router';
     if (e.tier && r.tier_distribution[e.tier] !== undefined) r.tier_distribution[e.tier]++;
-    if (e.classifier_source && r.classifier_sources[e.classifier_source] !== undefined) r.classifier_sources[e.classifier_source]++;
-    if (e.guard_deny && r.guard_denies[e.guard_deny] !== undefined) r.guard_denies[e.guard_deny]++;
+    // FIX-B (v5.x): classifier source is `source` on routing events (legacy code
+    // read a non-existent `classifier_source`). Scope to routing events.
+    const src = e.classifier_source || (isRouting ? e.source : undefined);
+    if (src && r.classifier_sources[src] !== undefined) r.classifier_sources[src]++;
+    // FIX-B (v5.x): count guard denies from {event:'<x>_guard', blocked:true}.
+    if (e.blocked === true && GUARD_EVENT_TO_BUCKET[e.event] && r.guard_denies[GUARD_EVENT_TO_BUCKET[e.event]] !== undefined) {
+      r.guard_denies[GUARD_EVENT_TO_BUCKET[e.event]]++;
+    } else if (e.guard_deny && r.guard_denies[e.guard_deny] !== undefined) {
+      r.guard_denies[e.guard_deny]++; // legacy shape, back-compat
+    }
     if (e.hook_event) r.hook_event_counts[e.hook_event] = (r.hook_event_counts[e.hook_event] || 0) + 1;
     if (e.event) r.event_kind_counts[e.event] = (r.event_kind_counts[e.event] || 0) + 1;
     if (e.force_opus) r.force_opus_uses++;
-    if (e.subagent_bypass && r.subagent_bypasses[e.subagent_bypass] !== undefined) r.subagent_bypasses[e.subagent_bypass]++;
-    if (e.panel_summon !== undefined) r.panel_summons[String(Boolean(e.panel_summon))]++;
+    // FIX-B (v5.x): subagent bypasses are logged as `reason` strings on guards.
+    const bypass = e.subagent_bypass || BYPASS_REASON[e.reason];
+    if (bypass && r.subagent_bypasses[bypass] !== undefined) r.subagent_bypasses[bypass]++;
+    // FIX-B (v5.x): the field is `summon_panel` (legacy read `panel_summon`).
+    // Scope to routing events so guard events carrying summon_panel don't double-count.
+    if (isRouting) {
+      const sp = (e.summon_panel !== undefined) ? e.summon_panel : e.panel_summon;
+      if (sp !== undefined) r.panel_summons[String(Boolean(sp))]++;
+    }
     if (e.event === 'master_override') r.master_overrides++;
   }
 

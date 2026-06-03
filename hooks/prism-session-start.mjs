@@ -393,9 +393,26 @@ try {
     }
   } catch {}
 
+  // v5.x — surface the active PANEL MODE when overridden to role-play. Mirrors
+  // the parallel-cap pattern: inject only on the non-default (roleplay) so a
+  // default-"dispatch" session carries no extra token noise. Fail-open.
+  try {
+    const pmRaw = process.env.PRISM_PANEL_MODE;
+    if (pmRaw != null && String(pmRaw).trim() !== '') {
+      const pmLib = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-panel-mode.mjs')).href).catch(() => null);
+      if (pmLib && typeof pmLib.resolvePanelMode === 'function') {
+        const mode = pmLib.resolvePanelMode();
+        if (mode !== pmLib.DEFAULT_PANEL_MODE) {
+          notices.push(`PRISM: active panel mode is ${mode} (overridden via PRISM_PANEL_MODE; default ${pmLib.DEFAULT_PANEL_MODE}). Honor this mode — assemble the PHASE 0d panel as ${mode} AND write \`dispatch_mode: "${mode}"\` in the panel.json (the panel-guard enforces the written value).`);
+        }
+      }
+    }
+  } catch {}
+
   if (notices.length) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
+        hookEventName: 'SessionStart',
         additionalContext: notices.join('\n'),
       },
     }));

@@ -10,6 +10,10 @@ import {readFileSync, existsSync, readdirSync} from 'fs';
 import {join, dirname} from 'path';
 import {spawnSync} from 'child_process';
 import {fileURLToPath, pathToFileURL} from 'url';
+// F4 cross-project knowledge surface (v5.0 Phase D). Augments Tier 1 only; the
+// default 3-tier recall path is untouched (F4 §7).
+import {queryKnowledge} from './lib/prism-kb-knowledge-query.mjs';
+import {writeShareMarker, removeShareMarker} from './prism-kb-knowledge-indexer.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const CLAUDE_DIR = join(H, '.claude');
@@ -276,24 +280,40 @@ function tier1Query(query, {limitDomains = 2, json = false} = {}) {
   return {text: r.stdout};
 }
 
-export async function recall(query, {forcedTier = null, json = false, verbose = false} = {}) {
+export async function recall(query, {forcedTier = null, json = false, verbose = false, crossProject = false, noRerank = false} = {}) {
   const c = forcedTier ? {tier: forcedTier, reason: 'forced'} : classify(query);
   let result = null;
   if (c.tier === 1)      result = tier1Query(query, {json});
   else if (c.tier === 2) result = tier2Read(query);
   else if (c.tier === 3) result = await tier3Aggregate(query);
   const envelope = {query, classification: c, result};
+  // F4 §7: --cross-project augments Tier 1 ONLY. Tiers 2/3 unaffected. Without the
+  // flag, this block is skipped entirely and recall behaves exactly as before.
+  if (crossProject && c.tier === 1) {
+    const H = process.env.HOME || process.env.USERPROFILE;
+    envelope.crossProject = queryKnowledge(query, {home: H, crossProject: true, rerank: !noRerank});
+  }
   if (json) return envelope;
   return formatEnvelope(envelope, {verbose});
 }
 
-function formatEnvelope(env, {verbose = false} = {}) {
+export function formatEnvelope(env, {verbose = false} = {}) {
   const lines = [];
   if (verbose) lines.push(`[classify] tier=${env.classification.tier} reason=${env.classification.reason}`);
   const r = env.result;
   if (env.classification.tier === 1) {
     if (r && r.text) lines.push(r.text.trimEnd());
-    else if (r && r.error) lines.push(`ERROR: ${r.error}`);
+    else if (r && r.error) {
+      // FIX-C (v5.x): the tier1Query error string may already begin with
+      // "ERROR:" — strip it before re-prefixing so we never emit "ERROR: ERROR:".
+      // And when the user explicitly asked for --cross-project, a missing Tier-1
+      // resource index (.prism-kb-index.json, a DIFFERENT subsystem than the F4
+      // knowledge index) is not what they asked about — demote it to a one-line
+      // note so it does not dominate the cross-project results they requested.
+      const msg = String(r.error).replace(/^ERROR:\s*/i, '');
+      if (env.crossProject) lines.push('(tier-1 semantic index unavailable — showing cross-project results only)');
+      else lines.push(`ERROR: ${msg}`);
+    }
     else lines.push('(no tier-1 result)');
   } else if (env.classification.tier === 2) {
     lines.push('State:');
@@ -315,28 +335,69 @@ function formatEnvelope(env, {verbose = false} = {}) {
     }
     if (!Object.keys(series).length) lines.push('  (no aggregates matched)');
   }
+  // F4 cross-project block (only present when --cross-project + Tier 1). Honest
+  // labeling: print the label string from queryKnowledge, never 'embeddings'/'vector'.
+  if (env.crossProject) {
+    const cp = env.crossProject;
+    lines.push('');
+    lines.push(`Cross-project knowledge ${cp.label}:`.trimEnd());
+    if (!cp.results || !cp.results.length) {
+      lines.push('  (none)');
+    } else {
+      for (const r of cp.results) {
+        lines.push(`  [${r.project_label}] ${r.type}: ${r.title}`);
+        if (r.source_path) lines.push(`    ${r.source_path}`);
+      }
+    }
+  }
   return lines.join('\n');
 }
 
 const args = process.argv.slice(2);
 const json = args.includes('--json');
 const verbose = args.includes('--verbose');
+const crossProject = args.includes('--cross-project');
+const noRerank = args.includes('--no-rerank');
+const shareIdx = args.indexOf('--share-project');
+const unshareProject = args.includes('--unshare-project');
 let forcedTier = null;
 const ti = args.indexOf('--tier');
 if (ti >= 0 && args[ti + 1]) { const n = parseInt(args[ti + 1], 10); if (n >= 1 && n <= 3) forcedTier = n; }
-const skip = new Set(['--json', '--verbose']);
+const skip = new Set(['--json', '--verbose', '--cross-project', '--no-rerank', '--unshare-project', '--share-project']);
 if (ti >= 0) { skip.add(args[ti]); skip.add(args[ti + 1]); }
+// --share-project consumes its following type tokens (anything until the next --flag).
+const shareTypes = [];
+if (shareIdx >= 0) {
+  for (let i = shareIdx + 1; i < args.length && !args[i].startsWith('--'); i++) {
+    shareTypes.push(args[i]);
+    skip.add(args[i]);
+  }
+}
 const positional = args.filter(a => !skip.has(a) && !a.startsWith('--'));
 const query = positional.join(' ').trim();
 
 const argv1 = process.argv[1] || '';
 const invokedDirectly = (argv1 && import.meta.url === `file://${argv1.replace(/\\/g, '/')}`) || argv1.endsWith('prism-recall.mjs');
 if (invokedDirectly) {
-  if (!query) {
-    console.error('Usage: prism-recall.mjs "<query>" [--json] [--verbose] [--tier 1|2|3]');
-    process.exit(1);
+  // Management actions (F4 §7): share/unshare the current project's corpus. These
+  // do not run a recall query — they mutate .prism-kb-share.json and report.
+  if (shareIdx >= 0) {
+    const obj = writeShareMarker(process.cwd(), shareTypes);
+    console.log(`Shared cross-project corpus types: ${obj.shared_types.join(', ')}`);
+    console.log(`Wrote: ${join(process.cwd(), '.prism-kb-share.json')}`);
+  } else if (unshareProject) {
+    const removed = removeShareMarker(process.cwd());
+    console.log(removed
+      ? `Removed share marker: ${join(process.cwd(), '.prism-kb-share.json')}`
+      : 'No share marker to remove (project was not sharing).');
+  } else {
+    if (!query) {
+      console.error('Usage: prism-recall.mjs "<query>" [--json] [--verbose] [--tier 1|2|3] [--cross-project] [--no-rerank]');
+      console.error('       prism-recall.mjs --share-project [type1 type2 ...] | --unshare-project');
+      process.exit(1);
+    }
+    const out = await recall(query, {forcedTier, json, verbose, crossProject, noRerank});
+    if (json) process.stdout.write(JSON.stringify(out, null, 2));
+    else console.log(out);
   }
-  const out = await recall(query, {forcedTier, json, verbose});
-  if (json) process.stdout.write(JSON.stringify(out, null, 2));
-  else console.log(out);
 }

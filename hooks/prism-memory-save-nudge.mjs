@@ -23,6 +23,7 @@
 
 import {readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
+import {claudeMemInstalled} from './lib/prism-claude-mem-detect.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG = join(H, '.claude', '.prism-routing.jsonl');
@@ -73,6 +74,15 @@ function writeCounter(sessionId, data) {
 try {
   if (MODE === 'off') process.exit(0);
 
+  // v5.1: stand down when claude-mem is installed — it captures continuously and
+  // registers its own UserPromptSubmit hook, so PRISM's nudge would double up
+  // (duplicate injector + redundant "save before /clear"). claude-mem owns the
+  // ambient-memory tier in that mode; PRISM-native capture is the fallback only.
+  if (claudeMemInstalled(H)) {
+    appendLog({event: 'memory_save_nudge', action: 'standdown-claude-mem'});
+    process.exit(0);
+  }
+
   const raw = readFileSync(0, 'utf-8');
   const input = JSON.parse(raw || '{}');
   const sessionId = input.session_id || 'anon';
@@ -89,7 +99,7 @@ try {
   if (shouldNudge && state.last_nudge_turn !== state.turn_count) {
     state.last_nudge_turn = state.turn_count;
     const nextTurn = state.turn_count + INTERVAL;
-    const directive = `PRISM MEMORY-SAVE NUDGE: session at turn ${state.turn_count}. Review this session for durable memories (user preferences, project decisions, surprising findings, recurring corrections) and save them to the project's memory directory using the auto-memory guidance in your system prompt. Do this BEFORE the user runs /clear. If you have already saved everything memorable since the last nudge, say so explicitly and move on. Next nudge at turn ${nextTurn} unless /clear resets the counter.`;
+    const directive = `PRISM MEMORY-SAVE NUDGE: session at turn ${state.turn_count}. Before the user runs /clear, run /prism-clean to (1) write/update the session handoff doc and (2) fold this session's durable learnings into the project-master's MEMORY.md (.claude/agents/MEMORY.md) + docs/prism/ — applying the auto-memory guidance in your system prompt. If everything memorable is already saved since the last nudge, say so explicitly and move on. Next nudge at turn ${nextTurn} unless /clear resets the counter.`;
 
     writeCounter(sessionId, state);
     appendLog({event: 'memory_save_nudge', session_id: sessionId, turn: state.turn_count, next: nextTurn});

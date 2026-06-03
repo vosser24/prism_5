@@ -38,14 +38,14 @@ export const HAIKU_SIGNALS = [
 export const SONNET_SIGNALS = [
   /\b(cross-?file|multi-?file|across\s+(the\s+)?(codebase|repo))\b/,
   /\b(refactor|rename|consolidate)\b/,
-  /\b(write|add)\s+tests?\b/,
+  /\b(write|add)\s+(\w+\s+)?tests?\b/,
   /\b(reproduce|reproduction)\s+(a\s+|the\s+)?bug\b/,
   /\b(documentation|api docs?)\s+(lookup|search|find)\b/,
   /\b(trace|follow)\s+(a|the)?\s*(call|dependency|flow)\b/,
   /\b(port|migrate)\s+(from|to)\b/,
   /\b(fix|patch)\s+(this|the)\s+(bug|issue)\b/,
   /\b(create|build|scaffold|generate)\s+(a|an|the)\s+(skill|hook|component|agent|module|page|endpoint|api|route|script|tool)\b/,
-  /\b(implement|write|add)\s+(a|an|the)\s+(feature|function|endpoint|component|utility|page|handler)\b/,
+  /\b(implement|write|add)\s+(a|an|the)\s+(\w+\s+){0,3}(feature|function|endpoint|component|utility|page|handler|field|model|column|method|migration|attribute|property|serializer|middleware|validator|validation|fixture|route|setting)\b/,
 ];
 
 export const OPUS_SIGNALS = [
@@ -57,7 +57,12 @@ export const OPUS_SIGNALS = [
   /\b(security\s+(review|audit)|threat model|attack surface)\b/,
   /\b(performance\s+(analysis|tradeoff)|scalability\s+(review|plan))\b/,
   /\b(adversarial\s+review|deep\s+analysis|holistic\s+(review|analysis))\b/,
-  /\b(design|architect|plan)\s+(a|an|the)\s+(workflow|pipeline|routing|orchestration|skill-?system|agent-?system|framework)\b/,
+  // v5.0.x A1 adjective-gap fix: allow up to 3 qualifier words between the
+  // article and the head noun ("design the entire EVENT-DRIVEN pipeline",
+  // "architect the new AGENT-ORCHESTRATION framework"). Without this an
+  // intervening adjective scored the prompt to haiku (same failure class as
+  // FIX-D's dead-sonnet bug).
+  /\b(design|architect|plan)\s+(a|an|the)\s+(?:[\w-]+\s+){0,3}(workflow|pipeline|routing|orchestration|skill-?system|agent-?system|framework)\b/,
   /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
 ];
 
@@ -66,11 +71,17 @@ export const OPUS_SIGNALS = [
 // the orchestrator gate when these fire.
 export const PANEL_SIGNALS = [
   /\b(novel|unprecedented|greenfield|from scratch)\s+(architect|design|system|migration|pipeline)/,
-  /\b(architect|design|plan)\s+(a |an |the )?(new|entire|whole|complete)\s+(system|app|platform|pipeline|workflow)/,
+  /\b(architect|design|plan)\s+(a |an |the )?(new|entire|whole|complete)\s+(?:[\w-]+\s+){0,3}(system|app|platform|pipeline|workflow)/,
   /\b(multi-?phase|multi-?quarter)\s+(plan|migration|rollout|redesign)/,
   /\b(expert panel|architect panel|panel of)/,
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
 ];
+
+// UAT-3/5 (2026-06-02): EXPLICIT user requests for a panel. Honoring explicit
+// intent is SAFE — it is not an ambient false-positive (the class that caused
+// the v5.0 finding-#1 deadlock), it is exactly what the user asked for. Kept
+// narrow so benign "admin/control/solar/settings panel" nouns don't trip it.
+export const EXPLICIT_PANEL_RE = /\b(?:summon|convene|run)\s+(?:the\s+|an?\s+)?(?:expert\s+|adversarial\s+)?panel\b|\b(?:expert|adversarial)\s+panel\b|\bpanel\s+review\b|(?:^|\s)[!/]panel\b|\bPRISM\s+this\b/i;
 
 // D1 — high-stakes work: migrations, destructive ops, security, money. These
 // bias toward opus + mandatory panel independent of length-based tier floor.
@@ -195,6 +206,8 @@ export function detectCompound(prompt, description) {
 // involvement without needing the Opus API.
 export function detectSummonPanel(prompt, description, {h, s, o, compound}) {
   const hay = `${prompt || ''} ${description || ''}`;
+  // UAT-3/5: explicit user request for a panel — honor it directly.
+  if (EXPLICIT_PANEL_RE.test(hay)) return true;
   const panelHit = PANEL_SIGNALS.some(r => r.test(hay));
   if (panelHit) return true;
   if (detectStakes(prompt, description)) return true;
@@ -244,5 +257,10 @@ export function classifyWithScore(prompt, description) {
   const stakes = detectStakes(prompt, description);
   if (stakes) tier = 'opus';
   const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
+  // v5.0.x A2: a summoned design panel implies opus-tier work. Without this a
+  // panel signal (e.g. "multi-phase migration") could leave tier at haiku/
+  // sonnet — the router only honors the panel on opus, so the flag was
+  // silently dropped AND the work routed cheap. Panel ⇒ opus, like stakes.
+  if (summon_panel) tier = 'opus';
   return {...c, score, compound, stakes, tier_by_score: tier, summon_panel};
 }

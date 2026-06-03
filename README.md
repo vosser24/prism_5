@@ -1,293 +1,243 @@
-# PRISM — Cognitive-tier orchestration for Claude Code
+# PRISM — cognitive-tier orchestration for agentic coding
 
-> **30-second pitch**: PRISM makes Claude Code self-aware about task complexity, automatically routing work to the cheapest viable model tier (Haiku/Sonnet/Opus) and enforcing dispatch discipline through 25 hooks. Closes the gap between "Claude Code as smart assistant" and "Claude Code as a cost-disciplined orchestration framework".
+PRISM makes an agentic coding session **self-aware about task complexity**. Every prompt is classified and routed to the cheapest model tier that can do the job, simple work is kept off expensive models, high-stakes work is forced through an adversarial expert panel before any code is written, and each project grows a persistent "project-master" that remembers its decisions across sessions.
+
+It is **local-first and dep-free at its core**: deterministic Node hooks + a small set of JSON manifests. No network calls, no API keys, no telemetry leave your machine unless you explicitly opt in.
+
+---
 
 ## What it solves
 
-Three pain points specific to heavy Claude Code users:
+Three recurring pain points in long agentic coding sessions:
 
-1. **Over-spending on simple work.** Opus on a typo fix costs ~30× what Haiku would. PRISM classifies every prompt and routes accordingly.
-2. **Sequential dispatch on parallel-safe work.** A 3-task scan that should finish in 30s takes 3 minutes if dispatched serially. PRISM's `[pgroup=N]` annotation is enforced at execution time (v3.1+).
-3. **Hallucinated specialists.** When you have `ui-ux-pro-max` installed, the orchestrator should use it — not invent "Rachel the UX designer". PRISM's resource-index makes installed tools authoritative.
+1. **Everything runs on the most expensive model.** A one-line lookup and a multi-file refactor cost the same. PRISM scores each prompt (`haiku` / `sonnet` / `opus`) and routes accordingly — typically a large cut in spend with no loss of quality on the work that matters.
+2. **High-stakes work gets one-shot answers.** Architecture, migrations, and irreversible decisions deserve more than a single pass. PRISM detects novel-architecture intent and convenes an **adversarial expert panel** (≥2 substantive challenges before synthesis) instead of answering blind.
+3. **Context evaporates between sessions.** Decisions, lessons, and project shape are lost on every `/clear`. PRISM keeps a per-project **memory router** and a cross-project **knowledge index** so the next session starts already caught up.
 
-## Three concrete use cases
+PRISM enforces all of this with **guards** — deterministic hooks that block the wrong-tier or unsafe action *before* it happens, not after.
 
-**Cost discipline** — Run `PRISM_MODEL_GUARD=hard` and PRISM denies any opus dispatch lacking explicit `model` declaration. Sonnet/Haiku stay advisory. (v2.9.1+)
+---
 
-**Parallel orchestration** — `/prism-plan` produces tasks tagged `[pgroup=1]`; v3.1's `prism-parallel-guard` blocks sequential dispatch of pgroup-tagged tasks, forcing batched parallel `Agent()` calls.
+## Quick start — a brand-new project
 
-**Specialist dispatch** — `/prism-index` populates a unified roster of installed agents/skills/tools/MCPs. `blueprint-prompt` queries the index BEFORE assembling a panel, so real specialists replace generic personas.
+Once PRISM is installed on your machine (see [Installation](#installation)), onboarding any project takes one command:
+
+```text
+cd your-project
+# then, in your coding session:
+/prism-bootstrap
+```
+
+That runs the full 7-phase setup (idempotent — safe to re-run):
+
+| Phase | What it does |
+|---|---|
+| identity | Audits/creates `CLAUDE.md` operating rules |
+| structure | Scaffolds `.claude/` + `docs/prism/` + `tasks/` |
+| plugin-validate | Sanity-checks installed plugins |
+| discovery | Scans codebase + DB + API into compact reference files |
+| roster | Reconciles available specialist agents |
+| **project-master** | Creates `master-<slug>` — your project's persistent solution-architect (default-on) |
+| health | Verifies wiring; green/yellow/red report |
+
+After bootstrap:
+
+```text
+/prism-recall   <question>     # ask anything PRISM has learned about this project
+/prism-clean                   # capture durable decisions/lessons before you /clear
+/prism-sync                    # refresh the project index after big changes
+```
+
+That's the whole daily loop. Everything below is reference.
+
+---
 
 ## Installation
 
-**Requirements:** Node.js 18+, Claude Code CLI (`claude` on PATH).
+**Requirements:** Node.js ≥ 18, `git`, and an agentic coding CLI (the `claude` command) available on your PATH. Optional: `python` ≥ 3.10 and the `notebooklm` / `gh` CLIs for the cross-project knowledge and research tiers.
 
-### Step 1: Clone the repo
+### 1. Clone
 
 ```bash
 git clone https://github.com/vosser24/prism_master.git
 cd prism_master
 ```
 
-### Step 2: Run the installer
+### 2. Install
 
 **Windows (PowerShell):**
 ```powershell
 pwsh .\install.ps1
 ```
 
-**Mac / Linux / git-bash:**
+**macOS / Linux / Git-Bash:**
 ```bash
 bash install.sh
 ```
 
-The installer is idempotent — running it again on an existing install upgrades safely (backs up your settings/roster first, then merges).
+The wrappers call `node tools/prism-installer.mjs install` under the hood. The installer is **idempotent** — re-running it upgrades in place: it backs up your settings + roster first, removes old files by pattern, copies the new ones, and merges configuration (preserving your roster agents, policy, and telemetry logs).
 
-### Step 3: Verify
+### 3. Verify
 
 ```bash
 node tools/prism-installer.mjs verify
 ```
 
-All checks should print `PASS`. If any print `FAIL`, re-run the installer.
+Every check should print `PASS`. If any print `FAIL`, re-run the installer.
 
-### Install options
+### Install flags
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Simulate — print what would happen, no changes |
-| `--no-backup` | Skip backup of existing settings/roster |
+| `--dry-run` | Print what would happen; change nothing |
+| `--no-backup` | Skip backing up existing settings/roster |
 | `--quiet` | Suppress progress output |
-| `--home <path>` | Override HOME directory (for testing) |
+| `--home <path>` | Override the install HOME (for testing) |
 
-### Upgrading from a prior PRISM version
+### Upgrade an existing install
 
-Run the same install command. The installer detects the existing install, backs it up, removes old files by name pattern, copies new files, and merges `settings.json` — preserving your roster agents, `prism-policy.json`, and telemetry logs.
-
-See `docs/prism/MIGRATION.md` for version-specific migration notes.
-
-### Uninstalling
-
-**Windows:**
-```powershell
-pwsh .\uninstall.ps1
-```
-
-**Mac / Linux / git-bash:**
 ```bash
-bash uninstall.sh
+node tools/prism-installer.mjs update
 ```
 
-To restore a backup made during install:
+Detects the current install, checks version, backs up, then installs — equal-version runs are a no-op.
+
+### Uninstall
+
+```bash
+bash scripts/uninstall.sh            # DRY-RUN preview (default)
+bash scripts/uninstall.sh --purge    # actually remove
+```
 ```powershell
-pwsh .\uninstall.ps1 -RestoreBackup "~\.claude\.prism-install-backup-2026-05-27_12-00-00"
+.\scripts\uninstall.ps1              # DRY-RUN preview (default)
+.\scripts\uninstall.ps1 -Purge       # actually remove
+```
+
+To restore a backup taken during install:
+```powershell
+.\uninstall.ps1 -RestoreBackup "<your .prism-install-backup-… path>"
 ```
 
 ---
 
-## Plugin install (alternative)
+## Capabilities
 
-PRISM also ships as a first-class Claude Code plugin (v3.5.0+):
+| Capability | What it does |
+|---|---|
+| **Tier routing** | A keyword-floor classifier scores every prompt and routes it to `haiku` / `sonnet` / `opus`. Trivial lookups stay cheap; genuine engineering gets the model it needs. You can override per-prompt with `!opus-force:`. |
+| **Adversarial expert panel** | Novel-architecture / migration / multi-option prompts (or an explicit "summon the panel") convene a panel of specialist agents that challenge each other before a synthesized plan is returned. |
+| **Dispatch guard** | Enforces the dispatch pattern — heavy work is farmed out to subagents instead of being run directly in the expensive main loop. |
+| **Mutation guard** | Blocks direct file mutation from the main loop on non-trivial turns, steering edits through reviewed subagents. |
+| **Safety gate** | Blocks genuinely dangerous shell commands (`rm -rf /`, `curl … \| bash`, `DROP TABLE`, force-push) while allowing routine ones (`rm -rf ./build`). Scans a de-quoted view so a dangerous token merely *mentioned* in data doesn't trip it. |
+| **Project-master memory** | Each project gets a `master-<slug>` agent whose `MEMORY.md` router carries forward recent decisions, lessons, and a session log — auto-injected at the start of every subagent so work resumes already informed. |
+| **Two-mode session memory** | If the optional `claude-mem` tier is present it owns ambient capture; otherwise PRISM's native nudge + `/prism-clean` fold keeps a durable record. Nothing is lost either way. |
+| **Cross-project knowledge index** | An opt-in, offline BM25 + re-rank index over your adjudications / lessons / plans, queryable with `/prism-recall --cross-project`. |
+| **Agent factory + roster** | Specialist agents are created on demand, registered in a roster, and reused across sessions; `/prism-roster` and `/prism-retire` manage the talent pool. |
 
-```text
-/plugin marketplace add vosser24/prism_master
-/plugin install prism@PRISM
-```
+---
 
-Then run `/reload-plugins` to activate. Hooks, skills, commands, and agents are namespaced under the plugin (e.g. `/prism:prism-plan`) and registered automatically — no `settings.fragment.json` merge, no manual file copy. To update later: `/plugin update prism@PRISM`. To remove: `/plugin uninstall prism@PRISM`.
+## Command reference
 
-> **Uninstalling?** Run `/prism-uninstall-cleanup` **before** `/plugin uninstall prism@PRISM` to remove agents the factory created while PRISM was installed as a plugin. Manually-created agents (and legacy entries from before v4.3.0) are never touched.
+Every command, grouped by workflow, with a concrete use case. Run `/prism-help` in-session for the live index.
 
-> **Note**: Until PRISM is listed on the official Anthropic marketplace, the `marketplace add` step above pulls the plugin manifest from this repo's `.claude-plugin/plugin.json`. Once accepted into `claude-plugins-official`, the install becomes a single `/plugin install prism@claude-plugins-official`.
+### Setup
 
-## Status — works / half-works / known-gaps (v4.7.0)
-
-| Journey | State | Notes |
+| Command | Use case | Key flags |
 |---|---|---|
-| Install / upgrade | ✅ Works | Idempotent, backup-first |
-| Tier classification | ✅ Works | Keyword-floor regex + conversation-model self-override |
-| Mutation guard | ✅ Works | Hard-block on parent-context writes |
-| Parent-dispatch guard | ✅ Works | Hard-block on novel-tier turns |
-| Parallel-dispatch guard | ✅ Works | Closes T10.3 gap |
-| Panel-hallucination guard | ✅ Works | Closes DOCTRINE-DRIFT-001 |
-| Skill-trigger guard | ✅ Works (advisory) | Closes T13.4 gap |
-| Resource-index | ✅ Works | Run `/prism-index` to populate |
-| Centrally-managed policy | ✅ Works | `~/.claude/prism-policy.json` |
-| Team roster | ✅ Works (file-based) | `--team` filter on `/prism-roster` |
-| Telemetry | ⚠ Local-only | No SaaS yet; export-to-JSON |
-| `/prism-bootstrap` 7-phase state machine (v3.11.0) | ✅ Works | Idempotent; detect-and-adopt back-fills v3.8.9 installs |
-| `/prism-sync` conservative drift (v3.11.0) | ✅ Works | Always re-scans; `--smart-drift` stub until v3.12.0 |
-| `/prism-clean` 5-level importance classifier (v3.11.0) | ✅ Works | Wired to `append-decision` + `append-lesson` in v4.0 |
-| `/prism-validate-plugins` (v3.11.0) | ✅ Works (report-only) | `--fix` deferred to v3.12.0 |
-| `/prism-deep-dive` + `master-<slug>` (v4.0) | ✅ Works | Opt-in via `/prism-bootstrap --with-deep-dive` or direct |
-| `master-orchestrator` as skill (v4.0) | ✅ Works | Skill body at `~/.claude/skills/master-orchestrator/`; agent file is thin wrapper |
-| PHASE 1.5 tightened evidence rules (v4.0) | ✅ Works | EVIDENCED/UN-CITED/REJECTED verdicts + bounce-ONCE + factory-upgrade at ≥3 UN-CITED |
-| `SessionEnd[clear]` + `PreCompact` nudge hooks | ✅ Shipped (v4.1 Phase A) | Flag-file + SessionStart pickup per D005's resolution; 4 off-switches |
-| Git-hygiene + pre-push review nudge (v4.1) | ✅ Shipped (v4.1 Phase A) | SessionEnd writes git-dirty flag; PreToolUse asks before `git push` |
-| SessionStart daily freshness sweep (v4.1) | ✅ Shipped (v4.1 Phase B) | Once-per-24h: plugin drift, stale agents, update-log, CLAUDE.md, tools-registry rotations |
-| Telemetry opt-in prompt (v4.1) | ✅ Shipped (v4.1 Phase C, default-off in v4.2) | `/prism-bootstrap` health phase prompts once; default off; honors `DISABLE_TELEMETRY=1` + `DO_NOT_TRACK=1`; rollup at `~/.claude/.prism-telemetry-rollup.json`; consumed by `prism-updater` for guard-tuning candidates |
-| User hook customization preservation | ❌ Not yet | v4.1+ |
-| OOB PHASE 1.5 reviewer (v4.4) | ✅ Shipped (v4.4) | SubagentStop hook invokes independent reviewer; verdict log + SessionStart pickup; opt-in per-agent via `prism-roster --tag-1-5` |
-| master-orchestrator skill refactor (v4.4) | ✅ Shipped (v4.4) | SKILL.md 770→~130 lines; 10 focused reference files under `references/` |
-| Evidence-discipline ratchet (v4.4) | ✅ Shipped (v4.4) | `prism-roster --apply-ratchet` reads verdict log; ≥30% UN-CITED rate → `pending_upgrade=true`; auto-runs in `/prism-clean` |
-| OOB Phase 0d panel reviewer (v4.5) | ✅ Shipped (v4.5) | `PostToolUse[Write]` on `.prism-task-*/panel.json` invokes independent reviewer; verdict surfaces next turn via SessionStart pickup; bypass via `prism-roster --skip-next-oob <spec>` |
-| Telemetry tooling (v4.5) | ✅ Shipped (v4.5) | `phase_0d_challenge` + `dispatch_cap` events log to `.prism-routing.jsonl`; `tools/prism-telemetry-aggregate.mjs --agreement` reads them |
-| Telemetry-driven calibration (v4.6) | ✅ Shipped (v4.6, recommend-then-apply) | `tools/prism-telemetry-aggregate.mjs --recommend-calibration` proposes threshold changes (K1 cap report-only, K2 escalate-model, K3 auto-clear, K4 override gate) + apply commands; degrades to "insufficient data" below 15 samples; NEVER mutates a default silently. Apply via `prism-roster --set-model` / `--clear-pending-upgrade` |
-| Structured-output classifiers (v4.6) | ✅ Shipped (v4.6) | C1 validation classifier, C2 failure-mode taxonomy, D1 stakes detection (migrations/deletes/security/money → opus + panel, context-anchored) |
-| Layer 4 hygiene closeout (v4.6) | ✅ Shipped (v4.6) | H1 full `withRosterLock` coverage; H2 verdict-flag `kind` unification; H3 `--target` hook-path rewrite; H4 Windows `claude` `.cmd` resolution |
-| Installer `--target <dir>` + `update` subcommand (v4.5) | ✅ Shipped (v4.5) | Multi-target installs; `update` chains detect→backup→install with `Already at vX` idempotency; `.prism-version` marker tracks installed version |
-| Expanded backup + `--purge-state` uninstall (v4.5) | ✅ Shipped (v4.5) | Backup now covers 94 paths (was 3); `--purge-state` wipes user state with interactive confirm |
-| SCOPE GUARD + alternatives_considered schema (v4.5) | ✅ Shipped (v4.5, advisory) | `panel-guard` Path B emits stderr on out-of-scope positions; `PRISM_SCOPE_GUARD=strict` blocks; G2 validates `rationale.alternatives_considered[]` shape |
-| Tested on macOS native | ❌ Not yet | Linux + Windows tested |
+| `/prism-bootstrap` | Run **once on any new or freshly-cloned project** to fully initialize PRISM through the 7-phase machine. Idempotent. | `--dry-run`, `--interactive`, `--force`, `--skip-discover`, `--no-master`, `--no-telemetry` |
+| `/prism-init` | When you only need the `CLAUDE.md` operating-rules template + directory scaffold, without the full 7-phase run. (Subsumed by bootstrap.) | `full` |
 
-See `tests/v3/plan.md` for the comprehensive user-journey test grid and
-`docs/prism/MIGRATION.md` for upgrade recipes (v3.x → v4.0, v4.5 → v4.6, and v4.6 → v4.7).
+### Daily
 
-### v4.7 — Deferred-backlog cleanup + the parallel cap becomes a knob
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-sync` | Run weekly or after significant changes to refresh PRISM's discovery references, reconcile the roster, and re-check health. | `--smart-drift` |
+| `/prism-clean` | Run **before `/clear` or at session end** — applies a 5-level importance classifier and writes durable adjudications/lessons/smoke docs, folding a one-line summary into the project-master memory. | `--allow-l5-skip` |
+| `/prism-recall <query>` | Ask anything PRISM has learned: *"what was the decision on the auth middleware?"*, *"total spend today?"*. Auto-routes between semantic, session-state, and metrics tiers. | `--cross-project`, `--json`, `--verbose`, `--tier 1\|2\|3`, `--no-rerank` |
 
-A stepping-stone minor (no v5.0 lift). **K1**: the parallel-dispatch cap is now the `PRISM_PARALLEL_CAP` env knob (default still 4) — overriding it injects the active cap into orchestrator context so telemetry and doctrine can't diverge. Three new silent-unless-stale SessionStart nudges: **C3** (installed version behind your clone → run the installer update), **E1** (KB index behind its source docs → rebuild), **E2** (`tools-registry.md` changed after the last `/prism-index`). **G1**: `prism-freshness-sweep.mjs --preview` prints staleness signals on demand without touching the 24h throttle. Installer polish: **I3** aligned completion summary, **I8** opt-in local install/upgrade telemetry (reuses the existing consent; honors `DISABLE_TELEMETRY`/`DO_NOT_TRACK`). Also fixed an async-blind test harness that had been silently skipping post-`await` assertions in two suites.
+### Project-master
 
-### v4.6 — Telemetry-driven calibration + classifiers + hygiene closeout
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-deep-dive` | Create or refresh the per-project `master-<slug>` agent (bootstrap creates it by default; run directly to `--refresh` its memory or `--upgrade` its body after big changes). | `--refresh`, `--upgrade <slug>` |
 
-The payoff of v4.5's telemetry: `node tools/prism-telemetry-aggregate.mjs --recommend-calibration` reads the accrued routing + verdict logs and prints threshold-change *recommendations* — never silent mutations. K1 retunes the parallel cap (report-only — the cap is orchestrator prose), K2 recommends escalating a chronically UN-CITED specialist to opus (apply via `prism-roster --set-model`), K3 recommends clearing a stale `pending_upgrade` (apply via `--clear-pending-upgrade`), K4 surfaces a master-override-gate advisory (`PRISM_OVERRIDE_GATE=strict`). Every knob degrades to "insufficient data" below 15 samples; output also lands in `~/.claude/.prism-calibration-<date>.json` for diffing over time.
+### Agent management
 
-Layer 1 data-quality: `dispatch_cap` events now carry `actual_parallel` + `queue_depth`; challenge `evidence_class` is classified at panel-write; `.prism-routing.jsonl` schema 3 → 4 (additive). Layer 3 classifiers: C1 validation, C2 failure-mode taxonomy, D1 stakes detection. Layer 4 hygiene: full roster-lock coverage (H1), verdict-flag `kind` unification (H2), `--target` hook-path rewrite (H3), Windows `claude` `.cmd` resolution (H4).
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-app-expert <app>` | Before a UI/screenshot/video task or after a big app refactor, create a specialist that knows one application as a power user. | `--update`, `--list` |
+| `/prism-roster` | Inspect the available talent pool; use `--reconcile` to register agent files created outside the factory. | `--by-domain`, `--team <id>`, `--reconcile` |
+| `/prism-retire @agent` | Cleanly archive a stale or wrong specialist — removes its directory and roster entry atomically. | — |
+| `/prism-recommend` | After bootstrap, see which optional external tools actually fit this project's stack (fit-scored). | `--check`, `--re-check <tool>`, `--include-optional` |
+| `/prism-uninstall-cleanup` | Run before removing PRISM-as-plugin to clear agents that were factory-created under the plugin. | `--dry-run`, `--mode=remove-all\|keep-all` |
 
-### v4.5 — Out-of-band Phase 0d reviewer + installer hardening
+### Validation & health
 
-Closes Family A bias gap: the Phase 0d adversarial panel is now reviewed by an independent agent that fires on `PostToolUse[Write]` to `.prism-task-*/panel.json`. The reviewer reads only the panel JSON (not the master's reasoning) and emits a verdict to `~/.claude/.prism-phase-0d-verdicts-<sha>.json` for next-turn pickup via SessionStart. Bypass for a specific dispatch via `node tools/prism-roster.mjs --skip-next-oob <spec>`.
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-doctor` | Use when routing/guards *feel* wrong — symptom-driven diagnostic that proposes exactly one fix per finding and confirms before applying. | — |
+| `/prism-health` | Onboarding a new machine or post-upgrade: confirm core install, roster, tools, and dependencies are green. | `--quick`, `--tools`, `--agents`, `--project` |
+| `/prism-audit` | Fast pre-commit hygiene/security scan of PRISM's own config surfaces (secrets, YAML integrity, roster, hook syntax). | `--fix`, `--quick`, `--severity high` |
+| `/prism-audit-full` | Before tagging a release or after adding a hook — deep end-to-end audit that exercises every hook path and produces a timing/coverage report. | (interactive) |
+| `/prism-validate-plugins` | After installing/updating any plugin, catch broken hooks, missing manifests, and skill-name conflicts (report-only). | — |
+| `/prism-deps` | On a fresh machine or before media work, find and install optional dependencies (ffmpeg, playwright, `gh`, `jq`, …). | `--check`, `--list` |
 
-Installer ergonomics: `--target <dir>` enables testbed installs; `update` chains detect→backup→install with version-equal idempotency; `--purge-state` makes uninstall fully clean. Backup is now wide (94 paths vs legacy 3) and the manifest ships all v4.5 hooks/tools/agents.
+### Telemetry (local-only, opt-in)
 
-Telemetry tooling (no calibration in v4.5): `phase_0d_challenge` and `dispatch_cap` events log to `.prism-routing.jsonl` schema 3. v4.6 consumes these (shipped) to recommend cap retunes and master-override gates — see the v4.6 section above.
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-telemetry` | Enable local routing/cost telemetry, inspect tier distribution and guard fire-rates, or export an anonymized rollup. **No network.** | `--opt-in`, `--opt-out`, `--status`, `--aggregate`, `--export <path>` |
 
-### v4.4 — Independent PHASE 1.5 reviewer (out-of-band)
+### Knowledge & maintenance
 
-Tag any rostered specialist with `requires_phase_1_5: true` to enable an independent reviewer that runs OUTSIDE the master's dispatch tree. The reviewer sees only the specialist's output (not the master's reasoning or final synthesis) and issues per-claim verdicts using the 6-class evidence taxonomy. Verdicts surface on the next turn (async) or block the irreversible next step (block-mode). Verdict log at `~/.claude/.prism-phase-1-5-verdicts.jsonl`; query CLI at `node ~/.claude/tools/prism-phase-1-5-verdicts.mjs`.
+| Command | Use case | Key flags |
+|---|---|---|
+| `/prism-index` | After installing a new plugin/MCP, populate the roster's skills/tools blocks so the orchestrator sees real specialists, not generics. | `--enrich`, `--dry-run`, `--skills-only` |
+| `/prism-archive @agent` | Periodically consolidate a specialist's accumulated research notes into one RAG-queryable document. | `--list`, `--threshold N`, `--cleanup` |
+| `/prism-update` | Keep the model matrix, registries, and agent bodies current on a ~15-day cadence. | — |
+| `/prism-help` | Don't know which command to run? The curated, by-workflow index. | — |
+
+---
 
 ## Architecture at a glance
 
-- 25 hooks in `~/.claude/hooks/`: classifier router, 7 enforcement guards, lifecycle (session-start/end, subagent-stop), advisory hooks, agent-write auto-fire registrar (v3.11.0), OOB Phase 1.5 reviewer + Phase 0d reviewer (v4.4/v4.5), telemetry hooks (v4.5: phase-0d-challenges, dispatch-cap)
-- PRISM-owned skills in `~/.claude/skills/`: `prism-plan`, `blueprint-prompt`, `prism-discover`, `prism-chat`, `prism-clean`, `prism-validate-plugins`, `master-orchestrator` (Phase E migration target — skill body for orchestration protocol)
-- Core agents: `@master-orchestrator` (thin wrapper that loads the skill), `@agent-factory`, `@prism-updater`. v4.0 adds per-project `master-<slug>` agents generated by `/prism-deep-dive`.
-- 20 slash commands. Entry points by workflow:
-  - **Daily:** `/prism-bootstrap`, `/prism-sync`, `/prism-clean`, `/prism-recall`
-  - **Project-master (v4.0):** `/prism-deep-dive`
-  - **Agent management:** `/prism-app-expert`, `/prism-roster`, `/prism-retire`, `/prism-recommend`
-  - **Validation:** `/prism-validate-plugins`, `/prism-audit`, `/prism-audit-full`, `/prism-doctor`, `/prism-deps`
-  - **Knowledge:** `/prism-archive`, `/prism-index`, `/prism-telemetry`
-  - **Lifecycle:** `/prism-update`, `/prism-help` (curated index)
-  - Subsumed by `/prism-bootstrap` (still callable): `/prism-init`, `/prism-discover`, `/prism-roster --reconcile`, `/prism-health`
-- Single source of truth: `~/.claude/skills/prism-plan/references/roster.json` (4 sibling blocks: agents/skills/tools/mcps + index_meta)
-- Project state: `<project>/.claude/.prism-state.json` (schema v2; 7 phases; sentinels). Migrates transparently from v1.
+- **Hooks** (`~/.claude/hooks/*.mjs`) — deterministic Node scripts wired to session events: a tier router on every prompt, guards on tool calls (dispatch / mutation / safety / parallel / config), and lifecycle capture on session start/stop.
+- **Skills** — the orchestration protocol (`master-orchestrator`), planning, recall, discovery, and the project lifecycle commands.
+- **Agents** — a reusable roster of specialists plus the per-project `master-<slug>`.
+- **Tools** (`tools/*.mjs`) — the deterministic engines behind the commands (bootstrap state machine, installer, knowledge indexer, recall, telemetry aggregation).
+- **State** — per-project under `.claude/`, machine-global under `~/.claude/`. JSON manifests, no database.
 
-## Documentation
+---
 
-- [INSTALL.md](INSTALL.md) — authoritative install procedure
-- [CHANGELOG.md](CHANGELOG.md) — version history (latest: v4.7.0)
-- [docs/prism/MIGRATION.md](docs/prism/MIGRATION.md) — v3.x → v4.7 upgrade recipes
-- `/prism-help` (in Claude Code) — curated v4.7 slash-command index
-- [docs/prism/adjudications/](docs/prism/adjudications/) — locked design adjudications (D001–D006)
-- [tests/v3/plan.md](tests/v3/plan.md) — user-journey test grid
-- [tests/v3/run-claude.md](tests/v3/run-claude.md) — manual prompt pack
-
-## What you get
-
-- **Hooks** that make Claude Code self-aware: session start/stop, tool-use safety guards, agent model guards, context-tax audits, subagent tracking, agent-write auto-registrar (v3.11.0).
-- **Tools** for KB indexing, routing, classification, notebook sync, test harness, monitor, migrations, bootstrap state machine, sync, clean, plugin audit, deep-dive scaffolding.
-- **Agents** — `@master-orchestrator` (skill-loading thin wrapper), `@agent-factory`, `@prism-updater`, and per-project `master-<slug>` agents (v4.0).
-
-  > **Global vs project-local (Q7 clarification).** `@agent-factory` always writes new domain specialists to `~/.claude/agents/<name>.md` — that's the global path, reusable across every project. The ONE exception is the `--master-<slug>` mode (v4.0 Phase D), which writes to `<project>/.claude/agents/master-<slug>.md` because the master agent is project-scoped by definition. Every other factory mode (`--from-notebook`, `--skill-research`, standard create) is global-write. If you want a domain specialist that only lives in one project, that's a manual `.md` write, not a factory invocation — and the orchestrator will only see it if `/prism-index` runs in that project.
-- **Skills** — `prism-plan`, `prism-chat`, `blueprint-prompt`, `prism-discover`, `prism-clean`, `prism-validate-plugins`, `master-orchestrator` (Phase E — multi-step orchestration protocol body), and more.
-- **Statusline** — multi-line status bar with model, git, cost, context bar, rate limits, subagent breakdown. Opt-in install via `/prism-bootstrap` (v4.0).
-- **Commands** — see `/prism-help` (v4.0) for the curated by-workflow index. Run `/prism-bootstrap` first on any new project; everything else is reachable from there.
-
-## Manual install
-
-### Install (fresh machine)
-
-In Claude Code, open any project and say:
-
-> Clone https://github.com/vosser24/prism_master into a temp folder, read INSTALL.md, and follow it exactly.
-
-Claude will clone the repo, back up your existing `~/.claude/`, copy files per `manifest.json`, merge `settings.fragment.json` into your `settings.json`, build the KB index, and verify. All steps are idempotent — safe to re-run.
-
-### Update an existing install
-
-Same prompt. Claude will `git pull`, re-run the procedure — unchanged files are skipped.
-
-### Run it yourself
-
-If you'd rather run it yourself:
-
-```bash
-git clone https://github.com/vosser24/prism_master.git
-cd PRISM
-# Read INSTALL.md and follow steps 0-8 manually.
-```
-
-### Layout
+## Layout
 
 ```
-PRISM/
-├── INSTALL.md                 # procedure Claude follows
-├── manifest.json              # file-to-destination mapping
-├── settings.fragment.json     # JSON fragment to merge into ~/.claude/settings.json
-├── scripts/verify.mjs         # post-install self-test
-├── statusline-command.sh      # the Claude Code statusline
-├── hooks/                     # SessionStart, PreToolUse, PostToolUse, etc.
-├── tools/                     # PRISM KB, routing, monitor, tests, migrations
-├── agents/                    # master-orchestrator, agent-factory, prism-updater
-├── commands/                  # /prism-* slash commands
-├── skills/                    # prism-plan, prism-discover, blueprint-prompt, ...
-└── plans/                     # reference planning docs
+~/.claude/
+  hooks/            # the guards + router + lifecycle hooks
+  skills/           # orchestration + command skills
+  agents/           # global specialist roster
+  tools/            # deterministic command engines
+  commands/         # slash-command definitions
+
+<your-project>/
+  CLAUDE.md         # operating rules
+  .claude/
+    agents/         # master-<slug> + MEMORY.md router
+    references/     # discovery output (codebase/API map)
+  docs/prism/       # adjudications, lessons, plans, smoke docs
+  tasks/            # todo + lessons logs
 ```
 
-### Uninstall
-
-Claude will restore your most recent `~/.claude/backups/pre-prism-<timestamp>/` on request.
-
-### Requirements
-
-- `node` >= 18
-- `python` >= 3.10
-- `git`
-- Optional: `notebooklm` CLI (for KB cloud search), `gh` CLI
+---
 
 ## Uninstall
 
-**bash (Linux / macOS / Git Bash on Windows):**
-```bash
-bash scripts/uninstall.sh           # DRY-RUN (default — safe preview)
-bash scripts/uninstall.sh --purge   # actually remove PRISM
-```
-
-**PowerShell-native (Windows, no Git Bash needed) — v3.4+:**
-```powershell
-.\scripts\uninstall.ps1             # DRY-RUN (default — safe preview)
-.\scripts\uninstall.ps1 -Purge      # actually remove PRISM
-```
-
-See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient state → full uninstall → reinstall chain), recovery from accidental purge, and flag reference.
+See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient-state reset → full uninstall → reinstall) and flag reference.
 
 ## Contributing
 
-Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run `tests/v3/run-static.sh` and ensure all assertions pass (76/76 as of v3.3.0).
-
-## Standalone statusLine (no full PRISM install)
-
-Single-line install on Linux/Mac/Git-Bash:
-```bash
-curl -fsSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.sh | bash
-```
-
-Single-line install on Windows PowerShell:
-```powershell
-iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.ps1 | iex
-```
-
-Requires: node + curl (bash) / Invoke-WebRequest (PS, built-in).
+Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run the test suite and ensure all assertions pass.
 
 ## License
 
-See repository for license details.
+See the repository for license details.

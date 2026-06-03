@@ -48,6 +48,11 @@ let out;
 try { out = JSON.parse(result.stdout); } catch { out = null; }
 check('SessionStart returns JSON', out !== null);
 const ctx = out?.hookSpecificOutput?.additionalContext ?? '';
+// Claude Code validates SessionStart additionalContext output and REQUIRES
+// hookSpecificOutput.hookEventName === 'SessionStart'. Omitting it triggers
+// "Hook JSON output validation failed — hookSpecificOutput is missing
+// required field 'hookEventName'" at session start whenever notices fire.
+check('hookSpecificOutput.hookEventName is SessionStart', out?.hookSpecificOutput?.hookEventName === 'SessionStart');
 check('additionalContext surfaces phase_1_5 UN-CITED', /UN-CITED|missing evidence/.test(ctx));
 check('additionalContext surfaces phase_0d REJECTED', /REJECTED|panel theater/.test(ctx));
 

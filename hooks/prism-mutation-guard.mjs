@@ -270,6 +270,14 @@ function main() {
     process.exit(0);
   }
 
+  // FIX-A (v5.x): the conversation-model tier-override file must stay writable
+  // even when the guard would otherwise block parent mutations — it is the
+  // documented in-session escape from a false-positive panel/dispatch block
+  // (v5.0 stress-test finding). Without this the override is unreachable.
+  if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(String(filePath || ''))) {
+    process.exit(0);
+  }
+
   // User override via !opus-force: prefix.
   //
   // v2.7.4 fix: the prefix is detected on UserPromptSubmit (the tier-router

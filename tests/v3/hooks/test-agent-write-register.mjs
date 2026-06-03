@@ -203,6 +203,57 @@ test('agent file with no frontmatter → registers with empty description', () =
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+test('folded block scalar (>-) description → resolved text, not the indicator', () => {
+  const home = makeFakeHome('folded-desc');
+  try {
+    const agentPath = join(home, '.claude', 'agents', 'folded.md');
+    mkdirSync(dirname(agentPath), {recursive: true});
+    writeFileSync(agentPath, `---
+name: folded
+description: >-
+  First line of the folded summary
+  continues on the second line.
+model: sonnet
+---
+# folded
+
+body
+`);
+    const r = runHook({toolName: 'Write', filePath: agentPath, home});
+    assertEq(r.status, 0, r.stderr);
+    const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+    const roster = readRoster(rosterPath);
+    assert(roster.agents.folded, 'folded registered');
+    const d = roster.agents.folded.description;
+    assert(!/^[>|]/.test(d), `description must not be a block indicator, got ${JSON.stringify(d)}`);
+    assertEq(d, 'First line of the folded summary continues on the second line.');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('literal block scalar (|-) description → newline-joined text, not the indicator', () => {
+  const home = makeFakeHome('literal-desc');
+  try {
+    const agentPath = join(home, '.claude', 'agents', 'literal.md');
+    mkdirSync(dirname(agentPath), {recursive: true});
+    writeFileSync(agentPath, `---
+name: literal
+description: |-
+  line one
+  line two
+---
+# literal
+
+body
+`);
+    const r = runHook({toolName: 'Write', filePath: agentPath, home});
+    assertEq(r.status, 0, r.stderr);
+    const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+    const roster = readRoster(rosterPath);
+    assert(roster.agents.literal, 'literal registered');
+    assertEq(roster.agents.literal.description, 'line one\nline two');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 test('malformed JSON in input → exits 0 silently (defensive)', () => {
   const home = makeFakeHome('malformed');
   try {
@@ -212,6 +263,24 @@ test('malformed JSON in input → exits 0 silently (defensive)', () => {
       env: {...process.env, HOME: home, USERPROFILE: home},
     });
     assertEq(r.status, 0, r.stderr);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('v5.x: auto-registered agent carries learning/skills fields with safe defaults', () => {
+  // Panel experts persist AND learn (per-project domain memory + an evolving
+  // skill toolkit). Every auto-registered agent gets the additive v5.x fields
+  // with inert defaults: learns=false, domain_memory_file=null, owned_skills=[].
+  const home = makeFakeHome('v5-fields');
+  try {
+    const agentPath = join(home, '.claude', 'agents', 'expert.md');
+    writeAgentFile(agentPath, 'expert', 'a domain expert');
+    const r = runHook({toolName: 'Write', filePath: agentPath, home});
+    assertEq(r.status, 0, r.stderr);
+    const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+    const e = readRoster(rosterPath).agents.expert;
+    assertEq(e.learns, false, 'learns defaults to false');
+    assertEq(e.domain_memory_file, null, 'domain_memory_file defaults to null');
+    assertEq(e.owned_skills, [], 'owned_skills defaults to empty array');
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

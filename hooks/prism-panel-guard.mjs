@@ -308,6 +308,45 @@ function checkAlternatives(panel) {
   }
 }
 
+// v5.x — DISPATCH-MODE guard (build step 2). The structural enforcement that
+// would have caught the Round-12 role-play gap: when a panel declares
+// dispatch_mode="dispatch", every position MUST carry a real, UNIQUE
+// dispatched_agent_id (the agentId returned by a real per-seat Agent() call).
+// A panel claiming dispatch mode with zero/partial/duplicate ids = role-play
+// masquerading as dispatch → block (exit 2). dispatch_mode="roleplay" is the
+// sanctioned opt-in fast mode (no ids required). Absent = legacy/additive.
+// Kill switch: PRISM_DISABLE_DISPATCH_CHECK=1.
+function checkDispatchMode(panel) {
+  if (process.env.PRISM_DISABLE_DISPATCH_CHECK === '1') return;
+  const mode = panel.dispatch_mode;
+  if (mode === undefined) return; // additive — pre-v5.x panels are unenforced
+  if (mode !== 'dispatch' && mode !== 'roleplay') {
+    process.stderr.write('[panel-guard] dispatch_mode must be "dispatch" or "roleplay"\n');
+    process.exit(2);
+  }
+  if (mode === 'roleplay') return; // sanctioned opt-in fast mode — no real dispatch required
+  // mode === 'dispatch': every seat must be a distinct, real subagent dispatch.
+  const positions = panel.positions ?? [];
+  if (positions.length === 0) {
+    process.stderr.write('[panel-guard] dispatch_mode=dispatch but the panel has zero positions — a real dispatched panel needs at least one seat\n');
+    process.exit(2);
+  }
+  const ids = [];
+  for (const p of positions) {
+    const id = p.dispatched_agent_id;
+    if (typeof id !== 'string' || id.trim() === '') {
+      const who = p.title ?? p.expert_name ?? '(unnamed)';
+      process.stderr.write(`[panel-guard] dispatch_mode=dispatch but position "${who}" has no dispatched_agent_id — a real per-seat Agent() dispatch is required (role-play masquerading as dispatch). Use dispatch_mode=roleplay for the opt-in fast mode.\n`);
+      process.exit(2);
+    }
+    ids.push(id.trim());
+  }
+  if (new Set(ids).size < ids.length) {
+    process.stderr.write('[panel-guard] dispatch_mode=dispatch but dispatched_agent_id values are not unique — each seat must be a distinct real subagent dispatch\n');
+    process.exit(2);
+  }
+}
+
 // ─── Path B: PostToolUse dropped-positions logger (v4.5 A3) ─────────────────
 
 // Returns the panel.json file path if the payload is a PostToolUse Write
@@ -383,6 +422,10 @@ function handleDroppedPositions(payload) {
     process.stderr.write(`[panel-guard/A3] cannot read panel.json: ${e.message}\n`);
     process.exit(0);
   }
+
+  // v5.x — DISPATCH-MODE guard (runs first; hard structural gate that catches
+  // role-play masquerading as a real dispatched panel).
+  checkDispatchMode(panel);
 
   // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
   checkScope(panel);

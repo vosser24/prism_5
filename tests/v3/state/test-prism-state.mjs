@@ -33,6 +33,7 @@ import {
   migrateV1ToV2,
   nowIso,
   readState,
+  renameWithRetry,
   setLastCommand,
   setProjectSlug,
   setSyncStamps,
@@ -715,6 +716,38 @@ test('migrateV1ToV2: project_slug field set to null on v1 → v2 migration', () 
   const migrated = migrateV1ToV2(v1);
   assertEq(migrated.schema_version, 2);
   assertEq(migrated.project_slug, null, 'project_slug seeded null on migration');
+});
+
+// ------------------------------------------------------------ renameWithRetry
+
+test('renameWithRetry: retries then succeeds', () => {
+  let calls = 0;
+  const fakeFn = () => {
+    calls++;
+    if (calls <= 2) { const e = new Error('eperm'); e.code = 'EPERM'; throw e; }
+  };
+  renameWithRetry(fakeFn, 'src.tmp', 'dst', {retries: 5, delayMs: 1});
+  assertEq(calls, 3, 'fakeFn called exactly 3 times');
+});
+
+test('renameWithRetry: gives up after N retries', () => {
+  let calls = 0;
+  const fakeFn = () => { calls++; const e = new Error('eperm'); e.code = 'EPERM'; throw e; };
+  let threw = false;
+  try { renameWithRetry(fakeFn, 'src.tmp', 'dst', {retries: 3, delayMs: 1}); }
+  catch { threw = true; }
+  assert(threw, 'should throw after exhausting retries');
+  assertEq(calls, 3, 'fakeFn called exactly 3 times (=retries)');
+});
+
+test('renameWithRetry: non-transient error rethrows immediately', () => {
+  let calls = 0;
+  const fakeFn = () => { calls++; const e = new Error('enoent'); e.code = 'ENOENT'; throw e; };
+  let threw = false;
+  try { renameWithRetry(fakeFn, 'src.tmp', 'dst', {retries: 5, delayMs: 1}); }
+  catch { threw = true; }
+  assert(threw, 'should throw on non-transient error');
+  assertEq(calls, 1, 'fakeFn called exactly once (no retry)');
 });
 
 // ------------------------------------------------------------ summary

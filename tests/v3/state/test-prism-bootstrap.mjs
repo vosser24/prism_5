@@ -111,8 +111,8 @@ test('plan: lists pending phases for a fresh state', () => {
     const r = run(root, 'plan');
     assertEq(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    // project-master is opt-in only; default plan skips it (D004 §3).
-    assertEq(out.pending, ['identity', 'structure', 'plugin-validate', 'discovery', 'roster', 'health']);
+    // v5.1: project-master is now DEFAULT-ON (prerequisite for real panels).
+    assertEq(out.pending, ['identity', 'structure', 'plugin-validate', 'discovery', 'roster', 'project-master', 'health']);
     assertEq(out.completed, []);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
@@ -295,9 +295,9 @@ test('full bootstrap walk: init → structure → conventions → individual pha
     run(root, 'complete-phase', 'health', '--meta', '{"health_status":"green"}');
     const r = run(root, 'plan');
     const out = JSON.parse(r.stdout);
-    // plugin-validate is a new v2 phase, still pending. project-master is
-    // opt-in only — default planner skips it without --with-deep-dive.
-    assertEq(out.pending, ['plugin-validate']);
+    // plugin-validate is a new v2 phase, still pending. project-master is now
+    // default-on (v5.1) → also pending until run.
+    assertEq(out.pending, ['plugin-validate', 'project-master']);
     assertEq(out.completed, ['identity', 'structure', 'discovery', 'roster', 'health']);
     const state = readStateFile(root);
     assertEq(state.phases.health.health_status, 'green');
@@ -322,15 +322,15 @@ test('phase-plugin-validate writes a stub sentinel', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('phase-project-master refuses without --with-deep-dive', () => {
-  const root = makeTestbed('pm-refuse');
+test('phase-project-master --no-master: skips without creating a master (v5.1 opt-out)', () => {
+  const root = makeTestbed('pm-nomaster');
   try {
     run(root, 'init-state-if-missing', 'tb');
-    const r = run(root, 'phase-project-master');
-    assertEq(r.status, 6);
-    assert(/opt-in/.test(r.stderr), r.stderr);
-    const state = readStateFile(root);
-    assertEq(state.phases['project-master'].status, null, 'not advanced');
+    writeFileSync(join(root, 'CLAUDE.md'), '# Test\n\n## Project Identity\n\nname: pm-test\n');
+    const r = run(root, 'phase-project-master', '--no-master');
+    assertEq(r.status, 0, r.stderr);
+    assert(/skipped via --no-master/.test(r.stdout), r.stdout);
+    assert(!existsSync(join(root, '.claude', 'agents', 'master-pm-test.md')), 'no master created');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
@@ -373,18 +373,21 @@ test('crash resume: in-progress phase plans first on re-run', () => {
 
 // ------------------------------ Task 9: phase-project-master wiring ------------------------------
 
-test('phase-project-master --with-deep-dive: completes only if slug-derive succeeds non-interactively', () => {
-  const root = makeTestbed('pm-with-dd');
+test('phase-project-master (default-on): creates master-<slug>, seeds MEMORY.md, wires session agent (v5.1)', () => {
+  const root = makeTestbed('pm-default');
   try {
     run(root, 'init-state-if-missing', 'tb');
-    // Add a CLAUDE.md so slug-derive succeeds without prompting
     writeFileSync(join(root, 'CLAUDE.md'),
       '# Test\n\n## Project Identity\n\nname: pm-test\n');
-    const r = run(root, 'phase-project-master', '--with-deep-dive');
+    const r = run(root, 'phase-project-master');
     assertEq(r.status, 0, r.stderr);
-    assert(/\/prism-deep-dive/i.test(r.stdout), 'instructs user to run slash command: ' + r.stdout);
+    assert(existsSync(join(root, '.claude', 'agents', 'master-pm-test.md')), 'master agent file created');
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'));
+    assertEq(settings.agent, 'master-pm-test', 'session agent wired to master');
+    assert(existsSync(join(root, '.claude', 'agents', 'MEMORY.md')), 'MEMORY.md seeded');
     const state = readStateFile(root);
     assertEq(state.phases['project-master'].status, 'complete');
+    assertEq(state.phases['project-master'].agent_created, true);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
@@ -403,13 +406,27 @@ test('phase-project-master --with-deep-dive: exits 6 when slug-derive needs prom
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('phase-project-master --with-deep-dive: refuses without --with-deep-dive (existing behavior preserved)', () => {
-  const root = makeTestbed('pm-noopt');
+test('phase-project-master: idempotent re-run does NOT clobber a learned MEMORY.md (v5.1)', () => {
+  const root = makeTestbed('pm-idem');
   try {
     run(root, 'init-state-if-missing', 'tb');
-    const r = run(root, 'phase-project-master');
-    assertEq(r.status, 6, r.stderr);
-    assert(/opt-in/.test(r.stderr), r.stderr);
+    writeFileSync(join(root, 'CLAUDE.md'), '# Test\n\n## Project Identity\n\nname: pm-test\n');
+    run(root, 'phase-project-master');  // first create
+    const memPath = join(root, '.claude', 'agents', 'MEMORY.md');
+    writeFileSync(memPath, readFileSync(memPath, 'utf8') + '\n- LEARNED-FACT-XYZ\n', 'utf8');
+    const r = run(root, 'phase-project-master');  // re-run (agent-write exit 7 → skip re-seed)
+    assertEq(r.status, 0, r.stderr);
+    assert(readFileSync(memPath, 'utf8').includes('LEARNED-FACT-XYZ'), 'learned MEMORY.md preserved on re-run');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('plan --no-master excludes project-master (v5.1 opt-out)', () => {
+  const root = makeTestbed('plan-nomaster');
+  try {
+    run(root, 'init-state-if-missing', 'tb');
+    const r = run(root, 'plan', '--no-master');
+    const out = JSON.parse(r.stdout);
+    assert(!out.pending.includes('project-master'), 'plan: ' + JSON.stringify(out.pending));
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
@@ -565,6 +582,44 @@ test('install-statusline: refuses when source script missing (exit 12)', () => {
     const r = runStatusline('install-statusline', home);
     assertEq(r.status, 12, 'should exit 12 for missing script — stderr: ' + r.stderr);
     assert(/not found/.test(r.stderr), 'should mention not-found: ' + r.stderr);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// v5.1 — detect-claude-mem (drives the bootstrap claude-mem install-offer)
+// ─────────────────────────────────────────────────────────────────────────
+
+test('detect-claude-mem: installed=false when no ~/.claude-mem dir and no settings reference', () => {
+  const home = makeHomeSandbox('cm-absent');
+  try {
+    const r = runStatusline('detect-claude-mem', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, false);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-claude-mem: installed=true when ~/.claude-mem/ data dir present', () => {
+  const home = makeHomeSandbox('cm-dir');
+  try {
+    mkdirSync(join(home, '.claude-mem'), {recursive: true});
+    const r = runStatusline('detect-claude-mem', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, true);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('detect-claude-mem: installed=true when settings.json references claude-mem', () => {
+  const home = makeHomeSandbox('cm-settings');
+  try {
+    mkdirSync(join(home, '.claude'), {recursive: true});
+    writeFileSync(join(home, '.claude', 'settings.json'),
+      JSON.stringify({hooks: {SessionStart: [{hooks: [{type: 'command', command: 'npx claude-mem load'}]}]}}, null, 2));
+    const r = runStatusline('detect-claude-mem', home);
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.installed, true);
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
