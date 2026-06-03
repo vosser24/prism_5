@@ -2,7 +2,7 @@
 
 Paste each prompt into a fresh Claude Code session. Record the outcome in the Observed column of `report-template.md`.
 
-**Precondition for every test:** you've already run `tests/v3/run-static.sh` and it passed. `~/.claude/` is a real PRISM install of v3.0+. As of v3.2.0, keyword-floor is the only classifier path; no API key is required or used.
+**Precondition for every test:** you've already run the state suite (`node tests/v3/state/test-*.mjs`) and it passed. `~/.claude/` is a real PRISM install of v3.0+. As of v3.2.0, keyword-floor is the only classifier path; no API key is required or used.
 
 **Telemetry per turn:** after each prompt, the classifier writes `~/.claude/.prism-turn-tier-<session>.json` and appends to `~/.claude/.prism-routing.jsonl`. The log analyzer reads both.
 
@@ -439,26 +439,31 @@ Expected: all agents shown with Team column populated for the tagged ones.
 
 ---
 
-## Category 21 — One-command installer (v3.1+, fresh machine simulation)
+## Category 21 — Canonical installer (fresh machine simulation)
 
-### T21.1 — Help works
+> The legacy `scripts/install.sh` was retired in v5.1. The canonical installer
+> is `node tools/prism-installer.mjs` (also wrapped by root `install.sh` /
+> `install.ps1`).
+
+### T21.1 — Detect prints current state, no mutation
 ```
-bash scripts/install.sh --help
+node tools/prism-installer.mjs detect
 ```
-Expected: usage block with all 5 flags listed.
+Expected: JSON of install state (files found, hooks registered, version marker). Exit 0, no changes.
 
 ### T21.2 — Dry-run prints plan, no mutation
 ```
-bash scripts/install.sh --dry-run
+node tools/prism-installer.mjs install --dry-run
 ```
-Expected: ~30-line plan output, exit 0, no changes to `~/.claude/`.
+Expected: plan output ("Would install N files + M directories"), exit 0, no changes to `~/.claude/`.
 
-### T21.3 — Real install on throwaway HOME
+### T21.3 — Real install on throwaway target
 ```
-mkdir -p /tmp/test-prism-install
-HOME=/tmp/test-prism-install bash scripts/install.sh --no-backup
+mkdir -p /tmp/test-prism-install/.claude
+node tools/prism-installer.mjs install --target /tmp/test-prism-install/.claude
+node tools/prism-installer.mjs verify  --target /tmp/test-prism-install/.claude
 ```
-Expected: clones, installs, verifies. Exit 0. `verify.mjs` reports clean.
+Expected: installs then verifies clean. Exit 0.
 
 ---
 
@@ -499,12 +504,12 @@ bash scripts/uninstall.sh
 
 ### T22.3 — Real uninstall + reinstall round-trip on throwaway HOME
 ```
-mkdir -p /tmp/test-uninstall
-HOME=/tmp/test-uninstall bash scripts/install.sh --no-backup
+mkdir -p /tmp/test-uninstall/.claude
+node tools/prism-installer.mjs install --target /tmp/test-uninstall/.claude
 HOME=/tmp/test-uninstall bash scripts/uninstall.sh --purge --no-backup
 ls -la /tmp/test-uninstall/.claude/hooks/   # expect: no prism-* files
-HOME=/tmp/test-uninstall bash scripts/install.sh --no-backup
-HOME=/tmp/test-uninstall node scripts/verify.mjs
+node tools/prism-installer.mjs install --target /tmp/test-uninstall/.claude
+node tools/prism-installer.mjs verify  --target /tmp/test-uninstall/.claude
 ```
 **Expected**: install OK → uninstall removes PRISM hooks → reinstall OK → verify clean.
 
@@ -520,7 +525,7 @@ ls ~/.claude/.prism-sessions/
 ```
 bash scripts/uninstall.sh --purge --reinstall ~/PRISM
 ```
-**Expected**: uninstall completes, then `install.sh` runs immediately. End state: clean reinstall from scratch.
+**Expected**: uninstall completes, then the canonical installer (`node <repo>/tools/prism-installer.mjs install`) runs immediately. End state: clean reinstall from scratch.
 
 ### T22.6 — settings.json surgery preserves non-PRISM hooks
 Before uninstall, manually add a custom non-PRISM hook entry to `~/.claude/settings.json` (e.g., a personal logging hook). Run `--purge`. Verify the custom entry is still there afterward; only PRISM hook entries removed.

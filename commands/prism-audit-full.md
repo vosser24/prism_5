@@ -37,8 +37,8 @@ instead — it runs in seconds and is the right tool for casual checks.
    ```bash
    test -f tools/prism-audit-runner.mjs || echo "MISSING"
    ```
-   If missing, abort and tell the user to update PRISM (`git pull` or
-   re-run `scripts/install.sh`).
+   If missing, abort and tell the user to update PRISM (`git pull` then
+   `node tools/prism-installer.mjs install`).
 
 ## Step 2 — Synthetic audit (automated, ~30s)
 

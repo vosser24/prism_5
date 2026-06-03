@@ -167,7 +167,7 @@ No forced migration. Users on v3.10.0 can stay there indefinitely.
 ### v3.10.0 → v3.11.0 (foundation)
 
 1. `git pull` PRISM repo
-2. Re-run install (plugin: `/plugin update prism@PRISM`; manual: `bash scripts/install.sh` or `.\scripts\install.ps1`)
+2. Re-run install (plugin: `/plugin update prism@PRISM`; manual: `node tools/prism-installer.mjs install`, or the `bash install.sh` / `.\install.ps1` wrappers) <!-- v5.1: legacy scripts/install.{sh,ps1} retired; canonical installer is tools/prism-installer.mjs -->
 3. On any existing project: `/prism-bootstrap` runs idempotently
    - Existing 5 phases detect-and-adopt as before
    - New `plugin-validate` phase runs first time (~2 sec)

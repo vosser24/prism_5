@@ -128,7 +128,7 @@ Flags:
   --purge                  Actually perform deletion (REQUIRED to mutate).
   --keep-memory            Preserve ~/.claude/.prism-sessions/ and .prism-rollups/.
   --no-backup              Skip the pre-uninstall backup (NOT recommended).
-  --reinstall <repo-path>  After uninstall, run <repo-path>/scripts/install.sh.
+  --reinstall <repo-path>  After uninstall, run <repo-path>/tools/prism-installer.mjs install.
   --help                   Show this help and exit 0.
 
 Steps performed:
@@ -625,16 +625,17 @@ fi
 # =========================================================================
 CURRENT_STEP="14/reinstall"
 if [ -n "$REINSTALL_REPO" ]; then
-    REINSTALL_SCRIPT="$REINSTALL_REPO/scripts/install.sh"
+    # Canonical installer (the legacy scripts/install.sh was retired in v5.1).
+    REINSTALL_SCRIPT="$REINSTALL_REPO/tools/prism-installer.mjs"
     if [ ! -f "$REINSTALL_SCRIPT" ]; then
         die "--reinstall: $REINSTALL_SCRIPT not found"
     fi
-    log "step 14: chaining reinstall via $REINSTALL_SCRIPT --no-backup"
+    log "step 14: chaining reinstall via node $REINSTALL_SCRIPT install"
     if [ "$PURGE" -eq 0 ]; then
-        log "  DRY-RUN: would exec: bash $REINSTALL_SCRIPT --no-backup"
+        log "  DRY-RUN: would exec: node $REINSTALL_SCRIPT install"
     else
         trap - EXIT
-        exec bash "$REINSTALL_SCRIPT" --no-backup
+        exec node "$REINSTALL_SCRIPT" install
     fi
 fi
 

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # PRISM v3.0 master test-suite orchestrator.
 #
-# Runs the static suite, then prompts the user to run the Claude Code
-# manual tests, then analyzes the routing log and produces a final report
-# from tests/v3/report-template.md.
+# Runs the state suite (tests/v3/state/test-*.mjs), then prompts the user to
+# run the Claude Code manual tests, then analyzes the routing log and produces
+# a final report from tests/v3/report-template.md.
+#
+# (The legacy bash static runner tests/v3/run-static.sh was retired in v5.1
+# along with the shell installer it exercised; the .mjs state suites are the
+# trusted, cross-platform coverage.)
 #
 # Usage:
 #   bash tests/v3/run-all.sh                # interactive
@@ -33,13 +37,21 @@ echo "Report will be written to: $REPORT"
 echo "=================================================="
 echo ""
 
-# ===== Stage 1: Static suite =====
-echo "[1/3] Running static suite (filesystem + script tests)..."
-PRISM_V3_LOG="$STATIC_LOG" bash "$REPO/tests/v3/run-static.sh"
-STATIC_EXIT=$?
+# ===== Stage 1: State suite (.mjs) =====
+echo "[1/3] Running state suite (tests/v3/state/test-*.mjs)..."
+: > "$STATIC_LOG"
+STATIC_EXIT=0
+for t in "$REPO"/tests/v3/state/test-*.mjs; do
+  if node "$t" >>"$STATIC_LOG" 2>&1; then
+    echo "  ok  $(basename "$t")"
+  else
+    echo "  FAIL $(basename "$t")"
+    STATIC_EXIT=1
+  fi
+done
 if [ "$STATIC_EXIT" -ne 0 ]; then
   echo ""
-  echo "⚠ Static suite had failures. Review: $STATIC_LOG"
+  echo "⚠ State suite had failures. Review: $STATIC_LOG"
 fi
 
 # ===== Stage 2: Manual (interactive only) =====

@@ -23,11 +23,16 @@ Migration guide: `docs/prism/MIGRATION.md` §"v5.0 → v5.1".
 - **New `/prism-fresh`** (`commands/prism-fresh.md`) — refresh-only alias for `/prism-deep-dive --refresh` (regenerates the project-master `MEMORY.md`). **Never** rewrites the learned agent body; that stays the separate diff-confirmed `/prism-deep-dive --upgrade <slug>`.
 - **`/prism-help` tidy** — `/prism-deps`, `/prism-index`, `/prism-validate-plugins`, `/prism-audit-full` regrouped under **Maintenance** (nothing removed; all callable).
 
+### Installer cleanup — retire the legacy shell-installer path
+- **Removed** the superseded v4.4-era shell installer that copied from the stale root `manifest.json` (v3.8.9; flat file list, no skill-subdir support): `scripts/install.sh`, `scripts/install.ps1`, `scripts/install-merge.mjs`, `scripts/verify.mjs`, root `manifest.json`, and `tests/v3/run-static.sh` (its harness was built on that flow; Windows-broken + not in CI — the `.mjs` state suites are the trusted, cross-platform coverage). Eliminates a second, drift-prone install path that shipped an out-of-date file set.
+- **Canonical installer is now the only path**: `node tools/prism-installer.mjs` (uses `install-manifest.json`, with directory support, version markers, backups, and coverage gates), wrapped by root `install.sh` / `install.ps1`.
+- Repointed `scripts/uninstall.{sh,ps1}` `--reinstall`, `commands/prism-audit-full.md`, `tests/v3/run-claude.md`, `tests/v3/state/README.md`, and the D004 upgrade instruction at the canonical installer.
+
 ### Explicitly NOT done (panel-killed — would compromise speed/quality)
 Audit as a blocking pre-commit gate; doctor/health full pass every session; auto-recommend; unattended update-apply; auto-upgrade of the master agent body; auto-install of deps. Rationale: each adds per-session latency, trains `--no-verify`, nags with no "done" state, or silently rewrites tuned state with no rollback trail.
 
 ### Tests
-- `tests/v3/state/test-prism-freshness-sweep.mjs` extended to **41** (A1/A2/A3/A5 + the existing C3/E1/E2/Q-series).
+- `tests/v3/state/test-prism-freshness-sweep.mjs` extended to **43** (A1/A2/A3/A5 + the existing C3/E1/E2/Q-series; A1 is change-gated so the suite stays fast).
 - New `tests/v3/state/test-prism-fresh.mjs` (**7**) — command contract + manifest + help-index wiring.
 - Full suite **55/55** suites green; installer dry-run 102 files; `prism-audit-runner` 29/29.
 

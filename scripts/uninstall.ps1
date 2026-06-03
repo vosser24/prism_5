@@ -516,16 +516,17 @@ if ($PreservedRestored.Count -gt 0) {
 
 # --- Step 14: Optional reinstall chain -----------------------------------
 if ($ReinstallPath -ne '') {
-    $installScript = Join-Path $ReinstallPath 'scripts\install.ps1'
-    Log-Line ('step 14: chaining reinstall via ' + $installScript + ' -NoBackup')
+    # Canonical installer (the legacy scripts\install.ps1 was retired in v5.1).
+    $installScript = Join-Path $ReinstallPath 'tools\prism-installer.mjs'
+    Log-Line ('step 14: chaining reinstall via node ' + $installScript + ' install')
     if (-not (Test-Path -LiteralPath $installScript)) {
-        Log-Err ('install.ps1 not found at ' + $installScript)
+        Log-Err ('prism-installer.mjs not found at ' + $installScript)
         exit 1
     }
     if ($IsDryRun) {
-        Log-Line ('  DRY-RUN: would exec: ' + $installScript + ' -NoBackup')
+        Log-Line ('  DRY-RUN: would exec: node ' + $installScript + ' install')
     } else {
-        & $installScript -NoBackup
+        & node $installScript install
         exit $LASTEXITCODE
     }
 }

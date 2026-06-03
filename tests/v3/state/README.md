@@ -11,9 +11,9 @@ cd ~/PRISM
 git fetch origin claude/prism-v3-phase-1-0eVY1
 git checkout claude/prism-v3-phase-1-0eVY1
 
-# 2. Re-install — this copies the new files into ~/.claude/ per manifest.json
-bash scripts/install.sh
-# Windows:  powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+# 2. Re-install — copies the new files into ~/.claude/ per tools/install-manifest.json
+node tools/prism-installer.mjs install
+# (or the wrappers: bash install.sh  /  powershell -File install.ps1)
 
 # 3. Open a NEW project in Claude Code (NOT Nexus Reporting 3 — D002 §9
 #    forbids that until v3.10.0 is stable). Use a throwaway Django/React/
