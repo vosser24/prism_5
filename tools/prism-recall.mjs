@@ -70,7 +70,9 @@ export function tier2Read(query, {projectRoot = process.cwd()} = {}) {
     }
   } catch {}
   try {
-    const sf = join(projectRoot, '.claude', '.prism-state.json');
+    // Turn-counter lives in .prism-turn-state.json (NOT .prism-state.json, which
+    // is the bootstrap state machine). v5.1.3 collision fix.
+    const sf = join(projectRoot, '.claude', '.prism-turn-state.json');
     if (existsSync(sf)) {
       const ps = JSON.parse(readFileSync(sf, 'utf-8'));
       out.facts.project_turns = ps.turns || 0;

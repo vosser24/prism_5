@@ -144,11 +144,16 @@ try {
   try { bootstrapPluginReferences(); }
   catch (e) { try { process.stderr.write(`PRISM WARN: plugin bootstrap unexpected error: ${e && e.message}\n`); } catch {} }
 
-  // ── Reset project-local turn counter (existing behavior) ──
+  // ── Reset project-local turn counter ──
+  // MUST be .prism-turn-state.json, NOT .prism-state.json: the latter is the
+  // BOOTSTRAP state machine owned by tools/lib/prism-state.mjs (schema_version,
+  // phases, project_slug…). Writing the turn-counter shape here used to clobber
+  // it every session start, breaking /prism-deep-dive --refresh, /prism-sync,
+  // and /prism-doctor across restarts (v5.1.3 UAT fix).
   const cwd = process.cwd();
   const dir = join(cwd, '.claude');
   mkdirSync(dir, {recursive: true});
-  atomicWrite(join(dir, '.prism-state.json'), JSON.stringify({turns: 0, session_start: new Date().toISOString()}));
+  atomicWrite(join(dir, '.prism-turn-state.json'), JSON.stringify({turns: 0, session_start: new Date().toISOString()}));
 
   // ── v2.1.25 Gap 1: context tax audit (throttled 1/day) ──
   const now = Math.floor(Date.now() / 1000);

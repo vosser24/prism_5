@@ -29,8 +29,11 @@ try {
   const H = process.env.HOME || process.env.USERPROFILE;
   let messages = [];
 
-  // ── Project-local state (backward compat) ──
-  const sf = j(process.cwd(), '.claude', '.prism-state.json');
+  // ── Project-local turn-counter state ──
+  // MUST be .prism-turn-state.json, NOT .prism-state.json — the latter is the
+  // bootstrap state machine (tools/lib/prism-state.mjs). Sharing the filename
+  // polluted/clobbered bootstrap state (v5.1.3 UAT fix).
+  const sf = j(process.cwd(), '.claude', '.prism-turn-state.json');
   let state = {turns: 0, session_start: new Date().toISOString(), recent_suggestions: {}};
   try { if (e(sf)) state = JSON.parse(r(sf, 'utf-8')); } catch {}
   state.turns = (state.turns || 0) + 1;

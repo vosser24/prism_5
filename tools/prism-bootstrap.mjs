@@ -265,6 +265,7 @@ const GITIGNORE_BLOCK = `# --- PRISM ---
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/.prism-state.json
+.claude/.prism-turn-state.json
 .claude/.prism-telemetry-rollup.json
 .claude/tools-scan.json
 # --- end PRISM ---

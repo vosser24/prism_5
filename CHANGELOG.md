@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.1.3] - 2026-06-03
+
+Bugfix (UAT finding — state-file collision). The project-local turn-counter and the bootstrap state machine both used `.claude/.prism-state.json`. `prism-session-start.mjs` **full-overwrote** it with `{turns:0, session_start}` every session start, and `prism-hook.mjs` incremented `turns`/`recent_suggestions` in it — **clobbering the bootstrap state** (`schema_version`, `phases`, `project_slug`, …) that `tools/lib/prism-state.mjs` owns. Result: `/prism-deep-dive --refresh`, `/prism-sync`, and `/prism-doctor` saw an invalid state file after any session restart.
+
+- **Fix:** the hook turn-counter moved to a dedicated **`.claude/.prism-turn-state.json`** — `prism-hook.mjs` (writer), `prism-session-start.mjs` (per-session reset), and `prism-recall.mjs` (reader) all updated. `.prism-state.json` is now exclusively the bootstrap state machine.
+- Added `.claude/.prism-turn-state.json` to the bootstrap `.gitignore` block.
+- Regression test: `tests/v3/state/test-prism-turn-state-collision.mjs` (3 tests) — asserts session-start + prism-hook never clobber a seeded bootstrap state and write the turn-counter to the dedicated file.
+- **Recovery for already-clobbered projects:** `node ~/.claude/tools/prism-state.mjs adopt` (synthesizes state from filesystem) or `/prism-doctor`.
+
 ## [5.1.2] - 2026-06-03
 
 Docs (UAT finding): added a **shell-hygiene note** to `commands/prism-bootstrap.md` Phase 4 — inspect project files with the Read/Grep/Glob tools, and never mix bash + PowerShell in one command (the bootstrap discovery probe emitted `ls` + `Test-Path`/`Get-Content`/`if (...) {…}` to git-bash, which errored). Behavioural nudge only; the error was already self-correcting and non-blocking.
