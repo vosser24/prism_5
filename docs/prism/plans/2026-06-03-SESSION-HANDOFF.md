@@ -1,5 +1,12 @@
 # SESSION HANDOFF — command-consolidation plan + session state (2026-06-03)
 
+> ✅ **STATUS: SHIPPED (2026-06-03).** The adopted subset is implemented, TDD'd, and merged → pushed to `main` as **v5.1.0** (merge commit `2da9bab1d`, feat commit `5f9914278`). Do NOT re-implement. What follows is the original plan, kept for provenance.
+>
+> **What shipped:** A1 hook-integrity (fs wiring + empty-file always; **change-gated** node --check — the per-sweep node-spawn was a ~2.5s/call latency bug, fixed), A2 roster-orphan, A3 audit-staleness (+ `/prism-audit` stamps `.prism-audit-last.json`), A5 E1/F4 **inline** auto-rebuild (lockfile, ≤1×/24h, nudge fallback), B6 `/prism-fresh` (refresh-only), B7 help Maintenance group. Version bumped 5.0.0→5.1.0 (`plugin.json` + `install-manifest.json`; stale root `manifest.json` v3.8.9 left alone). CHANGELOG `[5.1.0]` + MIGRATION v5.0→v5.1 written; E1/F4 stale prose fixed.
+> **A4 (version-lag) was already implemented** before this session — no work.
+> **Tests:** freshness-sweep 43/43, new test-prism-fresh 7/7, audit-runner 29/29, installer 99/99 (isolated; it flakes rc=124 on this slow-spawn box under load — environmental, not a regression).
+> **Still open:** (1) the **30-prompt UAT** (§ALSO PENDING) — untouched. (2) Live `~/.claude` install is at v5.0.0 — run `node tools/prism-installer.mjs update` to sync to 5.1.0 (the C3 freshness check will nudge this on next session anyway).
+
 > **Read this first in the next session.** Self-contained: resume the consolidation work without re-reconning. Re-verify any "pending" claim against the repo before trusting it — handoff claims decay.
 
 ## TL;DR — what to do next session
