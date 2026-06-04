@@ -139,7 +139,11 @@ test('agent-write: creates <root>/.claude/agents/master-<slug>.md with locked fr
     // runtime — the master-orchestrator skill itself is frontmatter-preloaded).
     const toolsLine = (body.match(/^tools:\s*(.+)$/m) || [])[1] || '';
     const toolset = toolsLine.split(',').map(s => s.trim());
-    for (const t of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent', 'Skill']) {
+    // v5.2.8: the project-master runs in the MAIN LOOP and talks to the user, so
+    // its baseline must include the interactive/orchestration tools the deep-dive,
+    // panel, and plan-approval flows call — notably AskUserQuestion (the command
+    // body invokes it 5×) and TodoWrite — plus Skill (v5.2.7).
+    for (const t of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent', 'Skill', 'AskUserQuestion', 'TodoWrite']) {
       assert(toolset.includes(t), `canonical toolset must include ${t}; got: ${toolsLine}`);
     }
   } finally { rmSync(root, {recursive: true, force: true}); }

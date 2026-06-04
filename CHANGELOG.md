@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.8] - 2026-06-04
+
+Fix (UAT, follow-on to v5.2.7 — the project-master toolset was still incomplete). Running `/prism-deep-dive` as `master-test-prism-5`, the master tried `Skill(AskUserQuestion)` → `Error: Unknown skill: AskUserQuestion`. Root cause: now that v5.2.7 granted the `Skill` tool, the master reached for `AskUserQuestion` — but that's a **tool, not a skill**, and it wasn't in the master's `tools:`. The `/prism-deep-dive` and `/prism-clean` command bodies call `AskUserQuestion` directly, and the panel/plan-approval flows need it too.
+
+- **Root-fix, not whack-a-mole:** the project-master runs in the **main loop** and talks to the user directly, so its `PROJECT_MASTER_TOOLS` baseline now covers the full interactive + orchestration surface: added **`AskUserQuestion`** (clarifying questions, plan approval, panel decisions) and **`TodoWrite`** (plan/orchestration tracking) alongside the v5.2.7 `Skill`. Final canonical set: `Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TodoWrite`. (The standalone `@master-orchestrator` is a dispatched *subagent* and deliberately keeps a leaner set — different role.)
+- Existing `master-test-prism-5` agent patched to match.
+- Test: `test-prism-deep-dive` asserts the generated frontmatter carries the complete canonical toolset (27/27).
+- **Migration:** unchanged from v5.2.7 — pre-existing masters keep their toolset until regenerated via `/prism-deep-dive`.
+
 ## [5.2.7] - 2026-06-04
 
 Fix (UAT — the project-master couldn't invoke runtime skills). `master-test-prism-5` reported *"The Skill tool isn't enabled here"* when it tried to load `brainstorming`: the `/prism-deep-dive` generator wrote `tools: Read, Write, Edit, Bash, Grep, Glob, Agent` — **no `Skill`**. The `master-orchestrator` skill is frontmatter-preloaded so panels still worked, but the master could reach no *other* skill at runtime.
