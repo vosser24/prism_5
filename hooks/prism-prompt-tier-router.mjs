@@ -36,6 +36,24 @@ const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = String(process.env.PRISM_PROMPT_ROUTER ?? 'hard').toLowerCase();
 
+// v5.2.5: detect the active project-master from the project's settings.json
+// `agent` field. When the active agent is a master-<slug> (which loads the
+// master-orchestrator skill), a panel turn must be CHAIRED BY THAT MASTER in
+// the main loop — NOT delegated to a nested @master-orchestrator subagent, which
+// the sole-dispatcher rule would stop from spawning the panel (→ role-play).
+function detectActiveMaster(cwd) {
+  try {
+    const root = cwd || process.cwd();
+    for (const f of ['settings.json', 'settings.local.json']) {
+      const p = join(root, '.claude', f);
+      if (!existsSync(p)) continue;
+      const agent = JSON.parse(readFileSync(p, 'utf-8')).agent;
+      if (typeof agent === 'string' && /^master-/.test(agent)) return agent;
+    }
+  } catch {}
+  return null;
+}
+
 function sentinelPath(sessionId) {
   return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
 }
@@ -121,7 +139,7 @@ function buildOverrideDirective(tier, summonPanel, sessionId) {
   ].join('\n');
 }
 
-function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId) {
+function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, activeMaster) {
   // New format — intentionally simpler than v2.1.3 so LLMs don't need to
   // parse h=/s=/o= tokens. The old score fields are preserved in the
   // sentinel file for debugging but not echoed to the model context.
@@ -142,6 +160,18 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId) {
   } else if (tier === 'sonnet') {
     advice += `\nDispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
     if (mode === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
+    emittedDispatchAdvice = true;
+  } else if (tier === 'opus' && summonPanel && activeMaster) {
+    // v5.2.5: the active agent IS a project-master with the orchestrator skill.
+    // It chairs the panel itself in the main loop (where it CAN dispatch real,
+    // independent panel members) instead of nesting a @master-orchestrator
+    // subagent that the sole-dispatcher rule would reduce to role-play.
+    advice += `\n\nPANEL-SUMMONING TURN. You are the active project-master (${activeMaster}) and you load the master-orchestrator skill — so YOU chair this panel directly in the main loop. Do NOT dispatch a nested @master-orchestrator (it would run as a subagent and PRISM's sole-dispatcher rule would stop it spawning the panel → role-play). Instead:`;
+    advice += `\n  1. Enumerate the rostered specialists relevant to this request.`;
+    advice += `\n  2. Dispatch your expert panel members — 3–5 of them — as INDEPENDENT, parallel subagents (one Agent() block each, different biases).`;
+    advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
+    advice += `\n  4. Synthesize the verdict yourself and relay it.`;
+    if (mode === 'hard') advice += `\nParent Write/Edit/Bash stay blocked until you have dispatched at least one panel member (so a real panel happens, not role-play). Override: !opus-force:.`;
     emittedDispatchAdvice = true;
   } else if (tier === 'opus' && summonPanel) {
     advice += `\n\nPANEL-SUMMONING TURN. This is a novel architectural request. Spawn @master-orchestrator as your NEXT action — do NOT synthesize the plan yourself in parent context. The orchestrator will:`;
@@ -256,6 +286,13 @@ async function main() {
       mode: MODE,
     });
 
+    // v5.2.5: if a project-master is the active agent, a panel turn is self-chaired.
+    const activeMaster = detectActiveMaster(cwd);
+    if (activeMaster && classification.summon_panel && sentinel.tier === 'opus') {
+      sentinel.self_chair = true;
+      sentinel.active_master = activeMaster;
+    }
+
     try {
       // v2.8.0: atomic write via tempfile + rename. Prevents truncated
       // sentinel JSON if the hook is killed mid-write. Readers
@@ -293,7 +330,7 @@ async function main() {
       phase_1_5: null,  // v4.4: extended by hooks/prism-phase-1-5-oob.mjs with {fired, variant, verdict_pre, verdict_post, agreement_rate}
     });
 
-    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel, classification.source, sessionId);
+    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, classification.summon_panel, classification.source, sessionId, sentinel.self_chair ? sentinel.active_master : null);
     const out = {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',

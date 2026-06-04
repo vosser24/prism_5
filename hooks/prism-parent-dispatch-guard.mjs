@@ -179,14 +179,23 @@ try {
   // Opus tier with summon_panel requires @master-orchestrator dispatch first.
   // Haiku dispatches for file I/O do NOT satisfy this — only master-orchestrator does.
   const isPanelTurn = sentinel.tier === 'opus' && sentinel.summon_panel === true;
-  if (isPanelTurn && !sentinel.orchestrator_dispatched) {
+  // v5.2.5: when a project-master is the active agent (self_chair), the master
+  // chairs the panel itself in the main loop — its OWN expert dispatch
+  // (dispatched=true) opens the gate, and it must NOT nest a @master-orchestrator.
+  // Generic turns (no project-master) still require an @master-orchestrator dispatch.
+  const panelGateOpen = sentinel.orchestrator_dispatched || (sentinel.self_chair && sentinel.dispatched);
+  if (isPanelTurn && !panelGateOpen) {
     const why = sentinel.rationale ? ` Reason: ${sentinel.rationale}` : '';
-    const panelNotice = [
+    const panelNotice = (sentinel.self_chair ? [
+      `PRISM DISPATCH-GUARD: ${toolName} denied — PANEL-SUMMONING turn and you (${sentinel.active_master || 'the project-master'}) have not yet dispatched a panel member.${why}`,
+      `You ARE the orchestrator (you load the master-orchestrator skill). Chair the panel yourself: dispatch your expert panel members directly as independent, parallel subagents, then synthesize. Do NOT dispatch a nested @master-orchestrator — as a subagent it cannot spawn the panel and would only role-play.`,
+      `Parent Write/Edit/Bash unblock once you have dispatched at least one panel member. Override: prefix the user prompt with !opus-force: or set PRISM_DISPATCH_GUARD=off.`,
+    ] : [
       `PRISM DISPATCH-GUARD: ${toolName} denied — this is a PANEL-SUMMONING turn (opus tier, summon_panel=true).${why}`,
       `You MUST spawn @master-orchestrator as your next action. The orchestrator will assemble an expert panel, chair adversarial review, and return a synthesized plan for you to relay.`,
       `Use: Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'})`,
       `Direct Write/Edit/Bash work in parent context is blocked on panel turns until the orchestrator has been invoked. Override: prefix the user prompt with !opus-force: (skips panel, uses direct Opus) or set PRISM_DISPATCH_GUARD=off.`,
-    ].join('\n');
+    ]).join('\n');
 
     appendLog({
       event: 'dispatch_guard_panel',

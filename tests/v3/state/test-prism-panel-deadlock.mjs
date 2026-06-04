@@ -174,6 +174,69 @@ test('dispatch-guard: ALLOWS Read of the override file on a panel turn too', () 
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+// ── A6 (v5.2.5): project-master self-chairs the panel (no nested @master-orchestrator) ──
+// When the active agent IS a master-<slug> (loads the orchestrator skill), dispatching a
+// nested @master-orchestrator makes it a subagent that can't spawn the panel → role-play.
+// The router flags self_chair; the guard then accepts the master's OWN expert dispatch.
+test('router: panel turn with an active project-master sets self_chair', () => {
+  const home = makeHome(); const sid = 'sess-sc1';
+  try {
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({agent: 'master-test-x'}));
+    const s = runRouter(home, sid, 'design a new event-sourcing architecture from scratch');
+    assertEq(s.tier, 'opus', 'still opus');
+    assertEq(!!s.summon_panel, true, 'still a panel turn');
+    assertEq(!!s.self_chair, true, 'active project-master ⇒ self_chair=true');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('router: panel turn with NO project-master keeps the generic @master-orchestrator path', () => {
+  const home = makeHome(); const sid = 'sess-sc2';
+  try {
+    const s = runRouter(home, sid, 'design a new event-sourcing architecture from scratch');
+    assertEq(!!s.summon_panel, true, 'still a panel turn');
+    assertEq(!!s.self_chair, false, 'no project-master ⇒ no self_chair');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: self_chair panel turn DENIES synthesis before any panel member is dispatched', () => {
+  const home = makeHome(); const sid = 'sess-sc3';
+  try {
+    seedSentinel(home, sid, {tier: 'opus', summon_panel: true, self_chair: true, active_master: 'master-test-x', dispatched: false, orchestrator_dispatched: false, source: 'keyword-floor', rationale: 'panel', ts: new Date().toISOString()});
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Write', session_id: sid,
+      tool_input: {file_path: join(home, 'x.txt'), content: 'x'},
+    });
+    assertEq(r.status, 2, 'must dispatch ≥1 panel member before synthesizing (prevents role-play)');
+    const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+    assertEq(/chair (the |this )?panel yourself|dispatch (your |the )?(expert )?panel member/i.test(reason), true, 'self-chair notice must guide self-chairing, got: ' + reason);
+    assertEq(/spawn @master-orchestrator as your next action/i.test(reason), false, 'self-chair notice must NOT tell the master to nest a @master-orchestrator');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: self_chair panel turn ALLOWS synthesis after the master dispatched a panel member', () => {
+  const home = makeHome(); const sid = 'sess-sc4';
+  try {
+    seedSentinel(home, sid, {tier: 'opus', summon_panel: true, self_chair: true, active_master: 'master-test-x', dispatched: true, orchestrator_dispatched: false, source: 'keyword-floor', rationale: 'panel', ts: new Date().toISOString()});
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Write', session_id: sid,
+      tool_input: {file_path: join(home, 'x.txt'), content: 'x'},
+    });
+    assertEq(r.status, 0, 'self-chair master may synthesize after dispatching ≥1 member');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: non-self_chair panel turn still requires @master-orchestrator (generic path intact)', () => {
+  const home = makeHome(); const sid = 'sess-sc5';
+  try {
+    seedSentinel(home, sid, {tier: 'opus', summon_panel: true, dispatched: true, orchestrator_dispatched: false, source: 'keyword-floor', rationale: 'panel', ts: new Date().toISOString()});
+    const r = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Write', session_id: sid,
+      tool_input: {file_path: join(home, 'x.txt'), content: 'x'},
+    });
+    assertEq(r.status, 2, 'without self_chair, a mere expert dispatch must NOT open the gate — orchestrator still required');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 // ── A2: router never re-panels on continuation / empty turns ──────────────────
 test('router: short approval inherits opus tier but NOT summon_panel', () => {
   const home = makeHome(); const sid = 'sess-a2a';

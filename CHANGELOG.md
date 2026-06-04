@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.5] - 2026-06-04
+
+Fix (UAT prompt 20 — the active project-master delegated the panel to a *nested* `@master-orchestrator` instead of chairing it itself). When a `master-<slug>` is the active agent (it loads `skills: [master-orchestrator]`), the panel-summon flow still unconditionally forced "dispatch `@master-orchestrator`" — but a dispatched orchestrator is a *subagent*, and PRISM's sole-dispatcher rule strips its `Agent` tool, so it can't spawn a real panel → it role-plays the seats and the rostered specialists (e.g. `software-architecture-expert`) never get dispatched. The user flagged this twice; it was correct.
+
+- **Router** (`hooks/prism-prompt-tier-router.mjs`): new `detectActiveMaster(cwd)` reads the project's `settings.json`/`settings.local.json` `agent:` field; when it's a `master-*` on a panel turn, the sentinel is flagged `self_chair: true` (+ `active_master`) and the advice changes to "**you** chair this panel directly in the main loop — dispatch your expert panel members as independent parallel subagents; do NOT nest a `@master-orchestrator`."
+- **Dispatch-guard** (`hooks/prism-parent-dispatch-guard.mjs`): on a `self_chair` panel turn the gate opens on the master's *own* expert dispatch (`self_chair && dispatched`) rather than requiring a nested-orchestrator dispatch — and synthesis stays blocked until ≥1 panel member is dispatched, which is exactly what *prevents* the role-play. Generic (no project-master) turns are unchanged — still require `@master-orchestrator`.
+- Tests: `test-prism-panel-deadlock` 10→15 — router sets `self_chair` with an active master (and does NOT without one); guard denies synthesis pre-dispatch with a self-chair notice (not a "spawn @master-orchestrator" one), allows it after a member is dispatched, and the generic path still requires the orchestrator. Classifier/panel regression set green.
+- **Fix B (meta-question / pasted-transcript panel over-fire) was re-scoped, not shipped here.** Investigation showed the bare meta-question already routes `panel=false`; the production over-fire came from the *pasted prompt-20 transcript* — its literal phrase "adversarial panel" matched `EXPLICIT_PANEL_RE`, and transcript-style paste (no code fences) evades the v5.1.7 `pastedRatio ≥ 0.6` dampening. That's the known-hard transcript-paste leak, deferred for a deliberate decision (tighten `EXPLICIT_PANEL_RE` vs. transcript-aware paste detection) → tracked for v5.2.6.
+
 ## [5.2.4] - 2026-06-04
 
 Reconciliation + fix (UAT prompt 19 — `design a new event-sourcing architecture…` cascaded into live-only hook edits in a stress-test session; this ports them into the tracked source with tests, and fixes a regression the porting surfaced). Prompt 19 itself PASSED (opus + panel, dispatch-guard enforced). Three changes, all TDD'd:
