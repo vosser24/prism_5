@@ -78,7 +78,12 @@ test('init-state-if-missing detect-and-adopts v3.8.9 tree', () => {
   try {
     writeFileSync(join(root, 'CLAUDE.md'), '# tb\n');
     const claudeDir = join(root, '.claude');
-    spawnSync('mkdir', ['-p', join(claudeDir, 'references'), join(claudeDir, 'agents')]);
+    // Portable dir creation — `spawnSync('mkdir', ['-p', ...])` is a Unix-ism that
+    // silently no-ops on Windows (no mkdir.exe on PATH, no -p), leaving
+    // .claude/agents/ absent so the roster.json write below threw ENOENT. Use the
+    // already-imported fs.mkdirSync (the convention everywhere else in this suite).
+    mkdirSync(join(claudeDir, 'references'), {recursive: true});
+    mkdirSync(join(claudeDir, 'agents'), {recursive: true});
     writeFileSync(join(claudeDir, 'agents', 'roster.json'), '[]');
     const r = run(root, 'init-state-if-missing', 'tb');
     assertEq(r.status, 0, r.stderr);

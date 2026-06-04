@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.14] - 2026-06-04
+
+Test fix (Windows portability — surfaced by running the FULL state suite during the v5.2.13 ship-readiness check; this test was red at session start `1c93b4828`, pre-existing and unrelated to any UAT fix). `test-prism-bootstrap` :: `init-state-if-missing detect-and-adopts v3.8.9 tree` failed with `ENOENT … .claude/agents/roster.json` — but the failure was in the **test's own fixture setup**, not production code. Line 81 used `spawnSync('mkdir', ['-p', references, agents])`, a Unix-only idiom: on Windows there is no `mkdir.exe` on PATH and no `-p`, so the directories were never created and the next line's `writeFileSync(.../agents/roster.json)` threw. Production `prism-bootstrap.mjs` was never even reached.
+
+- `tests/v3/state/test-prism-bootstrap.mjs` — replaced the `spawnSync('mkdir', …)` fixture call with the already-imported, portable `fs.mkdirSync(dir, {recursive: true})` (the convention used everywhere else in the suite). The production detect-and-adopt assertions, now reached for the first time on Windows, pass unchanged — confirming there was no production bug.
+- Result: the full state suite is now **53/53 green** on Windows (was 52/53) alongside audit **29/29**. No production/shipped-file change — tests are not part of the install manifest.
+
 ## [5.2.13] - 2026-06-04
 
 Fix (UAT prompt 30 — "create a domain-expert agent for this coffee-ledger app"). The project-master invoked `/prism-app-expert`, loaded it, and correctly bailed: *"the wrong fit — it builds Playwright/browser-automation specialists for video screenshots, not a code domain-expert."* Root cause: the skill's frontmatter `description` was the generic **"Create or update an app expert agent for a specific application"** — which hid the skill's actual, narrow scope (a **Playwright-driven** UI-screenshot specialist for the video-production pipeline, per its own body lines 11-12). A master reading only the description reasonably reaches for it to author a code domain-expert, then wastes a load discovering the mismatch.
