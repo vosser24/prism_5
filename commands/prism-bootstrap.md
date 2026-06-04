@@ -208,9 +208,12 @@ existing tool fits.
 
 ### 8. Safety
 
-`hooks/prism-safety.mjs` hard-blocks: `rm -rf`, `DROP TABLE/DATABASE/SCHEMA`,
-`TRUNCATE TABLE`, `git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No
-override. Run these manually outside Claude Code if genuinely required.
+`hooks/prism-safety.mjs` hard-blocks dangerous shell commands: `rm -rf` on
+**dangerous/unverifiable targets** (`/`, `~`, home/system paths) — a specific
+relative subdir like `rm -rf ./build` or `node_modules` is **allowed**
+(target-aware, UAT-4); `DROP TABLE/DATABASE/SCHEMA`, `TRUNCATE TABLE`,
+`git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No override. Run a genuinely
+blocked command manually outside Claude Code if required.
 
 ### 9. Persistence + evolution
 

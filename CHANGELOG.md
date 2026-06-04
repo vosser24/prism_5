@@ -4,6 +4,16 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.9] - 2026-06-04
+
+Docs fix (UAT prompt 25 — the safety gate PASSED, but the project-master over-blocked a legal command because three docs misdescribed the gate). `rm -rf ./frontend/dist` is **allowed** (verified: exit 0 — target-aware, UAT-4), yet `master-test-prism-5` claimed *"rm -rf is hard-blocked … no override"* and worked around it. The belief traces to three docs that still carried the **pre-UAT-4 blanket framing** of the safety gate:
+
+- `commands/prism-bootstrap.md` §8 — "hard-blocks: `rm -rf`, …" → now: blocks `rm -rf` only on dangerous/unverifiable targets (`/`, `~`, home/system paths); a specific relative subdir (`rm -rf ./build`, `node_modules`) is allowed.
+- `commands/prism-help.md` — safety-gate row reworded the same way (allows `rm -rf ./build`).
+- `INSTALL.md` §2.6c — dropped the stale `(pattern /rm\s+-rf\s/i)`; clarified the gate is target-aware and that `~/.claude/…` (this purge's target) is genuinely gated, so the `rm -r` workaround there is still correct.
+
+No code change — `hooks/prism-safety.mjs` was already correct and its audit (`SAF-001`/`SAF-002`, 29/29) stays green; `README.md` already had the accurate phrasing and is the alignment reference. This only removes the misleading input that made a project-master refuse a safe, allowed cleanup.
+
 ## [5.2.8] - 2026-06-04
 
 Fix (UAT, follow-on to v5.2.7 — the project-master toolset was still incomplete). Running `/prism-deep-dive` as `master-test-prism-5`, the master tried `Skill(AskUserQuestion)` → `Error: Unknown skill: AskUserQuestion`. Root cause: now that v5.2.7 granted the `Skill` tool, the master reached for `AskUserQuestion` — but that's a **tool, not a skill**, and it wasn't in the master's `tools:`. The `/prism-deep-dive` and `/prism-clean` command bodies call `AskUserQuestion` directly, and the panel/plan-approval flows need it too.
