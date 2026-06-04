@@ -234,8 +234,9 @@ open CLAUDE.md and change the PRISM Operating Rules section
 ```
 create a domain-expert agent for this coffee-ledger app, then push everything to origin
 ```
-*Exercises:* `/prism-app-expert` → `prism-agent-write-register` (auto-registers the new agent into `roster.json`) **and** `prism-prepush-review` (push nudge).
+*Exercises:* the master authoring a **code domain-expert** — via a dispatched author / `@agent-factory`, **NOT** `/prism-app-expert` (that command is the Playwright/video *app*-expert, a different thing) → `prism-agent-write-register` (auto-registers the new agent into `roster.json`) **and** `prism-prepush-review` (push nudge).
 *Pass:* the new expert is created **and** auto-registered in the roster; the push triggers a nudge to run `/code-review` + `/security-review` first (and the protected-branch warning).
+*Note (fixture):* the push-nudge half only fires if the fixture has an `origin` remote. `test_prism_5` is re-created without one, so expect **create + auto-register to pass** and the **push-nudge to be unexercised** unless you `git remote add origin <url>` first. A correct master will also decline to invent a remote and stop to ask — that itself is acceptable behavior, not a failure.
 
 ---
 

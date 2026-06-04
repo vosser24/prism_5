@@ -1,6 +1,6 @@
 ---
 name: prism-app-expert
-description: Create or update an app expert agent for a specific application
+description: Create or update a Playwright-driven APP EXPERT — a browser-automation agent that knows one running app's UI flows for on-demand screenshots in the video-production pipeline. Requires Playwright. NOT a code/domain-expert author — to create a code domain-expert for a codebase (models, services, API), dispatch @agent-factory via @master-orchestrator instead.
 ---
 
 Usage:

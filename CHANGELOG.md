@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.13] - 2026-06-04
+
+Fix (UAT prompt 30 — "create a domain-expert agent for this coffee-ledger app"). The project-master invoked `/prism-app-expert`, loaded it, and correctly bailed: *"the wrong fit — it builds Playwright/browser-automation specialists for video screenshots, not a code domain-expert."* Root cause: the skill's frontmatter `description` was the generic **"Create or update an app expert agent for a specific application"** — which hid the skill's actual, narrow scope (a **Playwright-driven** UI-screenshot specialist for the video-production pipeline, per its own body lines 11-12). A master reading only the description reasonably reaches for it to author a code domain-expert, then wastes a load discovering the mismatch.
+
+- `commands/prism-app-expert.md` — rewrote the `description` to disclose the real scope up front (Playwright, browser-automation, on-demand screenshots, video pipeline, requires Playwright) and to **redirect** code/domain-expert authoring to `@agent-factory` via `@master-orchestrator`. No protocol/body change — the skill already did the right (narrow) thing; only its advertised description lied by omission. No test asserts the description string (routing keys off the command *name*), so unit/audit suites are unaffected.
+- `docs/prism/2026-06-02-uat-prompt-pack.md` — corrected prompt 30's *Exercises* line: the mechanism is the master authoring a code domain-expert via a dispatched author / `@agent-factory`, **not** `/prism-app-expert`; added a fixture note that the push-nudge half only fires when `test_prism_5` has an `origin` remote (it's re-created without one), and that a master declining to invent a remote is acceptable.
+
+The agent-create + auto-register half of prompt 30 PASSED in the run: `coffee-ledger-expert` was created and registered in `roster.json`; only the push could not be exercised (no remote), which is a fixture gap, not a PRISM defect.
+
 ## [5.2.12] - 2026-06-04
 
 Docs fix (UAT prompt 29 — the config-guard prompt PASSED: the project-master refused to silently edit CLAUDE.md and surfaced the change. While verifying its "Rule 8" objection, the **canonical CLAUDE.md template** turned out to under-document the safety gate). The template's `### 8. Safety` block enumerates what `hooks/prism-safety.mjs` blocks (`rm -rf` on dangerous targets, `DROP/TRUNCATE`, `git push --force`, `mkfs.*`, `dd`) but **omitted the `curl … | bash` pipe-to-shell block** the hook has enforced since v5.x FIX-D (`prism-safety.mjs:43`). Every project bootstrapped from this template therefore got a Rule 8 that misrepresents the gate — and this is the exact gap that made the prompt-27 master wrongly assert "there's no hook blocking curl|bash" (it had no doc telling it otherwise; it even independently proposed adding curl|bash to its own Rule 8).
