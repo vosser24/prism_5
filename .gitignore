@@ -19,6 +19,11 @@ CLAUDE.local.md
 legacy/
 /_test_*.sh
 
+# Internal dev/process record — kept on disk locally, NOT distributed
+/docs/
+/tasks/
+/plans/
+
 # Dev cruft
 node_modules/
 .DS_Store
