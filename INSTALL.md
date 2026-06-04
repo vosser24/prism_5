@@ -1,6 +1,6 @@
 # PRISM Installation Instructions (for Claude Code)
 
-> **Most users should use `/plugin install prism@PRISM` instead of the manual procedure below — see [README.md](README.md#install). This document is the manual install reference for users who want full control or who are developing PRISM itself.** As of v3.5.0 PRISM ships as a Claude Code plugin (`.claude-plugin/plugin.json`); plugin install eliminates the backup → file-copy → settings-merge ceremony that this document describes.
+> **Most users should use the one-line installer (`install.ps1` on Windows, `install.sh` on macOS/Linux) instead of the manual procedure below — see [README.md](README.md#install). This document is the manual install reference for users who want full control or who are developing PRISM itself.** Both the one-line installer and the manual steps below drive the same `tools/prism-installer.mjs`, which automates the backup → file-copy → settings-merge → verify ceremony in one idempotent pass.
 
 This document is the authoritative *manual* install procedure. A user on a fresh machine can open Claude Code in any project and say:
 
@@ -42,7 +42,9 @@ If it is already cloned, `git pull` to pick up any updates.
 
 ## 2. Backup the current `~/.claude/`
 
-Never blow away existing config. Before copying anything:
+The installer in §3 makes its own timestamped backup automatically (and tells
+you where it went), so this manual step is optional belt-and-braces. If you
+want an independent copy before touching anything:
 
 ```bash
 TS=$(date +%Y%m%d_%H%M%S)
@@ -52,8 +54,6 @@ cp -pr ~/.claude/hooks                              ~/.claude/backups/pre-prism-
 cp -pr ~/.claude/tools                              ~/.claude/backups/pre-prism-$TS/ 2>/dev/null || true
 cp -p  ~/.claude/statusline-command.sh              ~/.claude/backups/pre-prism-$TS/ 2>/dev/null || true
 ```
-
-Tell the user where the backup went.
 
 ---
 
@@ -177,142 +177,98 @@ migration lands.
 
 ---
 
-## 3. Copy the files listed in `manifest.json`
+## 3. Install
 
-Read `manifest.json`. For each entry in `files`:
-
-- Create the destination directory if it doesn't exist.
-- Copy `<repo>/<src>` → expanded `<dest>` (`~` resolves to `HOME` / `USERPROFILE`).
-- Only overwrite if the content differs (content-hash compare).
-- If the entry has `"chmod": "+x"`, mark it executable on POSIX (`chmod +x`). On Windows this is a no-op.
-
-Claude is free to use Python, Node, or bash+jq — whichever is cleaner on the target OS.
-
----
-
-## 4. Merge `settings.fragment.json` into `~/.claude/settings.json`
-
-**Never overwrite settings.json.** Deep-merge, OS-aware, with stale-pruning.
-
-**Recommended recipe (v2.7.3+):** run the dedicated merger script from the
-repo root. It handles §4a (Windows rewrite), §4b (stale-prune), and §4c
-(deep-merge) in one pass, with correct escape handling that the inline
-`node -e "..."` approach could not guarantee on Windows + Git Bash.
+Run the installer from the repo root. A single command does the whole job —
+backup, stale-hook prune, file copy, roster preserve+merge, settings.json
+deep-merge, and a post-install verify — and it is idempotent: re-running it is
+safe, an equal-version run is a no-op, and a newer checkout upgrades in place.
 
 ```bash
-cd <path-to-PRISM-repo-root>
-node scripts/install-merge.mjs
+node tools/prism-installer.mjs install
 ```
 
-Output prints a summary you can parse for §8:
-```
-PRUNED_COUNT=<N>
-MERGED_NEW_HOOK_ENTRIES=<N>
-ENV_KEYS=<N>
-STATUSLINE_PRESERVED=<bool>
-TOTAL_TOP_LEVEL_KEYS=<N>
-```
+Useful flags:
 
-The script is idempotent — running it twice with no fragment changes is a
-no-op. Safe to re-run if an upgrade changes `settings.fragment.json`.
+- `--dry-run` — preview every action; makes no changes.
+- `--home <path>` — install into a non-default HOME (handy for testing).
+- `--no-backup` — skip the pre-install backup (not recommended).
+- `--with-pwagent` — also wire the bundled `pwagent` Playwright tool.
 
-### What `scripts/install-merge.mjs` does (reference, for auditors)
+The installer reads `tools/install-manifest.json` for the file list and
+`settings.fragment.json` for the hook/env/statusline config it merges — you do
+**not** copy files or hand-edit `settings.json`. It prints an aligned summary
+on completion (version, target, file/dir counts, backup location).
 
-### 4a. OS-specific command rendering (automated by the script)
+What the merge guarantees (reference, for auditors):
 
-`settings.fragment.json` ships POSIX form (`bash ~/.claude/hooks/lib/prism-exec.sh <hook>.mjs`). On Windows, every such hook `command` is rewritten to use the `.cmd` wrapper:
+- **Settings are never overwritten.** The fragment is deep-merged into any
+  existing `~/.claude/settings.json`: `env` keys are added, `hooks` entries
+  are appended only if an identical `command` isn't already present, and a
+  user's existing `statusLine` is preserved.
+- **OS-aware hook commands.** POSIX hook commands ship as
+  `bash ~/.claude/hooks/lib/prism-exec.sh <hook>`; on Windows they are
+  rewritten to the `cmd /c "%USERPROFILE%\.claude\hooks\lib\prism-exec.cmd" …`
+  form automatically.
+- **Stale entries pruned.** Old raw `node ~/.claude/hooks/prism-*.mjs`
+  registrations from pre-wrapper installs are removed; non-PRISM hooks are
+  left untouched.
+- **Roster preserved.** Your existing agents in
+  `skills/prism-plan/references/roster.json` are merged forward, not wiped.
 
-- POSIX: fragment used as-is.
-- Windows: each hook `command` string rewritten:
-  - from: `bash ~/.claude/hooks/lib/prism-exec.sh <path>`
-  - to:   `cmd /c "%USERPROFILE%\.claude\hooks\lib\prism-exec.cmd" <path-with-backslashes-and-%USERPROFILE%>`
-  - Example: `bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-hook.mjs`
-    → `cmd /c "%USERPROFILE%\.claude\hooks\lib\prism-exec.cmd" "%USERPROFILE%\.claude\hooks\prism-hook.mjs"`
-
-The script uses `String.fromCharCode(92)` for literal backslashes
-internally — this bypasses Git Bash `\\` mangling and avoids
-`JSON.stringify` double-escaping, both of which bit v2.7.2 installers who
-followed inline instructions.
-
-### 4b. Prune stale pre-2.3 hook entries (automated by the script)
-
-Older PRISM installs registered raw `node ~/.claude/hooks/*.mjs` entries alongside the wrapper. These fail on any machine where node is not on the non-interactive shell's PATH. The script walks the existing `hooks` object and removes any entry whose `command` matches one of these exact patterns:
-
-- `node ~/.claude/hooks/prism-*.mjs`
-- `node %USERPROFILE%\.claude\hooks\prism-*.mjs`
-
-Raw `node` entries for non-PRISM hooks — user-added or plugin-added — are left alone. Only `prism-*.mjs` entries get pruned.
-
-### 4c. Deep-merge (automated by the script)
-
-- Starts from existing `~/.claude/settings.json` (or `{}` if absent), after 4b pruning.
-- Loads `settings.fragment.json` from cwd, applies 4a OS rewrite in-memory.
-- For each top-level key in the fragment:
-  - `env` → shallow merge (fragment wins on key conflict).
-  - `hooks` → for each event (SessionStart, PreToolUse, etc.), appends fragment entries only if no existing entry has the same `command` string.
-  - `statusLine` → set only if no existing `statusLine` is configured (user's custom statusline preserved).
-- Other top-level keys (`permissions`, `enabledPlugins`, `extraKnownMarketplaces`, etc.) untouched.
-- Writes merged JSON back with 2-space indent.
-
-This is **idempotent**: running step 4 twice produces the same file.
-
-After the merge, the fragment will have registered four tier-enforcement guards under `PreToolUse`: `prism-agent-model-guard.mjs` (fires on every `Agent()` dispatch — classifies cognitive load and nudges/denies under-specified model choices), `prism-task-tier-advisor.mjs` (v2.7.0+ — fires on `TaskCreate` PreToolUse — recommends haiku/sonnet/opus for the new task), `prism-mutation-guard.mjs` (v2.7.2+ — fires on `Edit`/`Write`/`MultiEdit`/`Bash` — blocks the parent Opus context from mutating files directly, incl. file-writing Bash/PowerShell commands that would bypass the orchestrator pattern and introduce Windows UTF-8 BOM corruption), and `prism-parent-dispatch-guard.mjs` (fires on all tools — enforces tier-based dispatch, incl. NOVEL-tier `summon_panel` → `@master-orchestrator` requirement in v2.5.0+). All share the same `.prism-routing.jsonl` log and follow the `soft|hard|off` env-var convention.
-
-### Fallback — manual merge (only if `scripts/install-merge.mjs` is unavailable)
-
-If for some reason the script isn't present (e.g., mid-upgrade from an
-older repo checkout), the merge can be done manually per §4a/§4b/§4c
-above. **On Windows, use `String.fromCharCode(92)` for literal
-backslashes in any inline `node -e "..."` command** — Git Bash strips
-`\\` from template literals, and `JSON.stringify` double-escapes. This
-is why the script exists.
+After the merge, the fragment has registered PRISM's four `PreToolUse` guards
+— `prism-agent-model-guard.mjs` (classifies cognitive load on every `Agent()`
+dispatch), `prism-task-tier-advisor.mjs` (recommends a tier on `TaskCreate`),
+`prism-mutation-guard.mjs` (blocks the parent Opus context from mutating files
+directly, incl. file-writing Bash/PowerShell that would bypass the
+orchestrator pattern and risk Windows UTF-8 BOM corruption), and
+`prism-parent-dispatch-guard.mjs` (enforces tier-based dispatch incl. the
+NOVEL-tier `summon_panel` → `@master-orchestrator` requirement) — plus the
+`SessionStart` / `UserPromptSubmit` / statusline wiring. All share the
+`.prism-routing.jsonl` log and follow the `soft|hard|off` env-var convention
+from §2.6.
 
 ---
 
-## 5. Build the initial KB index
+## 4. Verify
 
-The PRISM hook routes prompts against `~/.claude/.prism-kb-index.json`. Fresh install has no index. Build one:
+The installer runs a verify pass at the end of §3 automatically; you can re-run
+it any time:
 
 ```bash
-node ~/.claude/tools/prism-kb-indexer.mjs
+node tools/prism-installer.mjs verify
 ```
 
-Report the entry count. A healthy install produces 20+ entries (PRISM's own agents/commands/skills). If plugins are installed in `~/.claude/plugins/`, the count will be higher.
+It checks that every file in the manifest is present in `~/.claude/` and that
+`settings.json` wires the PRISM hooks (and, if configured, the statusline).
+Every check should print `PASS`; a non-zero exit means the install is
+incomplete — re-run `node tools/prism-installer.mjs install` and report any
+checks that still fail.
 
 ---
 
-## 6. Verify
+## 5. Optional: run the full test suite
 
-Run the verify script from the repo:
+For a thorough green-bar check, run from the repo root:
 
 ```bash
-node scripts/verify.mjs
+node tools/test-prism-gaps.mjs
 ```
 
-It checks that every required file exists in `~/.claude/` and that `settings.json` wires the `prism-hook.mjs` and (optionally) the `statusLine`. Non-zero exit means install failed — stop and report the missing items.
+Target: all tests either **pass** or **skip gracefully** (tests that depend on
+NotebookLM, a large index, etc., self-skip on a minimal install). The suite
+should never hard-fail.
 
 ---
 
-## 7. Optional: run the full test suite
+## 6. Summary to the user
 
-For a thorough green-bar check:
+The installer already prints a completion block; relay its key lines to the
+user, e.g.:
 
-```bash
-node ~/.claude/tools/test-prism-gaps.mjs
-```
-
-Target: all tests either **pass** or **skip gracefully** (tests that depend on NotebookLM, a large index, etc., self-skip on a minimal install). The suite should never hard-fail.
-
----
-
-## 8. Summary to the user
-
-Print one compact block:
-
-- Files installed: N
-- Settings keys merged: K
-- KB entries indexed: E
-- Statusline: installed (path)
+- PRISM version installed (and the `from → to` if it was an upgrade)
+- Target: `~/.claude/` (or the `--home` path)
+- Files / directories installed
 - Backup location: `~/.claude/backups/pre-prism-<timestamp>/`
 - Next step: restart any open Claude Code sessions to pick up the new hooks + statusline.
 

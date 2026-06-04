@@ -14,7 +14,7 @@ Used by video-production skill to capture screenshots on demand.
 PROTOCOL:
 
 1. Parse arguments:
-   - <app-name>: kebab-case identifier (e.g., "praktiker", "dpharmacy")
+   - <app-name>: kebab-case identifier (e.g., "acme-shop", "demo-pharmacy")
    - --update: existing agent flag
    - --list: show all app experts
 

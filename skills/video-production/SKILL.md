@@ -678,7 +678,7 @@ power user and can drive it to capture any screenshot the video needs.
 ### When to create an app expert
 
 Triggers:
-- First substantial work on a new app (Magento, Praktiker, dpharmacy, etc.)
+- First substantial work on a new app (Magento, Acme Storefront, demo-pharmacy, etc.)
 - User explicitly says: "create an expert for this app" / "learn my app"
 - Video task needs screenshots of specific flows/features
 - When the viral producer's spec lists screenshot needs for the app
@@ -718,7 +718,7 @@ When user needs an app expert, spawn the factory with this:
 Create a @[app-name]-app-expert specialist agent.
 
 APP CONTEXT:
-- Name: [e.g., Praktiker Hellas E-commerce]
+- Name: [e.g., Acme Storefront E-commerce]
 - URLs: 
     Production: [URL]
     Staging:    [URL]
@@ -879,10 +879,10 @@ FLOW:
          {type: "screenshot", url: "/checkout", flow: "3ds-step"}
        ]}
   4. video-production skill reads spec, sees screenshots needed
-  5. Checks if @praktiker-app-expert exists
+  5. Checks if @acme-shop-app-expert exists
      - NO → creates it via factory (research Magento flows)
      - YES → uses it directly
-  6. Skill hands shot list to @praktiker-app-expert
+  6. Skill hands shot list to @acme-shop-app-expert
   7. App expert launches Playwright, captures all screens
      - Redacts emails, test card numbers
      - Returns filepaths + metadata
@@ -905,8 +905,8 @@ UPDATED:
 - Monthly for active apps (staleness check in orchestrator)
 RETIRED: When app is deprecated or replaced (via /prism-retire)
 
-One app expert per app. The Praktiker Hellas one is separate from the 
-dpharmacy one, separate from Magento project, etc. They don't share 
+One app expert per app. The Acme Storefront one is separate from the 
+demo-pharmacy one, separate from Magento project, etc. They don't share 
 knowledge — each app has its own quirks.
 
 ### CLI App Variant
@@ -937,9 +937,9 @@ For CLI tools, SKIP the app-expert creation. Go directly to:
 - Path B (OS native) for real screenshots
 - TypingText helper for simulated terminal scenes
 
-### Example: creating @praktiker-app-expert
+### Example: creating @acme-shop-app-expert
 
-User: "I want to make videos of my Praktiker e-shop. Create an app expert."
+User: "I want to make videos of my Acme Storefront e-shop. Create an app expert."
 
 PRISM: Spawning @agent-factory with the blueprint above.
 Factory:
@@ -952,9 +952,9 @@ Factory:
 4. Writes 3 starter flow scripts (login, browse, checkout)
 5. Registers in roster
 
-Now when any video needs Praktiker screenshots:
+Now when any video needs Acme Storefront screenshots:
 ```
-@praktiker-app-expert I need:
+@acme-shop-app-expert I need:
   1. Homepage with seasonal banner visible
   2. Category page /c/drills with 6+ products
   3. PDP for product SKU 12345

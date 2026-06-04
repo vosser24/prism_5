@@ -1,5 +1,5 @@
 # pwagent.ps1 — self-bootstrapping venv wrapper.
-# Idempotent: creates .venv (from Python 3.12) + installs deps + Chromium on
+# Idempotent: creates .venv (from a system Python) + installs deps + Chromium on
 # first run, then ALWAYS invokes the CLI via the venv's python directly. A
 # requirements-hash guard reinstalls deps when requirements.txt changes.
 $ErrorActionPreference = "Stop"
@@ -10,12 +10,14 @@ $venvPy   = Join-Path $venv "Scripts\python.exe"
 $reqs     = Join-Path $root "requirements.txt"
 $hashFile = Join-Path $venv ".reqs.hash"
 
-# Resolve a system Python 3.12 to build the venv from. Prefer the known install
-# path; fall back to whatever `python` is on PATH.
-$sysPy = "C:\Program Files\Python312\python.exe"
-if (-not (Test-Path $sysPy)) {
-    $found = (Get-Command python -ErrorAction SilentlyContinue).Source
-    if ($found) { $sysPy = $found } else { throw "Python 3.12 not found (looked at C:\Program Files\Python312\python.exe and PATH)" }
+# Resolve a system Python to build the venv from. Adopt whatever `python` is on
+# PATH first (pwagent sources are 3.9-compatible). $env:PWAGENT_PYTHON overrides;
+# a known 3.12 install is the last-resort fallback.
+$sysPy = $env:PWAGENT_PYTHON
+if (-not $sysPy) { $sysPy = (Get-Command python -ErrorAction SilentlyContinue).Source }
+if (-not $sysPy) {
+    $fallback = "C:\Program Files\Python312\python.exe"
+    if (Test-Path $fallback) { $sysPy = $fallback } else { throw "No Python found (set `$env:PWAGENT_PYTHON, put python on PATH, or install to C:\Program Files\Python312\python.exe)" }
 }
 
 function Install-Deps {

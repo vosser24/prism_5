@@ -48,7 +48,7 @@ def find_session_files(project_dir: Path | None = None) -> list[Path]:
 def project_dir_for_cwd(cwd: Path | None = None) -> Path | None:
     """Find the Claude Code project dir matching the current working directory."""
     cwd = cwd or Path.cwd()
-    # Claude Code encodes the path as C--Users-ServosY-...
+    # Claude Code encodes the path as C--Users-<username>-...
     if not PROJECTS_DIR.exists():
         return None
     candidate = str(cwd).replace("\\", "-").replace("/", "-").replace(":", "-")

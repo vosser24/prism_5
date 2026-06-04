@@ -233,7 +233,7 @@ Expected: prism-chat activates.
 ### REAL-SKI-004 — Domain-specialist dispatch from roster
 With your specialists rostered (`competitive-intelligence-specialist`, `demand-forecasting-specialist`, `greek-ecommerce-seo-specialist`):
 ```
-audit Greek SEO on praktiker.gr
+audit Greek SEO on acme-shop.example.com
 ```
 Expected: orchestrator picks `greek-ecommerce-seo-specialist` from roster (NOT a generic SEO persona).
 

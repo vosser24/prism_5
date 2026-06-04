@@ -4,7 +4,7 @@ PRISM_CACHE="/tmp/prism-statusline.cache"
 PRISM_LOCK="/tmp/prism-statusline.lock"
 [ -f "$PRISM_LOCK" ] && exit 0
 touch "$PRISM_LOCK"
-PYTHONIOENCODING=utf-8 python /c/Users/ServosY/.claude/tools/prism-monitor/prism-monitor.py --export 2>/dev/null | \
+PYTHONIOENCODING=utf-8 python "$HOME/.claude/tools/prism-monitor/prism-monitor.py" --export 2>/dev/null | \
   python -c "
 import sys, json, re
 raw = sys.stdin.read()

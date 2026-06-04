@@ -173,8 +173,8 @@ if [ -z "$win_size" ] || ! [[ $win_size =~ ^[0-9]+$ ]]; then
 fi
 win_size_k=$(( win_size / 1000 ))
 
-FLAG="/c/Users/ServosY/.claude/hooks/context-save-needed"
-HANDLED="/c/Users/ServosY/.claude/hooks/context-save-handled"
+FLAG="$HOME/.claude/hooks/context-save-needed"
+HANDLED="$HOME/.claude/hooks/context-save-handled"
 if (( used_int >= 55 )) && [ ! -f "$HANDLED" ] && [ ! -f "$FLAG" ]; then
   : > "$FLAG"
 fi

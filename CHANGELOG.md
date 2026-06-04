@@ -4,6 +4,21 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.16] - 2026-06-04
+
+Distribution cleanup (triage of a real `prism_5` install transcript on a fresh machine — Python 3.9.10, no MSVC compiler) **plus a public-repo privacy scrub** (user request: the published repo must never carry personal identifiers). No behavioral change to the orchestrator; docs/data/portability only. Suite stays green (state **54/54**, audit **29/29**, installer verify all-PASS).
+
+**A — pin `greenlet` in pwagent (`tools/pwagent/requirements.txt`).** `playwright==1.60.0` depends on `greenlet` but does not pin it, so pip pulled `greenlet==3.2.5`, which ships **no cp39 Windows wheel** → source build → needs MSVC → install failed on Python 3.9 without a compiler. Added `greenlet==3.2.4` (wheels for cp39–cp313); **kept `playwright==1.60.0`** (the transcript's 1.60→1.57 downgrade was an over-fix — playwright's wheel installed fine; only greenlet's source build failed).
+
+**B — de-hardcode Python in `tools/pwagent/pwagent.ps1`.** Replaced the hardcoded `$sysPy = "C:\Program Files\Python312\python.exe"` (PATH only as fallback) with: adopt `python` from PATH first (pwagent sources are 3.9-clean), `$env:PWAGENT_PYTHON` override, the 3.12 install path as last-resort fallback. Header comment de-3.12'd to match.
+
+**C — repoint `INSTALL.md` §3–6 to the real installer.** The manual procedure referenced three files that don't exist (`manifest.json`, `scripts/install-merge.mjs`, `scripts/verify.mjs`) and a `/plugin install prism@PRISM` path with no marketplace manifest. Slimmed §3–6 to the actual one-pass flow — `node tools/prism-installer.mjs install` (backup → copy → roster-merge → settings deep-merge → verify, idempotent) then `node tools/prism-installer.mjs verify` — fixed the line-3 blockquote to point at `install.ps1`/`install.sh`, renumbered the trailing optional-test/summary sections, and corrected the stale `~/.claude/tools/test-prism-gaps.mjs` path (not in the manifest) to the repo-local `tools/test-prism-gaps.mjs`.
+
+**D — privacy scrub (public repo must carry no personal data).** Removed personal identifiers from tracked (therefore published) files:
+- `statusline-command.sh` + `tools/prism-monitor/refresh-statusline-cache.sh` — hardcoded `/c/Users/ServosY/...` paths → `$HOME/...` (also a portability bug fix; these were broken for every other user).
+- `tools/prism-monitor/data_reader.py` + `tools/lib/prism-flag-file.mjs` — `ServosY` / real project path `Y:\Documents\utilities_projects\prism_3` in comments → generic placeholders.
+- `skills/video-production/SKILL.md`, `commands/prism-app-expert.md`, `tests/v3/audit-real-prompts.md` — employer-revealing example names ("Praktiker"/"praktiker.gr"/"dpharmacy") → a fictional "Acme Storefront" / `acme-shop` / `demo-pharmacy`. The public GitHub handle `vosser24` (clone/install URLs, plugin author, LICENSE copyright) is intentionally retained — it is the repo owner identity required for install to work, a different class from a username/email/employer.
+
 ## [5.2.15] - 2026-06-04
 
 Feature (user request, brainstormed → spec → plan → TDD). Two additions to the bootstrap + install surface. Spec: `docs/superpowers/specs/2026-06-04-venv-pwagent-bootstrap-design.md`; plan: `docs/superpowers/plans/2026-06-04-venv-pwagent-bootstrap.md`.

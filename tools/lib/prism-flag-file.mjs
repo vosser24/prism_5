@@ -23,7 +23,7 @@
 // Project keying: flag files are keyed by a SHA-256 hash of the absolute
 // project root path (first 12 chars), prefixed with the directory
 // basename for human-grep-ability. So a project at
-// Y:\Documents\utilities_projects\prism_3 → prism_3__a1b2c3d4e5f6. This
+// C:\projects\myapp → myapp__a1b2c3d4e5f6. This
 // avoids cross-project contamination when the same user has multiple
 // Claude Code windows open in different projects.
 
