@@ -217,10 +217,35 @@ const FENCE_RE = /```[\s\S]*?```/g;
 // CC transcript markers (●, ⎿), box-drawing/table rules, and status glyphs — not
 // prose the user typed.
 const PASTE_LINE_RE = /^\s*(?:>|●|⎿|│|┃|┌|┐|└|┘|├|┤|┬|┴|┼|━|─|═|╔|╗|╚|╝|╠|╣|✅|❌|⚠|🔴|🟢|🟡|🩺|ℹ)/u;
+// v5.2.6: STRONG transcript markers — same set MINUS the bare ">" blockquote (which
+// users type in their OWN prose). Used to detect a transcript BLOCK for span strip.
+const STRONG_PASTE_LINE_RE = /^\s*(?:●|⎿|│|┃|┌|┐|└|┘|├|┤|┬|┴|┼|━|─|═|╔|╗|╚|╝|╠|╣|✅|❌|⚠|🔴|🟢|🟡|🩺|ℹ)/u;
+// Transcript CONTENT lines that carry NO leading glyph but are unmistakably tool
+// output: tool-call signatures, run summaries, token/turn counts, expand hints.
+const TRANSCRIPT_LINE_RE = /\b\d+\s+tool uses?\b|\(ctrl\+o to expand\)|\bBackgrounded agent\b|\bChurned for\b|[·•]\s*[\d.]+k?\s*tokens|^\s*(?:Agent|Bash|Read|Edit|Write|MultiEdit|Update|Search|Grep|Glob|Skill|Task|WebFetch|WebSearch|NotebookEdit)\(/;
+const TRANSCRIPT_MIN_MARKERS = 3;
+
+function isStrongMarker(line) {
+  return STRONG_PASTE_LINE_RE.test(line) || TRANSCRIPT_LINE_RE.test(line);
+}
 
 export function stripPastedContent(prompt) {
   const noFences = String(prompt || '').replace(FENCE_RE, ' ');
-  return noFences.split(/\r?\n/).filter(line => !PASTE_LINE_RE.test(line)).join('\n');
+  const lines = noFences.split(/\r?\n/);
+  // v5.2.6: when a prompt is transcript-DOMINATED (≥3 strong structural markers),
+  // strip the contiguous transcript BLOCK — first→last strong-marker line inclusive
+  // — so interior synthesis prose (e.g. "a 4-seat adversarial panel …",
+  // "re-architect the platform") that carries trigger vocabulary does NOT survive
+  // into the user's "own words" and re-fire the panel. The user's actual request
+  // sits OUTSIDE that span (before the first / after the last marker) and is kept.
+  const strongIdx = [];
+  for (let i = 0; i < lines.length; i++) if (isStrongMarker(lines[i])) strongIdx.push(i);
+  if (strongIdx.length >= TRANSCRIPT_MIN_MARKERS) {
+    const lo = strongIdx[0], hi = strongIdx[strongIdx.length - 1];
+    return [...lines.slice(0, lo), ...lines.slice(hi + 1)].join('\n');
+  }
+  // Fallback (sparse markers): per-line strip of any pasted/transcript chrome.
+  return lines.filter(line => !PASTE_LINE_RE.test(line) && !TRANSCRIPT_LINE_RE.test(line)).join('\n');
 }
 
 export function pastedRatio(prompt) {

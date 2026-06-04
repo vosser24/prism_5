@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.6] - 2026-06-04
+
+Fix B (the re-scoped half of v5.2.5) — **transcript-aware paste detection**. The recurring paste over-fire class (ledger v5.2.3; the prompt-20 meta-question) all stemmed from the same leak the v5.1.7 author flagged: `stripPastedContent` only removed lines *starting* with a transcript glyph, so a pasted transcript's **interior synthesis prose** ("A 4-seat **adversarial panel** examined…", "re-architect the platform") survived into the user's "own words" and re-fired `summon_panel` (here, "adversarial panel" matched `EXPLICIT_PANEL_RE`). Transcript-style pastes also never reached `pastedRatio ≥ 0.6`, so the dampening didn't engage.
+
+- **Fix** (`tools/lib/prism-tier-classify.mjs`): when a prompt is transcript-DOMINATED (≥3 *strong* structural markers — `●`/`⎿`/box-drawing/status glyphs + no-glyph tool-output lines like `Agent(…)`, `Done (N tool uses · …k tokens)`, `(ctrl+o to expand)`), `stripPastedContent` now removes the contiguous transcript **block** (first→last strong marker, interior prose included) rather than just glyph-prefixed lines. The user's actual request sits outside that span and is preserved. The bare `>` blockquote is deliberately **excluded** from strong markers, so quoting in one's own prose never triggers block-strip; sub-threshold (<3) pastes fall back to the original per-line strip.
+- **Result:** a pasted panel transcript + a trailing question no longer summons a panel off the transcript's vocabulary; an explicit "summon the panel" in the user's *own* trailing words still does; genuine no-paste architecture requests are unchanged.
+- Tests: `test-prism-panel-paste-dampening` 9→14 (block-strip of interior "adversarial panel" prose, pastedRatio, two over-strip guards). Full classifier/panel/hook-nudge regression set green (v4-6 20, routing-chaos 35, panel-deadlock 15, sonnet 5, classifier-uat 15, release-screen 7, hook-paste-nudge 4).
+- **Honest limitation:** this is heuristic. A genuine request placed *between* two strong transcript markers (≥3 total) could be block-stripped from the panel decision (tier is unaffected; the user can always say "summon the panel"). The `>`-exclusion and the 3-marker threshold bound the risk.
+
 ## [5.2.5] - 2026-06-04
 
 Fix (UAT prompt 20 — the active project-master delegated the panel to a *nested* `@master-orchestrator` instead of chairing it itself). When a `master-<slug>` is the active agent (it loads `skills: [master-orchestrator]`), the panel-summon flow still unconditionally forced "dispatch `@master-orchestrator`" — but a dispatched orchestrator is a *subagent*, and PRISM's sole-dispatcher rule strips its `Agent` tool, so it can't spawn a real panel → it role-plays the seats and the rostered specialists (e.g. `software-architecture-expert`) never get dispatched. The user flagged this twice; it was correct.

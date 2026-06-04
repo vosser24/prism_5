@@ -68,5 +68,42 @@ check('stripPastedContent removes box-drawing/transcript lines',
 check('non-paste stakes prompt (rotate leaked api key) still summons',
   detectSummonPanel('we need to rotate the leaked api key credentials immediately', '', {h:0,s:0,o:0,compound:false}) === true);
 
+// ── v5.2.6: transcript-aware paste detection ──
+// A pasted Claude Code panel transcript whose INTERIOR synthesis prose (no leading
+// glyph) carries trigger vocabulary — "a 4-seat adversarial panel …" — must be
+// stripped as a contiguous BLOCK so that vocabulary does not survive into the
+// user's "own words" and re-fire summon_panel. The user's actual question sits
+// AFTER the transcript and is preserved.
+const PASTED_PANEL_TRANSCRIPT = [
+  '● master-orchestrator(Panel: SQLite vs Postgres)',
+  '  ⎿  Done (13 tool uses · 62.9k tokens · 4m 0s)',
+  '● The panel has deliberated. Here is the verdict.',
+  'Recommendation: Stay on SQLite, harden it, do not migrate now.',
+  'A 4-seat adversarial panel (Postgres advocate, SQLite defender) examined your code.',
+  'Phase 2 — migrate the database schema to Postgres only when a trigger fires.',
+  '┌─────┬──────────┐',
+  '│ opt │  verdict │',
+  '└─────┴──────────┘',
+].join('\n');
+
+check('v5.2.6: pasted panel transcript + a meta-question does NOT summon a panel',
+  classifyWithScore(PASTED_PANEL_TRANSCRIPT + '\nis this the correct approach? it should use the project master', '').summon_panel === false);
+
+check('v5.2.6: stripPastedContent removes interior "adversarial panel" synthesis prose',
+  !/adversarial panel/i.test(stripPastedContent(PASTED_PANEL_TRANSCRIPT)));
+
+check('v5.2.6: pastedRatio high for a transcript whose interior is prose',
+  pastedRatio(PASTED_PANEL_TRANSCRIPT) >= 0.6);
+
+// Over-strip guard: an EXPLICIT panel request that TRAILS the transcript (user's
+// own words) is still honored.
+check('v5.2.6: explicit "summon the panel" trailing a transcript is still honored',
+  classifyWithScore(PASTED_PANEL_TRANSCRIPT + '\nsummon the panel on this question', '').summon_panel === true);
+
+// Over-strip guard: a genuine architecture request sitting BETWEEN two markers
+// (sub-threshold: <3 strong markers) must NOT be block-stripped → still summons.
+check('v5.2.6: sub-threshold markers do not block-strip a genuine request',
+  classifyWithScore('● ref A\narchitect a new event-driven orchestration system from scratch\n● ref B', '').summon_panel === true);
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);
