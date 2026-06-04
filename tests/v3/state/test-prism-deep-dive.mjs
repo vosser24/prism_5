@@ -134,6 +134,14 @@ test('agent-write: creates <root>/.claude/agents/master-<slug>.md with locked fr
     assert(/name:\s*master-foo-cli/.test(body), 'name field: ' + body.slice(0, 200));
     assert(/memory:\s*project/.test(body), 'memory: project');
     assert(/skills:\s*\[master-orchestrator\]/.test(body), 'skills frontmatter');
+    // v5.2.7: every bootstrapped project-master gets the SAME canonical toolset,
+    // and it MUST include Skill (so the master can invoke brainstorming etc. at
+    // runtime — the master-orchestrator skill itself is frontmatter-preloaded).
+    const toolsLine = (body.match(/^tools:\s*(.+)$/m) || [])[1] || '';
+    const toolset = toolsLine.split(',').map(s => s.trim());
+    for (const t of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent', 'Skill']) {
+      assert(toolset.includes(t), `canonical toolset must include ${t}; got: ${toolsLine}`);
+    }
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 

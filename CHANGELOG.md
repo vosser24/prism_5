@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.7] - 2026-06-04
+
+Fix (UAT — the project-master couldn't invoke runtime skills). `master-test-prism-5` reported *"The Skill tool isn't enabled here"* when it tried to load `brainstorming`: the `/prism-deep-dive` generator wrote `tools: Read, Write, Edit, Bash, Grep, Glob, Agent` — **no `Skill`**. The `master-orchestrator` skill is frontmatter-preloaded so panels still worked, but the master could reach no *other* skill at runtime.
+
+- **Generator** (`tools/prism-deep-dive.mjs`): the project-master toolset is now a single named constant `PROJECT_MASTER_TOOLS = 'Read, Write, Edit, Bash, Grep, Glob, Agent, Skill'` (one source of truth), interpolated into the frontmatter — so **every** bootstrap/deep-dive emits the identical, complete capability baseline including `Skill`. (Bootstrap delegates project-master creation to deep-dive, so this is the only generator.)
+- Existing `master-test-prism-5` agent patched in place (`+ Skill`).
+- Test: `test-prism-deep-dive` asserts the generated frontmatter's `tools:` contains the full canonical set incl. `Skill` (27/27). Related suites green (fresh 7, clean 22, default-flip 9).
+- **Migration note:** project-masters created *before* v5.2.7 keep the old toolset until regenerated (their frontmatter isn't auto-rewritten — `/prism-fresh` is memory-only). Re-run `/prism-deep-dive` (agent-write) to refresh an existing master's toolset, or add `Skill` to its `tools:` line by hand.
+
 ## [5.2.6] - 2026-06-04
 
 Fix B (the re-scoped half of v5.2.5) — **transcript-aware paste detection**. The recurring paste over-fire class (ledger v5.2.3; the prompt-20 meta-question) all stemmed from the same leak the v5.1.7 author flagged: `stripPastedContent` only removed lines *starting* with a transcript glyph, so a pasted transcript's **interior synthesis prose** ("A 4-seat **adversarial panel** examined…", "re-architect the platform") survived into the user's "own words" and re-fired `summon_panel` (here, "adversarial panel" matched `EXPLICIT_PANEL_RE`). Transcript-style pastes also never reached `pastedRatio ≥ 0.6`, so the dampening didn't engage.

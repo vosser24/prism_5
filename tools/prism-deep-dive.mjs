@@ -191,6 +191,14 @@ const ORCH_PROTOCOL_SKILL_REF = `## Operating protocol
 Load skill: master-orchestrator
 `;
 
+// v5.2.7: canonical project-master capability baseline — single source of truth
+// so EVERY bootstrap/deep-dive produces an identical, complete toolset. `Skill`
+// is required (so the master can invoke runtime skills like brainstorming; the
+// master-orchestrator skill itself is frontmatter-preloaded via `skills:`).
+// `Agent` grants sole-dispatcher panel convening. Keep this list in sync with the
+// test in tests/v3/state/test-prism-deep-dive.mjs.
+const PROJECT_MASTER_TOOLS = 'Read, Write, Edit, Bash, Grep, Glob, Agent, Skill';
+
 function renderMasterAgent({slug, protocol, created}) {
   const today = created || new Date().toISOString().slice(0, 10);
   const protocolBody = protocol === 'skill-ref' ? ORCH_PROTOCOL_SKILL_REF : ORCH_PROTOCOL_INLINE;
@@ -203,7 +211,7 @@ description: >
   Owns the architecture; grows a durable model of this codebase (recall →
   design → archive); assembles and directs a team of persistent expert agents;
   dispatches every expert and worker; produces handoffs via /prism-clean.
-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
+tools: ${PROJECT_MASTER_TOOLS}
 model: opus
 maxTurns: 80
 memory: project
