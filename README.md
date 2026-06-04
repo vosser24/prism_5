@@ -54,8 +54,8 @@ cd your-project
 ### 1. Clone
 
 ```bash
-git clone https://github.com/vosser24/prism_master.git
-cd prism_master
+git clone https://github.com/vosser24/prism_5.git
+cd prism_5
 ```
 
 ### 2. Install
@@ -269,8 +269,12 @@ See [UNINSTALL.md](UNINSTALL.md). Quick path: `bash scripts/uninstall.sh --purge
 
 ## Contributing
 
-Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run the test suite (`tests/v3/state/*.mjs` + `node tools/prism-audit-runner.mjs`) and ensure all assertions pass.
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Before submitting, run the test suite (`tests/v3/state/*.mjs` + `node tools/prism-audit-runner.mjs`) and ensure all assertions pass.
+
+## Security
+
+PRISM is local-first and makes no network calls in its core. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-See the repository for license details.
+PRISM is released under the [MIT License](LICENSE) — © 2026 vosser24.

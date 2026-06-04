@@ -5,12 +5,12 @@
 #
 # Usage:
 #   .\scripts\install-statusline-only.ps1
-#   iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.ps1 | iex
+#   iwr -UseBasicParsing https://raw.githubusercontent.com/vosser24/prism_5/main/scripts/install-statusline-only.ps1 | iex
 Set-StrictMode -Version 2
 
 $ErrorActionPreference = "Stop"
 
-$REPO_RAW  = "https://raw.githubusercontent.com/vosser24/prism_master/main"
+$REPO_RAW  = "https://raw.githubusercontent.com/vosser24/prism_5/main"
 $SRC_FILE  = "statusline-command.sh"
 $LOG_PREFIX = "[install-statusline]"
 

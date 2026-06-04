@@ -5,10 +5,10 @@
 #
 # Usage:
 #   bash scripts/install-statusline-only.sh
-#   curl -fsSL https://raw.githubusercontent.com/vosser24/prism_master/main/scripts/install-statusline-only.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/vosser24/prism_5/main/scripts/install-statusline-only.sh | bash
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/vosser24/prism_master/main"
+REPO_RAW="https://raw.githubusercontent.com/vosser24/prism_5/main"
 SRC_FILE="statusline-command.sh"
 LOG_PREFIX="[install-statusline]"
 

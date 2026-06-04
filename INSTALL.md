@@ -4,7 +4,7 @@
 
 This document is the authoritative *manual* install procedure. A user on a fresh machine can open Claude Code in any project and say:
 
-> **"Clone https://github.com/vosser24/prism_master, read INSTALL.md, and follow it exactly."**
+> **"Clone https://github.com/vosser24/prism_5, read INSTALL.md, and follow it exactly."**
 
 Claude then performs the steps below. Each step is numbered, atomic, and verifiable.
 
@@ -32,7 +32,7 @@ If any **required** tool is missing, stop and print a platform-specific install 
 If the repo isn't already cloned to a working directory:
 
 ```bash
-git clone https://github.com/vosser24/prism_master.git /tmp/prism-install
+git clone https://github.com/vosser24/prism_5.git /tmp/prism-install
 cd /tmp/prism-install
 ```
 
