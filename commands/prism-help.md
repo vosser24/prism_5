@@ -138,7 +138,7 @@ switches let you suppress individual nudges via env vars.
 | SessionEnd (catch-all) | `prism-git-clean-nudge.mjs` (v4.1 Phase A) | Writes flag if git working tree dirty → next session nudges to commit/stash. Skipped in non-git projects. | `PRISM_DISABLE_GIT_CLEAN_NUDGE=1` |
 | PreCompact | `prism-precompact-nudge-flag.mjs` (v4.1 Phase A) | Writes flag → next session nudges `/prism-clean`. | `PRISM_DISABLE_PRECOMPACT_NUDGE=1` |
 | PreToolUse[Bash] | `prism-prepush-review.mjs` (v4.1 Phase A) | Detects `git push *` and asks for confirmation + nudges `/code-review` + `/security-review`. Bypass via per-branch `review-done` flag-file. | `PRISM_DISABLE_PREPUSH_NUDGE=1` |
-| PreToolUse[Bash] | `prism-safety.mjs` | Blocks `rm -rf` on dangerous targets (`/`, `~`, system paths — but **allows** `rm -rf ./build`), `DROP TABLE`, `git push --force`, etc. Warns on push-to-main. | n/a — safety gate |
+| PreToolUse[Bash] | `prism-safety.mjs` | Blocks `rm -rf` on dangerous targets (`/`, `~`, system paths — but **allows** `rm -rf ./build`), pipe-to-shell (`curl … \| bash`), `DROP TABLE`, `git push --force`, etc. Warns on push-to-main. | n/a — safety gate |
 | SubagentStop | `prism-phase-1-5-oob.mjs` (v4.4) | When specialist has `requires_phase_1_5: true` in roster, invokes independent reviewer via Anthropic SDK. Async by default; block-mode if `requires_phase_1_5_block: true`. | `PRISM_DISABLE_OOB_REVIEW=1` |
 
 ---

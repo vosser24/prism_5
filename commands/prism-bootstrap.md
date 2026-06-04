@@ -211,7 +211,8 @@ existing tool fits.
 `hooks/prism-safety.mjs` hard-blocks dangerous shell commands: `rm -rf` on
 **dangerous/unverifiable targets** (`/`, `~`, home/system paths) — a specific
 relative subdir like `rm -rf ./build` or `node_modules` is **allowed**
-(target-aware, UAT-4); `DROP TABLE/DATABASE/SCHEMA`, `TRUNCATE TABLE`,
+(target-aware, UAT-4); pipe-to-shell installers (`curl … | bash`, `wget … | sh`);
+`DROP TABLE/DATABASE/SCHEMA`, `TRUNCATE TABLE`,
 `git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No override. Run a genuinely
 blocked command manually outside Claude Code if required.
 

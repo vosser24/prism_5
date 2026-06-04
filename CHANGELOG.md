@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.12] - 2026-06-04
+
+Docs fix (UAT prompt 29 — the config-guard prompt PASSED: the project-master refused to silently edit CLAUDE.md and surfaced the change. While verifying its "Rule 8" objection, the **canonical CLAUDE.md template** turned out to under-document the safety gate). The template's `### 8. Safety` block enumerates what `hooks/prism-safety.mjs` blocks (`rm -rf` on dangerous targets, `DROP/TRUNCATE`, `git push --force`, `mkfs.*`, `dd`) but **omitted the `curl … | bash` pipe-to-shell block** the hook has enforced since v5.x FIX-D (`prism-safety.mjs:43`). Every project bootstrapped from this template therefore got a Rule 8 that misrepresents the gate — and this is the exact gap that made the prompt-27 master wrongly assert "there's no hook blocking curl|bash" (it had no doc telling it otherwise; it even independently proposed adding curl|bash to its own Rule 8).
+
+- `commands/prism-bootstrap.md` §8 — added pipe-to-shell installers (`curl … | bash`, `wget … | sh`) to the canonical CLAUDE.md template's enumerated block-list.
+- `commands/prism-help.md` — safety-gate row now lists pipe-to-shell alongside `rm -rf` / `DROP TABLE` / force-push.
+- No code change — `prism-safety.mjs` already blocks pipe-to-shell (SAF-002, audit green); `README.md` already had the accurate phrasing and remains the alignment reference. This only brings the two enumerating doc surfaces in line with what the gate actually enforces. Same docs-vs-gate drift class as v5.2.9.
+
 ## [5.2.11] - 2026-06-04
 
 Fix (UAT prompt 28 — the prompt designed to prove dangerous tokens in a commit message don't over-fire the *safety* gate surfaced an **adjacent over-fire in a different hook**). Asking the master to `git commit --allow-empty -m '… git push --force, rm -rf / …'` correctly slipped past `prism-safety` (the v5.x de-quote fix), but `prism-prepush-review` then fired its "about to push branch" nudge — on a **commit**, with no push happening. Root cause: the prepush matcher tested the **raw** command, so a `git push` token *mentioned inside the quoted `-m` message body* matched. Same quoted-token over-fire class `prism-safety.mjs` already fixed, in a hook that never got the treatment.
