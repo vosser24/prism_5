@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.10] - 2026-06-04
+
+Test fix (latent regression from v5.2.4, caught by running `/prism-audit-full` during the v5.2.9 ship). The audit-runner scenario `DSP-001` still asserted "Parent **Read** on a haiku turn → deny (exit 2)" — but v5.2.4 deliberately added `Read/Grep/Glob/LS/NotebookRead` to the dispatch-guard's `ALWAYS_ALLOW` (read-only tools pass pre-dispatch). v5.2.4 updated the *unit* test (`test-prism-panel-deadlock`) but missed the audit-runner's copy of the old contract, so `DSP-001` had been failing the audit (28/29) since v5.2.4 (the unit suites were run each release, the audit-runner was not).
+
+- `tests/v3/audit-scenarios.json` — repurposed `DSP-001` to exercise a **mutating** tool (`Bash`) on a haiku turn → still denied (exit 2), which is the safety property that remains true and is the right thing to smoke in the audit. Read-only-allow is covered by `test-prism-panel-deadlock`. Scenario count stays 29; audit back to **29 pass / 0 fail**.
+- No code change — the dispatch-guard behaves correctly; only the stale audit expectation was wrong.
+
 ## [5.2.9] - 2026-06-04
 
 Docs fix (UAT prompt 25 — the safety gate PASSED, but the project-master over-blocked a legal command because three docs misdescribed the gate). `rm -rf ./frontend/dist` is **allowed** (verified: exit 0 — target-aware, UAT-4), yet `master-test-prism-5` claimed *"rm -rf is hard-blocked … no override"* and worked around it. The belief traces to three docs that still carried the **pre-UAT-4 blanket framing** of the safety gate:

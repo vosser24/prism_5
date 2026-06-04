@@ -123,17 +123,17 @@
     },
     {
       "id": "DSP-001",
-      "name": "Parent Read on haiku turn → deny",
+      "name": "Parent Bash (mutation) on haiku turn → deny",
       "category": "parent-dispatch-guard",
-      "capability": "parent_read_haiku_deny",
+      "capability": "parent_mutation_haiku_deny",
       "target_hook": "hooks/prism-parent-dispatch-guard.mjs",
       "input_event": "PreToolUse",
-      "input_payload": {"session_id": "audit-DSP-001", "tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}},
+      "input_payload": {"session_id": "audit-DSP-001", "tool_name": "Bash", "tool_input": {"command": "echo x"}},
       "setup_sentinel": {"tier": "haiku", "summon_panel": false, "dispatched": false},
       "expected_exit_code": 2,
       "expected_stdout_pattern": "DISPATCH-GUARD",
       "max_duration_ms": 500,
-      "notes": "v5.x: haiku turn + no dispatch (seeded sentinel) → guard denies parent Read (exit 2)"
+      "notes": "v5.2.4: read-only tools (Read/Grep/Glob/LS) now PASS pre-dispatch — so this scenario exercises a MUTATING tool (Bash), which the guard still denies pre-dispatch on a haiku turn (exit 2). Read-only-allow is covered by tests/v3/state/test-prism-panel-deadlock.mjs."
     },
     {
       "id": "DSP-002",
