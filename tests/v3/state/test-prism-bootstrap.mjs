@@ -109,6 +109,71 @@ test('init-state-if-missing is idempotent (no overwrite of valid state)', () => 
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+// ───────────────────────── ensure-venv (Phase A) ────────────────────────────
+
+test('ensure-venv: detects a Python project and records python_project=true', () => {
+  const root = makeTestbed('venv-detect');
+  try {
+    writeFileSync(join(root, 'requirements.txt'), 'django\n');
+    const r = run(root, 'ensure-venv', 'tb', '--no-create');
+    assertEq(r.status, 0, r.stderr);
+    assertEq(readStateFile(root).python_project, true);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('ensure-venv: greenfield + --python records true; --no-python records false', () => {
+  const a = makeTestbed('venv-green-yes');
+  const b = makeTestbed('venv-green-no');
+  try {
+    assertEq(run(a, 'ensure-venv', 'tb', '--python', '--no-create').status, 0);
+    assertEq(readStateFile(a).python_project, true);
+    assertEq(run(b, 'ensure-venv', 'tb', '--no-python', '--no-create').status, 0);
+    assertEq(readStateFile(b).python_project, false);
+  } finally { rmSync(a, {recursive: true, force: true}); rmSync(b, {recursive: true, force: true}); }
+});
+
+test('ensure-venv: greenfield with no flag exits needs-prompt (7) and writes no state', () => {
+  const root = makeTestbed('venv-green-ask');
+  try {
+    const r = run(root, 'ensure-venv', 'tb', '--no-create');
+    assertEq(r.status, 7, 'should signal needs-prompt: ' + r.stderr);
+    assert(/needs-prompt/i.test(r.stdout + r.stderr));
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('ensure-venv: idempotent — re-run reads recorded python_project, never re-prompts', () => {
+  const root = makeTestbed('venv-idem');
+  try {
+    run(root, 'ensure-venv', 'tb', '--no-python', '--no-create');
+    const r = run(root, 'ensure-venv', 'tb', '--no-create'); // no flag, but state set
+    assertEq(r.status, 0, 'recorded false → no prompt: ' + r.stderr);
+    assertEq(readStateFile(root).python_project, false);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('ensure-venv: appends .venv/ to .gitignore exactly once', () => {
+  const root = makeTestbed('venv-ignore');
+  try {
+    writeFileSync(join(root, 'pyproject.toml'), '[project]\nname="x"\n');
+    run(root, 'ensure-venv', 'tb', '--no-create');
+    run(root, 'ensure-venv', 'tb', '--no-create'); // second run must not duplicate
+    const gi = readFileSync(join(root, '.gitignore'), 'utf8');
+    const count = (gi.match(/^\.venv\/?$/gm) || []).length;
+    assertEq(count, 1, 'exactly one .venv entry');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('ensure-venv: writes a SessionStart venv PATH hook into project settings.json', () => {
+  const root = makeTestbed('venv-hook');
+  try {
+    writeFileSync(join(root, 'manage.py'), '# django\n');
+    run(root, 'ensure-venv', 'tb', '--no-create');
+    const s = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'));
+    const cmds = JSON.stringify(s.hooks && s.hooks.SessionStart || []);
+    assert(/CLAUDE_ENV_FILE/.test(cmds) && /\.venv/.test(cmds), 'hook wires .venv onto PATH via CLAUDE_ENV_FILE');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('plan: lists pending phases for a fresh state', () => {
   const root = makeTestbed('plan-fresh');
   try {

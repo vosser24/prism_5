@@ -216,6 +216,15 @@ relative subdir like `rm -rf ./build` or `node_modules` is **allowed**
 `git push --force`, `mkfs.*`, `dd if=*of=/dev/*`. No override. Run a genuinely
 blocked command manually outside Claude Code if required.
 
+### 8.5 Python environment (Python projects only)
+
+When this is a Python project, it runs under a **project-root `.venv`** created by
+`/prism-bootstrap`. **Always invoke Python through the venv** — `.venv\Scripts\python`
+(Windows) / `.venv/bin/python` (POSIX), and likewise `python -m pip …`. **Never use the
+system Python.** (Each tool call is a fresh shell, so there is no persistent `activate`;
+use the venv interpreter explicitly. A SessionStart hook also prepends `.venv\Scripts` to
+PATH on Git-Bash sessions.) Omit this rule entirely for non-Python projects.
+
 ### 9. Persistence + evolution
 
 - `~/.claude/.prism-routing.jsonl` — every hook decision appended here. Use
@@ -286,7 +295,13 @@ supersedes D001's narrower structure-phase table).
 Run: `node ~/.claude/tools/prism-bootstrap.mjs phase-structure`
 Then:  `node ~/.claude/tools/prism-bootstrap.mjs phase-conventions`
 
-Both are idempotent. The structure helper creates:
+**Then ensure a Python venv (Python projects):**
+`node ~/.claude/tools/prism-bootstrap.mjs ensure-venv "<slug>"`
+- Exit 0 → `.venv` created/intended; the helper also wrote `.venv/` into `.gitignore` and a SessionStart PATH hook. Make sure CLAUDE.md carries the **§8.5 Python environment** rule.
+- **Exit 7 (`needs-prompt`)** → the folder is empty / not yet Python. **Ask the user:** *"Will this be a Python project? Create a `.venv` and run Python under it?"* Then re-invoke with `--python` or `--no-python`. The choice is remembered in state (never re-prompts).
+- A WARN about venv creation (no system Python) is non-fatal — surface the manual `python -m venv .venv` step and continue.
+
+Both phase-structure and phase-conventions are idempotent. The structure helper creates:
 
 ```
 .claude/references/   .claude/rules/      .claude/agents/

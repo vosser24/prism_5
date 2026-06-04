@@ -57,7 +57,7 @@
 // records it under phases.structure.conventions_written = true.
 
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {argv, env, exit, stderr, stdout} from 'node:process';
 import {fileURLToPath} from 'node:url';
@@ -105,6 +105,9 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--no-master') opts.noMaster = true;
   else if (a === '--no-git-guard') opts.noGitGuard = true;
   else if (a === '--no-telemetry') opts.noTelemetry = true;
+  else if (a === '--python') opts.python = true;
+  else if (a === '--no-python') opts.python = false;
+  else if (a === '--no-create') opts.noCreate = true;
   else if (a === '--meta') named.meta = args[++i];
   else if (a === '--home') named.home = args[++i];
   else if (a === '-h' || a === '--help' || a === 'help') usage();
@@ -558,6 +561,23 @@ function setTelemetryConsent(home, optIn) {
   return {policy_path: path, opt_in: optIn, asked_at: policy.telemetry.asked_at};
 }
 
+// ------------------------------ venv detection ------------------------------
+// A project is "Python" when any of these markers exist at root or one level
+// deep (e.g. backend/). Drives the ensure-venv decision when no flag is given.
+function detectPython(root) {
+  const markers = ['requirements.txt', 'pyproject.toml', 'Pipfile', 'setup.py', 'setup.cfg', 'manage.py'];
+  if (markers.some((m) => existsSync(join(root, m)))) return true;
+  try { if (readdirSync(root).some((f) => f.endsWith('.py'))) return true; } catch {}
+  try {
+    for (const d of readdirSync(root, {withFileTypes: true})) {
+      if (d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules') {
+        if (markers.some((m) => existsSync(join(root, d.name, m)))) return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
 // ------------------------------ command dispatch ------------------------------
 
 try {
@@ -627,6 +647,80 @@ try {
       stdout.write(`initialized state for "${name}".\n`);
       stdout.write(`mode: ${hasClaudeContent ? 'detect-and-adopt' : 'fresh'}\n`);
       if (adopted.length) stdout.write(`phases adopted from filesystem: ${adopted.join(', ')}\n`);
+      break;
+    }
+
+    case 'ensure-venv': {
+      const name = positional[0];
+      if (!name) die('ensure-venv requires <project-name>');
+      const wantFlag = opts.python === true ? true : opts.python === false ? false : null;
+      // Load existing state, or initialize it in-memory (ensure-venv may run
+      // standalone before the rest of bootstrap; persisted below once decided).
+      const rs = readState(opts.root);
+      let state;
+      if (rs.status === 'ok') state = rs.state;
+      else if (rs.status === 'missing') {
+        const claudeDir = join(opts.root, '.claude');
+        const hasClaudeContent = existsSync(claudeDir) && existsSync(join(opts.root, 'CLAUDE.md'));
+        state = hasClaudeContent
+          ? synthesizeFromFilesystem(opts.root, {projectName: name})
+          : createInitialState(name);
+      } else {
+        die(`state ${rs.status}: ${(rs.errors || []).join('; ')}`, 4);
+      }
+      let isPy = state.python_project;
+      if (isPy === undefined || isPy === null) {
+        if (wantFlag !== null) isPy = wantFlag;
+        else if (detectPython(opts.root)) isPy = true;
+        else {
+          stdout.write('needs-prompt: no Python detected — ask "Will this be a Python project? Create a .venv?", then re-invoke ensure-venv with --python or --no-python.\n');
+          exit(7);
+        }
+      }
+      state.python_project = isPy;
+      if (!opts.dryRun) writeStateAtomic(opts.root, state);
+      stdout.write(`ensure-venv: python_project=${isPy}\n`);
+      if (!isPy) break;
+
+      // .gitignore hygiene — ignore `.venv/`, exactly once.
+      const giPath = join(opts.root, '.gitignore');
+      let gi = existsSync(giPath) ? readFileSync(giPath, 'utf8') : '';
+      if (!/^\.venv\/?$/m.test(gi)) {
+        gi = gi.replace(/\s*$/, '') + (gi.trim() ? '\n' : '') + '.venv/\n';
+        if (!opts.dryRun) writeFileSync(giPath, gi);
+      }
+
+      // SessionStart venv PATH hook (Git Bash): prepend .venv/Scripts to PATH via
+      // $CLAUDE_ENV_FILE using project-relative ${CLAUDE_PROJECT_DIR}. Best-effort
+      // accelerator; the CLAUDE.md convention (slash command) is the guarantee.
+      const settingsPath = join(opts.root, '.claude', 'settings.json');
+      if (!opts.dryRun) {
+        mkdirSync(join(opts.root, '.claude'), {recursive: true});
+        let st = {};
+        try { st = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch {}
+        if (!st || typeof st !== 'object' || Array.isArray(st)) st = {};
+        st.hooks = st.hooks || {};
+        st.hooks.SessionStart = st.hooks.SessionStart || [];
+        const venvHookCmd = 'if [ -n "$CLAUDE_ENV_FILE" ] && [ -d "$CLAUDE_PROJECT_DIR/.venv/Scripts" ]; then echo "export PATH=\\"$(cygpath -u \\"$CLAUDE_PROJECT_DIR\\")/.venv/Scripts:$PATH\\"" >> "$CLAUDE_ENV_FILE"; fi';
+        const already = JSON.stringify(st.hooks.SessionStart).includes('CLAUDE_ENV_FILE');
+        if (!already) st.hooks.SessionStart.push({hooks: [{type: 'command', command: venvHookCmd}]});
+        writeFileSync(settingsPath, JSON.stringify(st, null, 2) + '\n');
+      }
+
+      // venv creation (skipped by tests via --no-create; fail-soft if no Python).
+      if (!opts.noCreate && !opts.dryRun) {
+        const venvDir = join(opts.root, '.venv');
+        if (!existsSync(venvDir)) {
+          const py = process.platform === 'win32' ? 'python' : 'python3';
+          const res = spawnSync(py, ['-m', 'venv', venvDir], {cwd: opts.root, encoding: 'utf8'});
+          if (res.status !== 0) {
+            const why = (res.stderr || (res.error && res.error.message) || '').toString().trim();
+            stdout.write(`ensure-venv: WARN could not create .venv (${why}); create it manually: ${py} -m venv .venv\n`);
+          } else {
+            stdout.write('ensure-venv: created .venv\n');
+          }
+        }
+      }
       break;
     }
 
