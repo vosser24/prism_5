@@ -1,7 +1,16 @@
 {
   "schema_version": 1,
-  "prism_version": "5.2.14",
+  "prism_version": "5.2.15",
   "files": [
+    {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
+    {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
+    {"src": "tools/pwagent/requirements.txt", "dst": "tools/pwagent/requirements.txt", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/__init__.py", "dst": "tools/pwagent/src/pwagent/__init__.py", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/__main__.py", "dst": "tools/pwagent/src/pwagent/__main__.py", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/cli.py", "dst": "tools/pwagent/src/pwagent/cli.py", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/actions.py", "dst": "tools/pwagent/src/pwagent/actions.py", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/session.py", "dst": "tools/pwagent/src/pwagent/session.py", "executable": false},
+    {"src": "tools/pwagent/src/pwagent/errors.py", "dst": "tools/pwagent/src/pwagent/errors.py", "executable": false},
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
     {"src": "hooks/prism-clean-nudge-flag.mjs", "dst": "hooks/prism-clean-nudge-flag.mjs", "executable": true},

@@ -749,6 +749,10 @@ async function install() {
           appendFileSync(join(CLAUDE_DIR, '.prism-routing.jsonl'), JSON.stringify(rec) + '\n');
         }
       } catch {}
+
+      // pwagent: offer setup (consent-gated; --with-pwagent for non-interactive).
+      try { await setupPwagent({autoYes: rawArgs.includes('--with-pwagent')}); }
+      catch (e) { log('[pwagent] setup skipped: ' + (e && e.message)); }
     }
 
   } finally {
@@ -1042,6 +1046,51 @@ Exit codes:
 `.trim());
 }
 
+// ─── pwagent setup ────────────────────────────────────────────────────────────
+// pwagent ships as source; pwagent.ps1 self-provisions its venv + Chromium on
+// first run. This adds the tool dir to the User PATH (idempotent) and warms it
+// via `pwagent.cmd selftest`. Consent-gated: non-interactive without
+// --with-pwagent just prints the manual steps. Fail-soft throughout.
+async function setupPwagent({autoYes = false, dryRun = false} = {}) {
+  const dir = join(CLAUDE_DIR, 'tools', 'pwagent');
+  const cmd = join(dir, 'pwagent.cmd');
+  const norm = (p) => p.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
+  const onPath = (process.env.PATH || '').split(/[;:]/).some((p) => p && norm(p) === norm(dir));
+  const psPathCmd = `[Environment]::SetEnvironmentVariable('Path', ([Environment]::GetEnvironmentVariable('Path','User').TrimEnd(';') + ';${dir}'), 'User')`;
+
+  if (dryRun) {
+    log(`[pwagent] (dry-run) would add to User PATH: ${dir}`);
+    log(`[pwagent] (dry-run) would warm venv + Chromium via: "${cmd}" selftest`);
+    return 0;
+  }
+  if (!existsSync(cmd)) {
+    log(`[pwagent] WARN ${cmd} not found; skipping setup (reinstall PRISM to ship pwagent).`);
+    return 0;
+  }
+  if (!autoYes && !process.stdin.isTTY) {
+    log(`[pwagent] shipped to ${dir}.`);
+    log(`[pwagent] to enable: add it to PATH and run "${cmd}" selftest (first run creates .venv + downloads Chromium ~150MB).`);
+    log(`[pwagent] or re-run non-interactively: node tools/prism-installer.mjs setup-pwagent --with-pwagent`);
+    return 0;
+  }
+  if (onPath) {
+    log(`[pwagent] already on PATH: ${dir}`);
+  } else if (process.platform === 'win32') {
+    const r = spawnSync('powershell', ['-NoProfile', '-Command', psPathCmd], {encoding: 'utf8'});
+    log(r.status === 0
+      ? `[pwagent] added to User PATH (effective in new shells): ${dir}`
+      : `[pwagent] WARN PATH add failed; add manually: ${dir}`);
+  } else {
+    log(`[pwagent] add to PATH in your shell rc: ${dir}`);
+  }
+  log('[pwagent] warming venv + Chromium (first run, ~150MB; can take a few minutes)...');
+  const w = spawnSync(cmd, ['selftest'], {encoding: 'utf8', stdio: 'inherit'});
+  log(w.status === 0
+    ? '[pwagent] ready.'
+    : `[pwagent] WARN warm did not complete (Python 3.12 / network?). Run "${cmd}" selftest later.`);
+  return 0;
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 async function main() {
   if (!subcommand || subcommand === '--help' || subcommand === 'help' || subcommand === '-h') {
@@ -1064,6 +1113,12 @@ async function main() {
       break;
     case 'verify':
       verify();
+      break;
+    case 'setup-pwagent':
+      process.exit(await setupPwagent({
+        autoYes: restArgs.includes('--with-pwagent') || restArgs.includes('--yes'),
+        dryRun: restArgs.includes('--dry-run'),
+      }));
       break;
     default:
       console.error(`[prism-installer] Unknown subcommand: ${subcommand}`);

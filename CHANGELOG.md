@@ -4,6 +4,19 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.15] - 2026-06-04
+
+Feature (user request, brainstormed → spec → plan → TDD). Two additions to the bootstrap + install surface. Spec: `docs/superpowers/specs/2026-06-04-venv-pwagent-bootstrap-design.md`; plan: `docs/superpowers/plans/2026-06-04-venv-pwagent-bootstrap.md`.
+
+**A — project `.venv` on `/prism-bootstrap`.** New deterministic `ensure-venv <slug>` subcommand in `tools/prism-bootstrap.mjs`:
+- Detects Python (`requirements.txt`/`pyproject.toml`/`Pipfile`/`setup.py`/`setup.cfg`/`manage.py`/`*.py`, root or one level deep). Honors `--python`/`--no-python`. A **greenfield** folder with no Python signal exits **7 (`needs-prompt`)** so the slash command asks *"Will this be a Python project?"* and **remembers** the answer in `.prism-state.json` (`python_project`) — never re-prompts, so a still-empty folder you've declared Python stays governed.
+- On a Python project: appends `.venv/` to `.gitignore` (once), writes a SessionStart `CLAUDE_ENV_FILE` PATH hook into project `.claude/settings.json` (prepends `.venv/Scripts` for Git-Bash sessions), and creates `.venv` (`--no-create` for tests; fail-soft if no system Python).
+- `commands/prism-bootstrap.md`: Phase-2 `ensure-venv` step + Operating Rule **§8.5** (run Python via the `.venv` interpreter; never system Python). The convention is the guarantee; the PATH hook is a best-effort accelerator (Git-Bash only — the PowerShell-tool fallback, an absolute-path `settings.local.json` `env`, is a documented manual step per the verified Claude Code settings/hook semantics).
+
+**B — embed `pwagent` (Playwright CLI) in the install.** Vendored the existing `~/.claude/tools/pwagent/` tool (v0.2.0) into the repo at `tools/pwagent/` — `pwagent.cmd`, `pwagent.ps1`, `requirements.txt`, `src/pwagent/{__init__,__main__,cli,actions,session,errors}.py` — **excluding `.venv/`/`__pycache__/`/`tests/`**. Added all 9 source files to `install-manifest.json` so the installer ships them to `~/.claude/tools/pwagent/`. The tool is **self-provisioning** (`pwagent.ps1` builds its own venv + downloads Chromium + guards on a requirements hash on first run), so the installer does not re-implement that — a new **`setup-pwagent`** subcommand + a consent-gated offer during `install`/`update` adds the dir to the **User PATH** (idempotent) and **warms** it via `pwagent selftest`. Non-interactive runs print the manual steps unless `--with-pwagent` is passed; everything is fail-soft (no Python 3.12 / no network → manual step, install still succeeds).
+
+- Tests: `test-prism-bootstrap` +6 (ensure-venv) → 44/44; new `test-prism-pwagent-install` (manifest ships all 9 source files + never a `.venv`; `setup-pwagent --dry-run`). No shipped behavior runs pip/Chromium/PATH edits without consent.
+
 ## [5.2.14] - 2026-06-04
 
 Test fix (Windows portability — surfaced by running the FULL state suite during the v5.2.13 ship-readiness check; this test was red at session start `1c93b4828`, pre-existing and unrelated to any UAT fix). `test-prism-bootstrap` :: `init-state-if-missing detect-and-adopts v3.8.9 tree` failed with `ENOENT … .claude/agents/roster.json` — but the failure was in the **test's own fixture setup**, not production code. Line 81 used `spawnSync('mkdir', ['-p', references, agents])`, a Unix-only idiom: on Windows there is no `mkdir.exe` on PATH and no `-p`, so the directories were never created and the next line's `writeFileSync(.../agents/roster.json)` threw. Production `prism-bootstrap.mjs` was never even reached.
