@@ -19,12 +19,24 @@ seat MUST be a real, rostered expert — not a persona and not a bare
 general-purpose subagent (those belong only to the role-play fast mode). For
 each seat (3–5, with distinct opposed biases):
 
-1. **Match the roster first** (project roster + global). A fitting specialist →
-   REUSE it. Reuse amortises creation cost and — because experts LEARN — each
-   reuse starts sharper than the last.
-2. **Else create + PERSIST.** Spawn `@agent-factory` to research and create the
-   expert; it registers in the roster (auto via `prism-agent-write-register.mjs`).
-   It is now reusable on the next panel — never ephemeral.
+1. **Match the roster first — but a STRONG fit, not adjacency.** A roster
+   specialist may fill a seat only when it is a STRONG fit: it declares the
+   seat's SPECIFIC sub-domain in `core_domains` (not merely an adjacent parent
+   domain), is fresh (staleness rules below), and is not weak-fit-flagged.
+   **Adjacency is NOT fitness** — an SEO specialist is not a conversion/microcopy
+   specialist; a broad "ecommerce" agent is not a "Greek-market demand-forecasting"
+   specialist. STRONG fit → REUSE it (reuse amortises cost and, because experts
+   LEARN, each reuse starts sharper). Merely adjacent → treat it as a MISS (go to
+   step 2); do NOT bend it to fit.
+2. **Else create/upgrade + PERSIST — factory-first.** When no STRONG-fit
+   specialist exists, spawn `@agent-factory` to research and CREATE the vertical
+   specialist (or `--upgrade` an adjacent agent so it genuinely covers the
+   sub-domain). It registers in the roster (auto via
+   `prism-agent-write-register.mjs`) and is reusable on the next panel — never
+   ephemeral. A generic general-purpose subagent role-scoped as a persona is
+   NEVER an acceptable fill for a vertical-expertise seat in dispatch mode — that
+   is the adjacency / generic-fill defect the FACTORY-FIRST guard blocks (see
+   "Seat metadata" below).
 3. **Experts persist AND learn.** Each panel expert carries a per-project domain
    memory: roster fields `learns: true` + `domain_memory_file` point at its
    accumulated notes. On reuse, RECALL that memory and inject it into the seat's
@@ -39,6 +51,18 @@ each seat (3–5, with distinct opposed biases):
 
 These four points are what make the panel "real, independent, reusable experts
 by default" rather than one model role-playing several voices.
+
+**Seat metadata (so the FACTORY-FIRST guard can enforce — v5.x):** when you write
+`panel.json` for a dispatched panel (`dispatch_mode:"dispatch"`), tag each
+VERTICAL/domain-expertise seat `vertical: true` and set `specialist` to the
+rostered agent's roster key (for a just-created one also set
+`seat_source: "factory-created"`). Leave generic cross-cutting archetype seats
+(Architect, Skeptic, Security, Performance, …) untagged. `hooks/prism-panel-guard.mjs`
+then blocks (hard) or warns (soft) any `vertical: true` seat that resolves to no
+rostered specialist or to a `general-purpose` subagent — the adjacency/generic-fill
+defect. Roleplay fast mode is exempt (it is the sanctioned low-stakes escape).
+The guard enforces only the FLOOR (a durable specialist exists); the STRONG-vs-adjacent
+fit judgment is yours, per step 1 above.
 
 ### Expert learning write-back (v5.x — reuse the context-adapters convention)
 
@@ -99,8 +123,11 @@ For the current step's domain, check:
                "automate a browser flow" → browser-use (if installed)
    → If the user has the tool installed: route step there.
    → If not: present "Install {tool} for this step?" via /prism-recommend.
-   → If decline: fall through to agent hiring flow with a cheap subagent
-     (Sonnet with explicit review criteria — don't default to Opus).
+   → If decline: for a WORKFLOW/TOOLING need, fall through to the agent hiring
+     flow with a cheap subagent (Sonnet with explicit review criteria — don't
+     default to Opus). For a VERTICAL/domain-expertise need, a generic cheap
+     subagent is NOT an acceptable substitute — go factory-first (create the
+     durable specialist) per the panel-seat sourcing rule above.
 
 3. Domain-expertise need (not workflow/tooling)?
    → Agent hiring flow is correct. Proceed with existing logic.
@@ -163,8 +190,11 @@ cannot prompt the human), this offer MUST happen here in the parent turn:
        Recommend B for most domains. Recommend C if you suspect fundamental
        changes (new regulations, paradigm shifts, major tool replacements)."
 
-  If agent exists + domain gaps (needed for THIS task but not in agent's domains):
-    → spawn @agent-factory for targeted upgrade, wait, hire
+  If agent exists but is only an ADJACENT fit — it does not declare THIS task's
+  specific sub-domain in core_domains (the STRONG-fit test in panel-seat sourcing),
+  or it needs domains not yet in its core_domains:
+    → spawn @agent-factory for a targeted upgrade (or a new specialist), wait, hire.
+      Adjacency is not fitness — do not hire an adjacent agent for a vertical seat.
 
 **Quick refresh protocol (Option B):**
   Factory receives: agent name + "what changed since {date}" scope

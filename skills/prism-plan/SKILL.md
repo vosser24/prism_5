@@ -35,9 +35,14 @@ Ask three questions:
    NO → LIGHTWEIGHT or FULL-ROUTINE (Claude can handle it)
    YES → go to question 2
 
-2. Does an agent with this expertise EXIST in the roster?
+2. Does a STRONG-FIT agent for this expertise exist in the roster?
+   (STRONG = declares THIS task's SPECIFIC sub-domain, not merely an adjacent
+   parent domain. Adjacency is not fitness — a broad "ecommerce" agent is not a
+   "Greek-market demand-forecasting" specialist.)
    YES → FULL-ROUTINE (hire the agent, orchestrator executes)
-   NO → FULL-NOVEL (blueprint debates approach, factory creates agent)
+   NO (none, OR only an adjacent agent) → FULL-NOVEL (blueprint debates approach,
+       factory creates/upgrades the durable specialist). Never bend an adjacent
+       agent or fill a vertical-expertise need with a generic subagent.
 
 3. Does the task CHANGE the fundamental approach of something we've done before?
    YES → FULL-NOVEL even if agent exists (new architecture = new challenge)

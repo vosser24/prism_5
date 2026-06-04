@@ -116,9 +116,13 @@ Synthesize before assembling the expert panel.
 4. Each picked skill/tool/MCP REPLACES what would otherwise be a hardcoded persona
 5. `notebooklm list` — surface any per-agent research archives for picked agents
 
-**Fallback rule**: hardcoded personas ("Architect", "Security engineer", etc.) are used ONLY when no indexed resource scores ≥ 3 for a given domain. When falling back, state it explicitly in the panel output:
+**Fallback rule**: hardcoded personas ("Architect", "Security engineer", etc.) are used ONLY when no indexed resource scores ≥ 3 for a given domain — AND only for **generic cross-cutting seats** (Architect, Security, Performance, Cost, Skeptic, …). For a **VERTICAL/domain-expertise seat** (SEO, Greek e-commerce, clinical, conversion/microcopy, …) a generic persona is NOT an acceptable fill: **adjacency is not fitness**. When no indexed specialist scores ≥ 3 for a vertical domain, the correct move is **factory-first** — recommend/route `agent-factory` to create the durable specialist (in a project/orchestrator session that can dispatch). State it explicitly:
 
-> *"No indexed specialist for <domain>; using generic <Architect> persona as fallback. Consider running `/prism-index` if you expected a specialist here, or `agent-factory` to create one."*
+> *"No indexed specialist for <vertical domain>. A generic persona is not an acceptable stand-in for vertical expertise — create one with `agent-factory` (or run `/prism-index` if you expected an existing specialist). Proceeding with a clearly-labelled generic persona ONLY as a stopgap for this advisory pass."*
+
+For a generic cross-cutting seat, the lighter notice still applies:
+
+> *"No indexed specialist for <domain>; using generic <Architect> persona as fallback. Consider `/prism-index`, or `agent-factory` to create one."*
 
 **If the index is empty or missing** (`roster.skills`, `roster.tools`, `roster.mcps` all `{}`), emit a loud notice at the top of the panel output: *"Resource-index not populated — hallucination risk HIGH. Run /prism-index and re-run this panel."* Then proceed with hardcoded personas, clearly labeled as such.
 

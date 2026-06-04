@@ -4,6 +4,18 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.3.0] - 2026-06-04
+
+Behavior fix (user feedback — adjudicated as **D009**, building on D007's revisit-trigger #3 "PRISM didn't spawn the factory when it should have"). A panel filled a "UX/UI pro" seat with a generic general-purpose subagent and a "Greek e-commerce" seat with an SEO agent bent into a conversion role — instead of creating durable vertical specialists via `@agent-factory`. Two parallel investigations traced the defect to three rule-level leak points, not a code bug: (1) "fitting" was never defined in panel-seat sourcing, so **adjacency passed as fitness**; (2) prism-plan's ROUTINE/NOVEL gate was a binary *existence* check (any agent declaring the domain → ROUTINE, factory unreachable); (3) the documented fallback for a missing fit was a *generic voice*, not the factory. **Principle locked: adjacency is not fitness — a seat needing top-class vertical/domain expertise is factory-first.** Does NOT reverse D007 (master still owns the invoke-or-not tree inline); only operationalizes "fitting" and adds the missing weak-fit→factory branch + a structural guard.
+
+- `skills/master-orchestrator/references/phase-0-team-assembly.md` — panel-seat sourcing rewritten: STRONG-fit (declares the seat's *specific* sub-domain) vs adjacency; "merely adjacent → MISS → factory-first, never bend it to fit"; decline-fallback split (cheap subagent OK for *tooling*, NOT for *vertical expertise*); domain-gap branch extended to adjacency; new **Seat metadata** note instructing the assembler to tag vertical seats `vertical:true` + set `specialist`/`seat_source` so the guard can enforce.
+- `skills/prism-plan/SKILL.md` — ROUTINE/NOVEL question 2 made fit-aware (STRONG-fit, not mere existence).
+- `skills/blueprint-prompt/SKILL.md` — fallback rule split: a generic persona is fine for a cross-cutting archetype seat, but a *vertical-domain* seat with no indexed specialist (score < 3) routes factory-first.
+- `skills/prism-chat/SKILL.md` — chat mode can't dispatch, but must not pass a generic voice off as vertical expertise; recommends `agent-factory` in a project session.
+- `hooks/prism-panel-guard.mjs` — new Path-B `checkFactoryFirst`: on a `dispatch_mode:"dispatch"` panel, any seat tagged `vertical:true` that resolves to no rostered agent (via `specialist`/`seat_source`) **or** to a `general-purpose` subagent is blocked (hard) / warned (soft). Fully additive — untagged seats and legacy panels are unenforced (zero false positives). Roleplay fast mode exempt. Kill switch `PRISM_DISABLE_FACTORY_FIRST=1`. The guard enforces only the FLOOR (a durable specialist exists); STRONG-vs-adjacent fit stays an orchestrator judgment.
+- Tests: `tests/v3/state/test-prism-panel-dispatch-guard.mjs` +8 factory-first cases (rostered→allow, unrostered+hard→block, general-purpose fill→block, `seat_source:factory-created`→allow, soft→advisory, untagged archetype→allow, kill switch, roleplay exempt) → **19/19**. Full state suite + audit stay green.
+- Adjudication: `docs/prism/adjudications/D009-factory-first-vertical-seats.md` (internal; `docs/` is gitignored — not distributed).
+
 ## [5.2.16] - 2026-06-04
 
 Distribution cleanup (triage of a real `prism_5` install transcript on a fresh machine — Python 3.9.10, no MSVC compiler) **plus a public-repo privacy scrub** (user request: the published repo must never carry personal identifiers). No behavioral change to the orchestrator; docs/data/portability only. Suite stays green (state **54/54**, audit **29/29**, installer verify all-PASS).

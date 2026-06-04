@@ -347,6 +347,79 @@ function checkDispatchMode(panel) {
   }
 }
 
+// v5.x — FACTORY-FIRST seat-sourcing guard (Path B). Closes the
+// "adjacency-is-not-fitness" gap (feedback 2026-06-04; D009): in a real
+// dispatched panel, a seat needing top-class VERTICAL/domain expertise must be
+// filled by a durable rostered specialist (created/upgraded via @agent-factory)
+// — NOT a generic general-purpose subagent role-scoped as a persona, and not an
+// adjacent agent bent to fit. Enforced ONLY on positions explicitly tagged
+// `vertical: true`, so it is fully additive: legacy/untagged panels are
+// unenforced (zero false positives). A tagged seat PASSES when its `agent_type`
+// is not general-purpose AND (it declares `seat_source` ∈ {factory-created,
+// rostered} OR its `specialist` resolves to a roster.agents entry). This guard
+// enforces only the FLOOR — that a real durable specialist exists; the
+// semantic "is it a STRONG fit vs merely adjacent" judgment stays with the
+// orchestrator protocol (phase-0-team-assembly.md), which a hook cannot make.
+//
+// Mode follows the panel-guard mode: soft (default) = stderr advisory +
+// continue; hard = exit 2 (block the panel write); off = skip. Only meaningful
+// in dispatch_mode="dispatch" — roleplay is the sanctioned low-stakes escape.
+// Kill switch: PRISM_DISABLE_FACTORY_FIRST=1.
+function checkFactoryFirst(panel) {
+  if (process.env.PRISM_DISABLE_FACTORY_FIRST === '1') return;
+  if (panel.dispatch_mode !== 'dispatch') return; // roleplay/absent → not enforced here
+  const mode = resolveMode();
+  if (mode === 'off') return;
+
+  const roster = loadRoster();
+  const rosterKeys = new Set(Object.keys(roster.agents || {}).map(normaliseName));
+  const resolvesToRoster = (specialist) => {
+    if (typeof specialist !== 'string' || specialist.trim() === '') return false;
+    return rosterKeys.has(normaliseName(specialist.replace(/^@/, '')));
+  };
+
+  const violations = [];
+  for (const p of (panel.positions ?? [])) {
+    if (p.vertical !== true) continue; // only explicitly-tagged vertical seats
+    const who = p.title ?? p.expert_name ?? p.specialist ?? '(unnamed)';
+    const agentType = normaliseName(p.agent_type);
+    if (agentType === 'general-purpose' || agentType === 'generic') {
+      violations.push(`"${who}" was filled by a generic ${p.agent_type} subagent — a generic subagent cannot be a durable vertical specialist`);
+      continue;
+    }
+    const seatSource = normaliseName(p.seat_source);
+    if (seatSource === 'factory-created' || seatSource === 'rostered') continue;
+    if (resolvesToRoster(p.specialist)) continue;
+    violations.push(`"${who}" (specialist ${p.specialist ? `"${p.specialist}"` : 'unset'}) does not resolve to any rostered agent`);
+  }
+
+  if (violations.length === 0) return;
+
+  const notice = [
+    `PRISM FACTORY-FIRST GUARD: a dispatched panel filled ${violations.length} vertical-expertise seat${violations.length === 1 ? '' : 's'} without a durable rostered specialist:`,
+    ...violations.map(v => `  - ${v}`),
+    `Adjacency is not fitness: a seat needing top-class vertical/domain expertise must go through @agent-factory to create (or --upgrade) a durable specialist that registers in roster.json.`,
+    `Fix: spawn @agent-factory for each flagged seat, then re-dispatch with the new specialist's roster key in position.specialist (and seat_source:"factory-created"). The sanctioned low-stakes escape is dispatch_mode:"roleplay".`,
+    `Disable: PRISM_PANEL_GUARD=off, or PRISM_DISABLE_FACTORY_FIRST=1.`,
+  ].join('\n');
+
+  appendLog({
+    ts: new Date().toISOString(),
+    event: 'panel_guard_factory_first',
+    schema_version: 1,
+    dispatch_mode: 'dispatch',
+    violations: violations.length,
+    action: mode === 'hard' ? 'deny' : 'nudge',
+    mode,
+  });
+
+  if (mode === 'hard') {
+    process.stderr.write(notice + '\n');
+    process.exit(2);
+  }
+  process.stderr.write(notice + '\n(advisory; set PRISM_PANEL_GUARD=hard to enforce)\n');
+}
+
 // ─── Path B: PostToolUse dropped-positions logger (v4.5 A3) ─────────────────
 
 // Returns the panel.json file path if the payload is a PostToolUse Write
@@ -426,6 +499,10 @@ function handleDroppedPositions(payload) {
   // v5.x — DISPATCH-MODE guard (runs first; hard structural gate that catches
   // role-play masquerading as a real dispatched panel).
   checkDispatchMode(panel);
+
+  // v5.x — FACTORY-FIRST seat-sourcing guard (adjacency-is-not-fitness, D009).
+  // Runs after dispatch_mode is validated; enforces only vertical:true seats.
+  checkFactoryFirst(panel);
 
   // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
   checkScope(panel);

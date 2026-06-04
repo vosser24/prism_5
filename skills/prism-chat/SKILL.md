@@ -259,6 +259,15 @@ archetypes only when no default fits — and say so.
 The **Skeptic** is mandatory on NOVEL panels. On COMPLEX panels it's
 optional but helpful.
 
+**Vertical seats vs generic archetypes.** The first ten rows are GENERIC,
+cross-cutting voices — fine to play directly. The **Domain Expert** row is
+different: when a seat needs genuine top-class VERTICAL knowledge (a specific
+market, regulation, product, or stack), one Claude voicing it is a stopgap, not
+a durable specialist — **adjacency is not fitness**. Say so explicitly, and
+recommend the user create a real specialist via `agent-factory` in a Claude Code
+project session (chat mode has no dispatch primitive). Never pass a generic
+voice off as vertical expertise.
+
 ---
 
 ## 7. Guardrails
