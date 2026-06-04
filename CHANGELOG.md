@@ -26,10 +26,10 @@ Distribution cleanup (triage of a real `prism_5` install transcript on a fresh m
 
 **C — repoint `INSTALL.md` §3–6 to the real installer.** The manual procedure referenced three files that don't exist (`manifest.json`, `scripts/install-merge.mjs`, `scripts/verify.mjs`) and a `/plugin install prism@PRISM` path with no marketplace manifest. Slimmed §3–6 to the actual one-pass flow — `node tools/prism-installer.mjs install` (backup → copy → roster-merge → settings deep-merge → verify, idempotent) then `node tools/prism-installer.mjs verify` — fixed the line-3 blockquote to point at `install.ps1`/`install.sh`, renumbered the trailing optional-test/summary sections, and corrected the stale `~/.claude/tools/test-prism-gaps.mjs` path (not in the manifest) to the repo-local `tools/test-prism-gaps.mjs`.
 
-**D — privacy scrub (public repo must carry no personal data).** Removed personal identifiers from tracked (therefore published) files:
-- `statusline-command.sh` + `tools/prism-monitor/refresh-statusline-cache.sh` — hardcoded `/c/Users/ServosY/...` paths → `$HOME/...` (also a portability bug fix; these were broken for every other user).
-- `tools/prism-monitor/data_reader.py` + `tools/lib/prism-flag-file.mjs` — `ServosY` / real project path `Y:\Documents\utilities_projects\prism_3` in comments → generic placeholders.
-- `skills/video-production/SKILL.md`, `commands/prism-app-expert.md`, `tests/v3/audit-real-prompts.md` — employer-revealing example names ("Praktiker"/"praktiker.gr"/"dpharmacy") → a fictional "Acme Storefront" / `acme-shop` / `demo-pharmacy`. The public GitHub handle `vosser24` (clone/install URLs, plugin author, LICENSE copyright) is intentionally retained — it is the repo owner identity required for install to work, a different class from a username/email/employer.
+**D — privacy scrub (public repo must carry no personal data).** Removed personal identifiers from tracked (therefore published) files, replacing them with generic placeholders:
+- `statusline-command.sh` + `tools/prism-monitor/refresh-statusline-cache.sh` — hardcoded absolute per-user home paths → `$HOME/...` (also a portability bug fix; these were broken for any other user).
+- `tools/prism-monitor/data_reader.py` + `tools/lib/prism-flag-file.mjs` — a developer username and a real local project path in code comments → neutral placeholders.
+- `skills/video-production/SKILL.md`, `commands/prism-app-expert.md`, `tests/v3/audit-real-prompts.md` — employer-/client-revealing example app names → a fictional "Acme Storefront" / `acme-shop` / `demo-pharmacy`. The public GitHub handle `vosser24` (clone/install URLs, plugin author, LICENSE copyright) is intentionally retained — it is the repo-owner identity install needs, a different class from a username/email/employer.
 
 ## [5.2.15] - 2026-06-04
 
