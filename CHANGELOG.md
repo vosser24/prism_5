@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.2.11] - 2026-06-04
+
+Fix (UAT prompt 28 — the prompt designed to prove dangerous tokens in a commit message don't over-fire the *safety* gate surfaced an **adjacent over-fire in a different hook**). Asking the master to `git commit --allow-empty -m '… git push --force, rm -rf / …'` correctly slipped past `prism-safety` (the v5.x de-quote fix), but `prism-prepush-review` then fired its "about to push branch" nudge — on a **commit**, with no push happening. Root cause: the prepush matcher tested the **raw** command, so a `git push` token *mentioned inside the quoted `-m` message body* matched. Same quoted-token over-fire class `prism-safety.mjs` already fixed, in a hook that never got the treatment.
+
+- `hooks/prism-prepush-review.mjs` — match against a **de-quoted view** (strip heredoc bodies + single/double-quoted argument contents) before the `git push` test, mirroring `prism-safety.mjs`. **No false negative is possible:** every push the matcher catches sits at an unquoted boundary (start / space / `;` / `&&` / `||`), so it never lives inside a stripped span — a compound `git commit -m '…' && git push` still nudges; only a push *quoted as message text* is now ignored. The `--dry-run` / `--help` carve-outs run on the same de-quoted view.
+- Tests: `test-prism-git-hygiene` +2 — a commit message that merely mentions `git push --force` is silent; a compound real push after `&&` still nudges (27/27).
+- Scope note: pushes hidden inside `bash -c "git push"` were never matched by the boundary class to begin with (detecting them would be a new feature, out of scope); de-quoting changes nothing there.
+
 ## [5.2.10] - 2026-06-04
 
 Test fix (latent regression from v5.2.4, caught by running `/prism-audit-full` during the v5.2.9 ship). The audit-runner scenario `DSP-001` still asserted "Parent **Read** on a haiku turn → deny (exit 2)" — but v5.2.4 deliberately added `Read/Grep/Glob/LS/NotebookRead` to the dispatch-guard's `ALWAYS_ALLOW` (read-only tools pass pre-dispatch). v5.2.4 updated the *unit* test (`test-prism-panel-deadlock`) but missed the audit-runner's copy of the old contract, so `DSP-001` had been failing the audit (28/29) since v5.2.4 (the unit suites were run each release, the audit-runner was not).

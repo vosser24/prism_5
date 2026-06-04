@@ -41,16 +41,31 @@ try {
   try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
 
   const cmd = (input.tool_input && input.tool_input.command) || '';
+
+  // v5.2.11 OVER-FIRE fix (UAT prompt 28, 2026-06-04): match against a de-quoted
+  // view, not the RAW command. A `git push` token MENTIONED inside a quoted
+  // commit message (`git commit -m '... git push --force ...'`) used to trip the
+  // nudge even though no push was happening — the same quoted-token over-fire
+  // class prism-safety.mjs already fixed. Stripping heredoc bodies + quoted-arg
+  // contents removes the false positive without any false negative: every push
+  // the matcher catches sits at an UNQUOTED boundary (start / space / ; / && / ||),
+  // so it never lives inside a stripped span (a compound `... && git push` still
+  // matches). Pushes hidden inside `bash -c "git push"` were never matched by the
+  // boundary class to begin with, so de-quoting changes nothing there.
+  const scan = cmd
+    .replace(/<<-?\s*(['"]?)(\w+)\1[\s\S]*?\n[ \t]*\2(?=\s|$)/g, ' ')  // heredoc bodies
+    .replace(/'[^']*'|"[^"]*"/g, ' ');                                  // quoted arg bodies
+
   // Match git push variants. Conservative — only the canonical forms.
   // We deliberately MISS unusual forms like aliases; Phase A goal is
   // catch the 99% case, not the 100% case.
-  if (!/(^|\s|;|&&|\|\|)git\s+(-\S+\s+)*push(\s|$)/i.test(cmd)) process.exit(0);
+  if (!/(^|\s|;|&&|\|\|)git\s+(-\S+\s+)*push(\s|$)/i.test(scan)) process.exit(0);
   // Exclude --dry-run: a preview push doesn't need a code-review gate.
   // Same for --help (e.g., `git push --help` is doc-lookup, not a push).
   // \b doesn't anchor before "--" (dash is non-word and so is space), so use
   // an explicit boundary class.
-  if (/(?:^|\s)--dry-run(?:\s|$)/.test(cmd)) process.exit(0);
-  if (/(?:^|\s)--help(?:\s|$)/.test(cmd)) process.exit(0);
+  if (/(?:^|\s)--dry-run(?:\s|$)/.test(scan)) process.exit(0);
+  if (/(?:^|\s)--help(?:\s|$)/.test(scan)) process.exit(0);
 
   const cwd = input.cwd || process.cwd();
 

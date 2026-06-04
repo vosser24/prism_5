@@ -425,6 +425,47 @@ test('prepush-review: silent on commands that merely contain "push" but aren\'t 
   }
 });
 
+test('prepush-review: silent when a commit message merely MENTIONS "git push" (over-fire fix, UAT prompt 28)', () => {
+  const home = makeHome();
+  const cwd = makeGitDir('pp-2c');
+  try {
+    // A documentation commit whose -m body cites the very patterns this repo
+    // blocks — including the literal text "git push --force". No push is
+    // happening; the prepush nudge must NOT fire. (Pre-fix it scanned the RAW
+    // command and matched the quoted token — same over-fire class the safety
+    // gate fixed via de-quote.)
+    const r = runHook(HOOK_PREPUSH, {
+      home, cwd,
+      input: {tool_input: {command:
+        `git commit --allow-empty -m 'docs: refuse dangerous patterns' ` +
+        `-m 'blocks rm -rf /, git push --force, mkfs.* and dd if=*of=/dev/*'`}, cwd},
+    });
+    assertEq(r.status, 0, r.stderr);
+    assertEq(r.stdout, '', 'commit message mentioning "git push" must not nudge');
+  } finally {
+    rmSync(home, {recursive: true, force: true});
+    rmSync(cwd, {recursive: true, force: true});
+  }
+});
+
+test('prepush-review: STILL nudges on a compound real push (unquoted push survives de-quote)', () => {
+  const home = makeHome();
+  const cwd = makeGitDir('pp-2d');
+  try {
+    const r = runHook(HOOK_PREPUSH, {
+      home, cwd,
+      input: {tool_input: {command: `git commit -m 'ship it' && git push origin main`}, cwd},
+    });
+    assertEq(r.status, 0, r.stderr);
+    assert(r.stdout && r.stdout.length > 0, 'a real push after && must still nudge');
+    const obj = JSON.parse(r.stdout);
+    assertEq(obj.hookSpecificOutput.permissionDecision, 'ask');
+  } finally {
+    rmSync(home, {recursive: true, force: true});
+    rmSync(cwd, {recursive: true, force: true});
+  }
+});
+
 test('prepush-review: review-done gate-mode flag suppresses the ask', async () => {
   const home = makeHome();
   const cwd = makeGitDir('pp-3');
