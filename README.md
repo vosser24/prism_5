@@ -18,43 +18,38 @@ PRISM enforces all of this with **guards** — deterministic hooks that block th
 
 ---
 
-## Quick start — a brand-new project
+## Quick start
 
-Once PRISM is installed on your machine (see [Installation](#installation)), onboarding any project takes one command:
+**Most of PRISM is automatic.** Once installed, tier routing, the expert panel, the guards, and project-master memory all fire on their own — you don't run a command for them. There are only **three things you actively do:** onboard a project once, then a tiny daily loop.
 
 ```text
 cd your-project
-# then, in your coding session:
-/prism-bootstrap
+/prism-bootstrap                 # ONCE per project — full setup (idempotent)
+
+# …then, day to day:
+/prism-recall  <question>        # ask anything PRISM has learned about this project
+/prism-clean                     # capture decisions/lessons BEFORE you /clear
 ```
 
-That runs the full 7-phase setup (idempotent — safe to re-run):
+`/prism-bootstrap` runs the full 7-phase setup (safe to re-run):
 
 | Phase | What it does |
 |---|---|
 | identity | Audits/creates `CLAUDE.md` operating rules |
-| structure | Scaffolds `.claude/` + `docs/prism/` + `tasks/` |
+| structure | Scaffolds `.claude/` + `docs/prism/` + `tasks/`; for **Python projects**, creates a project-root `.venv` and adds a rule to run Python under it |
 | plugin-validate | Sanity-checks installed plugins |
 | discovery | Scans codebase + DB + API into compact reference files |
 | roster | Reconciles available specialist agents |
 | **project-master** | Creates `master-<slug>` — your project's persistent solution-architect (default-on) |
 | health | Verifies wiring; green/yellow/red report |
 
-After bootstrap:
-
-```text
-/prism-recall   <question>     # ask anything PRISM has learned about this project
-/prism-clean                   # capture durable decisions/lessons before you /clear
-/prism-sync                    # refresh the project index after big changes
-```
-
-That's the whole daily loop. Everything below is reference.
+> **Python projects:** if the folder is empty/greenfield, bootstrap asks *"Will this be a Python project?"* and remembers your answer — so a still-empty folder you've declared Python stays governed by its `.venv`.
 
 ---
 
 ## Installation
 
-**Requirements:** Node.js ≥ 18, `git`, and an agentic coding CLI (the `claude` command) available on your PATH. Optional: `python` ≥ 3.10 and the `notebooklm` / `gh` CLIs for the cross-project knowledge and research tiers.
+**Requirements:** Node.js ≥ 18, `git`, and an agentic coding CLI (the `claude` command) on your PATH. Optional: `python` ≥ 3.10 (and 3.12 for the bundled `pwagent` tool), plus the `notebooklm` / `gh` CLIs for the cross-project knowledge and research tiers.
 
 ### 1. Clone
 
@@ -92,6 +87,7 @@ Every check should print `PASS`. If any print `FAIL`, re-run the installer.
 | `--dry-run` | Print what would happen; change nothing |
 | `--no-backup` | Skip backing up existing settings/roster |
 | `--quiet` | Suppress progress output |
+| `--with-pwagent` | During install/update, also wire the bundled `pwagent` Playwright tool (PATH + first-run provisioning) without prompting |
 | `--home <path>` | Override the install HOME (for testing) |
 
 ### Upgrade an existing install
@@ -113,10 +109,7 @@ bash scripts/uninstall.sh --purge    # actually remove
 .\scripts\uninstall.ps1 -Purge       # actually remove
 ```
 
-To restore a backup taken during install:
-```powershell
-.\uninstall.ps1 -RestoreBackup "<your .prism-install-backup-… path>"
-```
+See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient-state reset → full uninstall → reinstall) and the backup-restore flag.
 
 ---
 
@@ -124,77 +117,103 @@ To restore a backup taken during install:
 
 | Capability | What it does |
 |---|---|
-| **Tier routing** | A keyword-floor classifier scores every prompt and routes it to `haiku` / `sonnet` / `opus`. Trivial lookups stay cheap; genuine engineering gets the model it needs. You can override per-prompt with `!opus-force:`. |
+| **Tier routing** | A keyword-floor classifier scores every prompt and routes it to `haiku` / `sonnet` / `opus`. Trivial lookups stay cheap; genuine engineering gets the model it needs. Override per-prompt with `!opus-force:`. |
 | **Adversarial expert panel** | Novel-architecture / migration / multi-option prompts (or an explicit "summon the panel") convene a panel of specialist agents that challenge each other before a synthesized plan is returned. |
-| **Dispatch guard** | Enforces the dispatch pattern — heavy work is farmed out to subagents instead of being run directly in the expensive main loop. |
+| **Dispatch guard** | Enforces the dispatch pattern — heavy work is farmed out to subagents instead of being run directly in the expensive main loop. (Read-only inspection passes through; only mutations are gated.) |
 | **Mutation guard** | Blocks direct file mutation from the main loop on non-trivial turns, steering edits through reviewed subagents. |
-| **Safety gate** | Blocks genuinely dangerous shell commands (`rm -rf /`, `curl … \| bash`, `DROP TABLE`, force-push) while allowing routine ones (`rm -rf ./build`). Scans a de-quoted view so a dangerous token merely *mentioned* in data doesn't trip it. |
+| **Safety gate** | Blocks genuinely dangerous shell commands (`rm -rf /`, `curl … \| bash`, `DROP TABLE`, force-push) while allowing routine ones (`rm -rf ./build`). Scans a de-quoted view so a dangerous token merely *mentioned* in a commit message or data doesn't trip it. |
 | **Project-master memory** | Each project gets a `master-<slug>` agent whose `MEMORY.md` router carries forward recent decisions, lessons, and a session log — auto-injected at the start of every subagent so work resumes already informed. |
 | **Two-mode session memory** | If the optional `claude-mem` tier is present it owns ambient capture; otherwise PRISM's native nudge + `/prism-clean` fold keeps a durable record. Nothing is lost either way. |
 | **Cross-project knowledge index** | An opt-in, offline BM25 + re-rank index over your adjudications / lessons / plans, queryable with `/prism-recall --cross-project`. |
+| **Python venv discipline** | For Python projects, bootstrap provisions a project-root `.venv` and records a rule to run Python under it (no system Python). |
+| **pwagent (optional)** | A bundled Playwright CLI that keeps a Chromium alive across calls for on-demand DOM / text / a11y-snapshot / screenshot / network dumps. Self-provisions its own isolated venv on first run. See the FAQ. |
 | **Agent factory + roster** | Specialist agents are created on demand, registered in a roster, and reused across sessions; `/prism-roster` and `/prism-retire` manage the talent pool. |
 
 ---
 
 ## Command reference
 
-Every command, grouped by workflow, with a concrete use case. Run `/prism-help` in-session for the live index.
+Run `/prism-help` in-session for the live index. Commands are grouped by **when you reach for them**.
 
-### Setup
+### 🚀 Onboarding — run when setting PRISM up on a project (or a new machine)
 
-| Command | Use case | Key flags |
+| Command | What it does | Key flags |
 |---|---|---|
-| `/prism-bootstrap` | Run **once on any new or freshly-cloned project** to fully initialize PRISM through the 7-phase machine. Idempotent. | `--dry-run`, `--interactive`, `--force`, `--skip-discover`, `--no-master`, `--no-telemetry` |
-
-### Daily
-
-| Command | Use case | Key flags |
-|---|---|---|
-| `/prism-sync` | Run weekly or after significant changes to refresh PRISM's discovery references, reconcile the roster, and re-check health. | `--smart-drift` |
-| `/prism-clean` | Run **before `/clear` or at session end** — applies a 5-level importance classifier and writes durable adjudications/lessons/smoke docs, folding a one-line summary into the project-master memory. | `--allow-l5-skip` |
-| `/prism-recall <query>` | Ask anything PRISM has learned: *"what was the decision on the auth middleware?"*, *"total spend today?"*. Auto-routes between semantic, session-state, and metrics tiers. | `--cross-project`, `--json`, `--verbose`, `--tier 1\|2\|3`, `--no-rerank` |
-
-### Project-master
-
-| Command | Use case | Key flags |
-|---|---|---|
-| `/prism-deep-dive` | Create or refresh the per-project `master-<slug>` agent (bootstrap creates it by default; run directly to `--refresh` its memory or `--upgrade` its body after big changes). | `--refresh`, `--upgrade <slug>` |
-
-### Agent management
-
-| Command | Use case | Key flags |
-|---|---|---|
-| `/prism-app-expert <app>` | Before a UI/screenshot/video task or after a big app refactor, create a specialist that knows one application as a power user. | `--update`, `--list` |
-| `/prism-roster` | Inspect the available talent pool; use `--reconcile` to register agent files created outside the factory. | `--by-domain`, `--team <id>`, `--reconcile` |
-| `/prism-retire @agent` | Cleanly archive a stale or wrong specialist — removes its directory and roster entry atomically. | — |
+| `/prism-bootstrap` | **The one command to start.** Runs the full 7-phase init on a new or freshly-cloned project — identity, scaffold (+ `.venv` for Python), discovery, roster, project-master, health. Idempotent; safe to re-run. (For Python projects it asks once whether to create a `.venv`.) | `--dry-run`, `--force`, `--skip-discover`, `--no-master`, `--no-telemetry` |
+| `/prism-deep-dive` | Create or refresh the per-project `master-<slug>` agent. Bootstrap creates it by default; run directly to `--refresh` its memory or `--upgrade` its body after big changes. | `--refresh`, `--upgrade <slug>` |
 | `/prism-recommend` | After bootstrap, see which optional external tools actually fit this project's stack (fit-scored). | `--check`, `--re-check <tool>`, `--include-optional` |
-| `/prism-uninstall-cleanup` | Run before removing PRISM-as-plugin to clear agents that were factory-created under the plugin. | `--dry-run`, `--mode=remove-all\|keep-all` |
+| `/prism-deps` | On a fresh machine, find and install optional dependencies (ffmpeg, playwright, `gh`, `jq`, …). | `--check`, `--list` |
+| `/prism-help` | Don't know which command to run? The curated, by-workflow index. | — |
 
-### Validation & health
+### 🔁 Daily — your everyday loop
 
-| Command | Use case | Key flags |
+> Tier routing, the panel, the guards, and memory injection are **automatic** — no command needed. These are the few you actively run.
+
+| Command | What it does | Key flags |
 |---|---|---|
-| `/prism-doctor` | Use when routing/guards *feel* wrong — symptom-driven diagnostic that proposes exactly one fix per finding and confirms before applying. | — |
-| `/prism-health` | Onboarding a new machine or post-upgrade: confirm core install, roster, tools, and dependencies are green. | `--quick`, `--tools`, `--agents`, `--project` |
+| `/prism-recall <query>` | Ask anything PRISM has learned: *"what was the decision on the auth middleware?"*, *"total spend today?"*. Auto-routes between semantic, session-state, and metrics tiers. | `--cross-project`, `--json`, `--verbose`, `--tier 1\|2\|3`, `--no-rerank` |
+| `/prism-clean` | **Run before `/clear` or at session end.** Applies a 5-level importance classifier and writes durable adjudications/lessons/smoke docs, folding a one-line summary into the project-master memory. | `--allow-l5-skip` |
+| `/prism-sync` | After significant changes (or weekly): refresh discovery references, reconcile the roster, and re-check health. | `--smart-drift` |
+| `!opus-force:` *(prefix, not a command)* | Prepend to any prompt to force the `opus` tier for that one turn (e.g. `!opus-force: just give me a one-liner`). | — |
+
+### 🛠 Maintenance — periodic upkeep & when something feels off
+
+| Command | What it does | Key flags |
+|---|---|---|
+| `/prism-health` | First stop when onboarding a new machine or post-upgrade: confirm core install, roster, tools, and dependencies are green. | `--quick`, `--tools`, `--agents`, `--project` |
+| `/prism-doctor` | When routing/guards *feel* wrong — symptom-driven diagnostic that proposes exactly one fix per finding and confirms before applying. | — |
 | `/prism-audit` | Fast pre-commit hygiene/security scan of PRISM's own config surfaces (secrets, YAML integrity, roster, hook syntax). | `--fix`, `--quick`, `--severity high` |
 | `/prism-audit-full` | Before tagging a release or after adding a hook — deep end-to-end audit that exercises every hook path and produces a timing/coverage report. | (interactive) |
 | `/prism-validate-plugins` | After installing/updating any plugin, catch broken hooks, missing manifests, and skill-name conflicts (report-only). | — |
-| `/prism-deps` | On a fresh machine or before media work, find and install optional dependencies (ffmpeg, playwright, `gh`, `jq`, …). | `--check`, `--list` |
-
-### Telemetry (local-only, opt-in)
-
-| Command | Use case | Key flags |
-|---|---|---|
-| `/prism-telemetry` | Enable local routing/cost telemetry, inspect tier distribution and guard fire-rates, or export an anonymized rollup. **No network.** | `--opt-in`, `--opt-out`, `--status`, `--aggregate`, `--export <path>` |
-
-### Knowledge & maintenance
-
-| Command | Use case | Key flags |
-|---|---|---|
-| `/prism-index` | After installing a new plugin/MCP, populate the roster's skills/tools blocks so the orchestrator sees real specialists, not generics. | `--enrich`, `--dry-run`, `--skills-only` |
-| `/prism-archive @agent` | Periodically consolidate a specialist's accumulated research notes into one RAG-queryable document. | `--list`, `--threshold N`, `--cleanup` |
 | `/prism-update` | Keep the model matrix, registries, and agent bodies current on a ~15-day cadence. | — |
-| `/prism-help` | Don't know which command to run? The curated, by-workflow index. | — |
+| `/prism-index` | After installing a new plugin/MCP, populate the roster's skills/tools blocks so the orchestrator sees real specialists. | `--enrich`, `--dry-run`, `--skills-only` |
+| `/prism-roster` | Inspect the talent pool; `--reconcile` registers agent files created outside the factory. | `--by-domain`, `--team <id>`, `--reconcile` |
+| `/prism-retire @agent` | Cleanly archive a stale or wrong specialist — removes its directory and roster entry atomically. | — |
+| `/prism-archive @agent` | Consolidate a specialist's accumulated research notes into one RAG-queryable document. | `--list`, `--threshold N`, `--cleanup` |
+| `/prism-app-expert <app>` | Before a UI/screenshot/video task, create a Playwright-driven specialist that knows one running app as a power user. *(For a code/domain expert, ask the project-master to spin up `@agent-factory` instead.)* | `--update`, `--list` |
+| `/prism-telemetry` | Enable local routing/cost telemetry, inspect tier distribution and guard fire-rates, or export an anonymized rollup. **No network.** | `--opt-in`, `--opt-out`, `--status`, `--aggregate`, `--export <path>` |
+| `/prism-uninstall-cleanup` | Before removing PRISM-as-plugin, clear agents that were factory-created under the plugin. | `--dry-run`, `--mode=remove-all\|keep-all` |
+
+---
+
+## FAQ
+
+**Does PRISM cost money, call home, or send my code anywhere?**
+No. The core is deterministic Node hooks + JSON manifests that run locally — no network calls, no API keys, no accounts. Telemetry is **opt-in and local-only** (`/prism-telemetry`); nothing is transmitted. PRISM influences *which model tier* your existing coding CLI uses; it doesn't make model calls itself.
+
+**Do I need any API keys?**
+No. PRISM rides on top of whatever agentic CLI you already use (`claude`). The optional cross-project research tier can use `notebooklm`/`gh` if present, but the core needs neither.
+
+**It routed my prompt to the wrong tier / I want a fuller answer.**
+Prefix the prompt with `!opus-force:` to force the top tier for that one turn. The classifier also self-corrects on genuinely complex work; the prefix is the manual override.
+
+**A guard is blocking something I want to do.**
+Guards *steer*, they don't trap. The usual fix is to do what the guard suggests — dispatch the work to a subagent (that's the intended, cheaper pattern). Read-only inspection (Read/Grep/Glob) is never blocked. If you need to bypass one deliberately, each has an env off-switch, e.g. `PRISM_DISPATCH_GUARD=off`, `PRISM_MUTATION_GUARD=off`, `PRISM_DISABLE_PREPUSH_NUDGE=1` — set it and restart the session.
+
+**Does it work on Windows?**
+Yes — PRISM is **Windows-first** (PowerShell + Git Bash both supported) and also runs on macOS/Linux. File writes go through clean UTF-8 (no BOM); the safety gate is target-aware for Windows paths.
+
+**My project suddenly has a `.venv` — what is that?**
+For Python projects, `/prism-bootstrap` creates a project-root `.venv` and adds an operating rule to run Python under it (never system Python). On an empty folder it asks first; answer `--no-python` (or decline) for non-Python projects and it won't create one.
+
+**What is `pwagent`?**
+An optional Playwright CLI bundled with PRISM. It keeps a headed/headless Chromium alive across CLI calls so you can dump a page's DOM, visible text, accessibility tree, network, or a screenshot on demand (`pwagent open <url>`, `pwagent dom`, `pwagent screenshot`, …). It ships as source and **self-provisions its own isolated venv + Chromium on first run**. Enable it with:
+```bash
+node tools/prism-installer.mjs setup-pwagent --with-pwagent
+```
+(That adds it to your PATH and warms it. Requires Python 3.12.) It is independent of your project's `.venv`.
+
+**How do I update PRISM itself?**
+`node tools/prism-installer.mjs update` upgrades the install in place (idempotent; backs up first). Separately, `/prism-update` refreshes the model matrix, registries, and agent bodies on a ~15-day cadence.
+
+**Something feels broken / off.**
+Run `/prism-health` for a wiring report, then `/prism-doctor` for a symptom-driven diagnostic that proposes one fix per finding (and confirms before applying anything).
+
+**Does PRISM overwrite my `CLAUDE.md` / settings / agents?**
+No. The installer backs up and *merges* — it preserves your roster agents, policy, and telemetry logs. `/prism-bootstrap` appends its operating-rules section if absent and never reorders your existing content.
+
+**How do I remove it?**
+See [UNINSTALL.md](UNINSTALL.md). Quick path: `bash scripts/uninstall.sh --purge` (or `.\scripts\uninstall.ps1 -Purge`). If you ran PRISM as a plugin, run `/prism-uninstall-cleanup` first.
 
 ---
 
@@ -203,7 +222,7 @@ Every command, grouped by workflow, with a concrete use case. Run `/prism-help` 
 - **Hooks** (`~/.claude/hooks/*.mjs`) — deterministic Node scripts wired to session events: a tier router on every prompt, guards on tool calls (dispatch / mutation / safety / parallel / config), and lifecycle capture on session start/stop.
 - **Skills** — the orchestration protocol (`master-orchestrator`), planning, recall, discovery, and the project lifecycle commands.
 - **Agents** — a reusable roster of specialists plus the per-project `master-<slug>`.
-- **Tools** (`tools/*.mjs`) — the deterministic engines behind the commands (bootstrap state machine, installer, knowledge indexer, recall, telemetry aggregation).
+- **Tools** (`tools/*.mjs`) — the deterministic engines behind the commands (bootstrap state machine, installer, knowledge indexer, recall, telemetry aggregation), plus the bundled `pwagent` Playwright CLI.
 - **State** — per-project under `.claude/`, machine-global under `~/.claude/`. JSON manifests, no database.
 
 ---
@@ -215,11 +234,12 @@ Every command, grouped by workflow, with a concrete use case. Run `/prism-help` 
   hooks/            # the guards + router + lifecycle hooks
   skills/           # orchestration + command skills
   agents/           # global specialist roster
-  tools/            # deterministic command engines
+  tools/            # deterministic command engines (+ tools/pwagent/)
   commands/         # slash-command definitions
 
 <your-project>/
   CLAUDE.md         # operating rules
+  .venv/            # Python projects: project-root virtualenv
   .claude/
     agents/         # master-<slug> + MEMORY.md router
     references/     # discovery output (codebase/API map)
@@ -229,13 +249,9 @@ Every command, grouped by workflow, with a concrete use case. Run `/prism-help` 
 
 ---
 
-## Uninstall
-
-See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient-state reset → full uninstall → reinstall) and flag reference.
-
 ## Contributing
 
-Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run the test suite and ensure all assertions pass.
+Issues and PRs welcome at https://github.com/vosser24/prism_master. Before submitting, run the test suite (`tests/v3/state/*.mjs` + `node tools/prism-audit-runner.mjs`) and ensure all assertions pass.
 
 ## License
 
