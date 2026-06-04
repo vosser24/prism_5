@@ -127,7 +127,25 @@ See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient-state reset
 | **Cross-project knowledge index** | An opt-in, offline BM25 + re-rank index over your adjudications / lessons / plans, queryable with `/prism-recall --cross-project`. |
 | **Python venv discipline** | For Python projects, bootstrap provisions a project-root `.venv` and records a rule to run Python under it (no system Python). |
 | **pwagent (optional)** | A bundled Playwright CLI that keeps a Chromium alive across calls for on-demand DOM / text / a11y-snapshot / screenshot / network dumps. Self-provisions its own isolated venv on first run. See the FAQ. |
-| **Agent factory + roster** | Specialist agents are created on demand, registered in a roster, and reused across sessions; `/prism-roster` and `/prism-retire` manage the talent pool. |
+| **Research-backed agent factory** | When a real domain specialist is needed, the factory **researches** it (free, via NotebookLM) into a grounded expert — not a generic persona — then registers it in the roster and reuses it across sessions. `/prism-roster` and `/prism-retire` manage the talent pool. |
+| **Expert skill toolkit** | Each expert can distil its method into reusable, versioned **skills** (`SKILL.md`) that the master equips to cheaper workers. The toolkit compounds across sessions; if a needed skill is missing, the factory's `--skill-research` finds the best existing one before authoring custom. |
+| **Knowledge-growth loop** | The master **recalls** what the project already knows before designing, and **archives** decisions/lessons after — so each session starts smarter than the last, not from zero. |
+
+---
+
+## How PRISM orchestrates complex work
+
+PRISM treats your session like a small, disciplined engineering org with one lead and a bench of specialists. When a task is more than a quick edit, this is what happens under the hood:
+
+1. **One dispatcher.** Only the session lead (the project-master / main loop) can spawn work — dispatched subagents **cannot** spawn their own (the capability is stripped at runtime, and enforced). This keeps the expensive top-level context lean and makes the flow predictable: experts advise, the lead delegates.
+2. **Reuse before build.** Before creating anything, the lead checks a **tools-registry**: if an existing tool, skill, or rostered agent already fits the step, it's used directly — no agent is spawned for work a script or an existing specialist can do.
+3. **Hire a researched expert when needed.** If genuine domain expertise is missing, the **agent-factory researches** a specialist (free, via NotebookLM) and registers it. The expert is grounded in real sources, not vibes, and persists in the roster for next time.
+4. **Experts contribute method + judgment, not hands.** A specialist returns a **rubric / worker-spec / skill** (and, if needed, authors a reusable `SKILL.md`). The lead then **equips cheaper workers** (haiku/sonnet) with that skill and **fans them out** — one per page / file / data-slice — in parallel.
+5. **Fan-out → consolidate → adjudicate.** Workers run concurrently, each writing a scoped report; the lead **merges** them; the expert **adjudicates** the consolidated result and handles the edge cases. The opus-grade brain spends its tokens on *judgment*, not mechanical fetching or repetitive scoring.
+6. **High-stakes work gets challenged first.** Novel-architecture / migration / multi-option decisions convene an **adversarial panel** (≥2 substantive challenges) before any plan is synthesized.
+7. **The project gets smarter.** Decisions, lessons, and the catch-up router are **recalled before** design and **archived after** — knowledge compounds across sessions instead of evaporating on `/clear`.
+
+The net effect: the right model on every step, expertise that's researched once and reused, and parallelism where it pays — with the expensive lead reserved for the decisions only it should make.
 
 ---
 

@@ -11,8 +11,13 @@ credentials.json
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/.prism-state.json
+.claude/.prism-turn-state.json
 .claude/scheduled_tasks.lock
 .claude/references/
+
+# Legacy + local-only dev scratch (kept on disk, not distributed)
+legacy/
+/_test_*.sh
 
 # Dev cruft
 node_modules/
