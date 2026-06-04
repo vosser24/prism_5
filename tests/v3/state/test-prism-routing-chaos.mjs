@@ -123,5 +123,31 @@ for (const cmd of [
     /orchestration command \/prism-/i.test(r.rationale || ''));
 }
 
+// ── A5: META-QUESTION SCREEN — a question ABOUT the system is not a TASK on it ──
+// (v5.2.4) An interrogative/explanatory prompt that name-drops architecture vocab
+// must NOT force the design panel; an imperative build verb co-present keeps it real.
+{
+  const r = await c('i dont understand why was through master orchestrator and not master-test-prism-5. am i wrong?');
+  check('A5 meta "why … am i wrong?" → NOT panel', r.summon_panel === false);
+}
+{
+  const r = await c('is it right to get all these blocks?');
+  check('A5 meta "is it right …?" → NOT panel', r.summon_panel === false);
+}
+{
+  const r = await c('can you explain why the orchestrator role-played the panel instead of dispatching it?');
+  check('A5 meta "explain why …" → NOT panel', r.summon_panel === false);
+}
+// Guard 1: a genuine novel-architecture BUILD request must STILL panel (no build verb in the meta set).
+{
+  const r = await c('design a new event-sourcing architecture for the ledger from scratch');
+  check('A5 guard "design … from scratch" STILL panel', r.tier === 'opus' && r.summon_panel === true);
+}
+// Guard 2: meta words + an imperative build verb co-present = real work, not screened.
+{
+  const r = await c('explain the current design, then re-architect the entire backend system');
+  check('A5 guard "explain …, then re-architect the entire … system" STILL panel', r.summon_panel === true);
+}
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

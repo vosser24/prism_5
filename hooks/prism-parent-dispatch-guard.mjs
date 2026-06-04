@@ -60,6 +60,12 @@ const ALWAYS_ALLOW = new Set([
   'ToolSearch', 'Skill', 'ScheduleWakeup', 'PushNotification',
   'EnterWorktree', 'ExitWorktree', 'Monitor', 'TeamCreate', 'TeamDelete',
   'CronCreate', 'CronDelete', 'CronList', 'TodoWrite',
+  // v5.2.4 — read-only tools always pass. Reading is how the parent PLANS (which
+  // file to inspect, what the orchestrator prompt should say). Gating these
+  // forced a throwaway subagent dispatch just to read one file and created the
+  // override catch-22 (live-repro 2026-06-04). Mutations (Edit/Write/Bash)
+  // remain gated — this only frees up inspection, not work.
+  'Read', 'Grep', 'Glob', 'LS', 'NotebookRead',
 ]);
 
 const DISPATCH_MARKERS = new Set(['Agent', 'TaskCreate']);

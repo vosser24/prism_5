@@ -114,7 +114,12 @@ test('dispatch-guard: ALLOWS Read of the .prism-turn-tier override file on a hai
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
-test('dispatch-guard: STILL denies Read of a normal file on a haiku turn (control)', () => {
+// v5.2.4: read-only tools (Read/Grep/Glob/LS/NotebookRead) pass pre-dispatch —
+// reading is how the parent PLANS (which file to inspect, what the orchestrator
+// prompt should say). Mutations (Write/Edit/Bash) stay gated. This replaces the
+// old "normal Read is denied pre-dispatch" contract, which forced a throwaway
+// subagent dispatch just to read one file.
+test('dispatch-guard: ALLOWS Read of a normal file pre-dispatch (read-only tools plan the turn)', () => {
   const home = makeHome(); const sid = 'sess-a1rc';
   try {
     seedSentinel(home, sid, haikuSentinel(sid));
@@ -122,7 +127,38 @@ test('dispatch-guard: STILL denies Read of a normal file on a haiku turn (contro
       tool_name: 'Read', session_id: sid,
       tool_input: {file_path: join(home, 'some-real-file.txt')},
     });
-    assertEq(r.status, 2, 'normal Read must still be blocked on a haiku no-dispatch turn');
+    assertEq(r.status, 0, 'read-only tools must pass pre-dispatch (parent plans by reading)');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: ALLOWS Glob/Grep/LS/NotebookRead pre-dispatch', () => {
+  const home = makeHome(); const sid = 'sess-a1ro';
+  try {
+    seedSentinel(home, sid, haikuSentinel(sid));
+    for (const tool of ['Glob', 'Grep', 'LS', 'NotebookRead']) {
+      const r = runHook(DISPATCH_GUARD, home, {
+        tool_name: tool, session_id: sid,
+        tool_input: {pattern: '**/*.js'},
+      });
+      assertEq(r.status, 0, `${tool} must pass pre-dispatch`);
+    }
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+test('dispatch-guard: STILL denies Write AND Bash to a normal file on a haiku turn (mutations gated)', () => {
+  const home = makeHome(); const sid = 'sess-a1wc';
+  try {
+    seedSentinel(home, sid, haikuSentinel(sid));
+    const w = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Write', session_id: sid,
+      tool_input: {file_path: join(home, 'some-real-file.txt'), content: 'x'},
+    });
+    assertEq(w.status, 2, 'Write of a normal file must stay gated pre-dispatch');
+    const b = runHook(DISPATCH_GUARD, home, {
+      tool_name: 'Bash', session_id: sid,
+      tool_input: {command: 'echo hi'},
+    });
+    assertEq(b.status, 2, 'Bash must stay gated pre-dispatch');
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

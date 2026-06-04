@@ -71,7 +71,7 @@ export const OPUS_SIGNALS = [
 // the orchestrator gate when these fire.
 export const PANEL_SIGNALS = [
   /\b(novel|unprecedented|greenfield|from scratch)\s+(architect|design|system|migration|pipeline)/,
-  /\b(architect|design|plan)\s+(a |an |the )?(new|entire|whole|complete)\s+(?:[\w-]+\s+){0,3}(system|app|platform|pipeline|workflow)/,
+  /\b(architect|design|plan)\s+(a |an |the )?(new|entire|whole|complete)\s+(?:[\w-]+\s+){0,3}(system|app|platform|pipeline|workflow|architecture)/,
   /\b(multi-?phase|multi-?quarter)\s+(plan|migration|rollout|redesign)/,
   /\b(expert panel|architect panel|panel of)/,
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,

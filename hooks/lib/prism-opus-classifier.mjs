@@ -174,6 +174,23 @@ function releaseSafetyScreen(prompt) {
   return null;
 }
 
+// v5.2.4 — META-QUESTION SCREEN. An interrogative/explanatory prompt ("why did
+// X happen?", "am I right that…", "explain…", "I don't understand…") is a
+// request for EXPLANATION, not a novel-architecture build request — even when
+// it name-drops architecture vocab (skills, design, coordinate). It must not
+// force the master-orchestrator design panel (DOCTRINE: a question about the
+// system != a task on the system). Clears summon_panel ONLY (tier is left to
+// the score — a question can still warrant opus for a good answer). Suppressed
+// when an imperative build verb is co-present ("design X and explain why" is
+// still real work). Live-repro 2026-06-04: "i dont understand why was through
+// master orchestrator… am i wrong?" wrongly forced a panel.
+const META_QUESTION_RE = /\b(why|how come|what makes|is it (right|correct|true|normal|expected)|am i (right|wrong|correct|missing)|are you sure|can you explain|could you explain|explain (why|how|what|the)|i (don'?t|do not) understand|help me understand|isn'?t it|shouldn'?t it)\b/i;
+const BUILD_VERB_RE = /\b(design|build|implement|create|architect|refactor|migrate|add|write|fix|set\s?up|scaffold|generate|integrate|optimi[sz]e|rewrite|port|upgrade)\b/i;
+function isMetaQuestion(prompt) {
+  const s = String(prompt || '');
+  return META_QUESTION_RE.test(s) && !BUILD_VERB_RE.test(s);
+}
+
 function keywordFloor(prompt) {
   // Sole classification path in v3.2.0.
   // Release/meta-work tokens promote to opus TIER — shipping a broken release
@@ -188,11 +205,13 @@ function keywordFloor(prompt) {
   // readiness check does not.
   const c = classifyWithScore(prompt || '', '');
   const release = releaseSafetyScreen(prompt);
+  const meta = isMetaQuestion(prompt);
+  const panel = meta ? false : !!c.summon_panel;
   if (release) {
     return {
       tier: 'opus',
-      summon_panel: !!c.summon_panel,
-      rationale: `keyword-floor release-screen: ${release} (opus; panel=${!!c.summon_panel} from signals)`,
+      summon_panel: panel,
+      rationale: `keyword-floor release-screen: ${release} (opus; panel=${panel}${meta ? ' meta-question' : ''})`,
     };
   }
   const tier = c.tier_by_score === 'haiku' && c.score > 0
@@ -200,8 +219,8 @@ function keywordFloor(prompt) {
     : (c.tier_by_score || 'sonnet');
   return {
     tier,
-    summon_panel: !!c.summon_panel,
-    rationale: `keyword-floor score=${c.score} summon_panel=${!!c.summon_panel}`,
+    summon_panel: panel,
+    rationale: `keyword-floor score=${c.score} summon_panel=${panel}${meta ? ' (meta-question screen)' : ''}`,
   };
 }
 
