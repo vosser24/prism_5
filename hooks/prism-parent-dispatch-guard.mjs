@@ -70,6 +70,75 @@ const ALWAYS_ALLOW = new Set([
 
 const DISPATCH_MARKERS = new Set(['Agent', 'TaskCreate']);
 
+// ── v5.3.2 — Read-only quick-check fast path (D-review w/ claude-master) ──────
+// A 30-second diagnostic ("is this run done? why isn't X showing?") shouldn't be
+// forced into a throwaway subagent. Let the PARENT run PROVABLY read-only Bash/
+// PowerShell probes directly. FAIL-CLOSED: anything not provably read-only falls
+// through to the normal dispatch logic (gets the usual nag/deny). This only
+// removes the dispatch nag — the mutation-guard and safety hooks are SEPARATE
+// PreToolUse hooks that fire regardless (most-restrictive wins), so a write or
+// dangerous command is still blocked. The allowlist is the real fence (mutation-
+// guard is positive-match-only and non-exhaustive — do not lean on it).
+// Kill switch: PRISM_RO_BASH_FASTPATH=off.
+const RO_FASTPATH = String(process.env.PRISM_RO_BASH_FASTPATH ?? 'on').toLowerCase() !== 'off';
+
+// Leading tokens that are read-only BY CONSTRUCTION (any segment must lead with
+// one of these, or with `git` + a read-only subcommand).
+const RO_LEADING = new Set([
+  // POSIX / Git Bash
+  'ls','cat','head','tail','wc','grep','egrep','fgrep','rg','file','stat','du','df',
+  'pwd','echo','printf','cut','basename','dirname','realpath','readlink',
+  'date','whoami','hostname','uname','which','tree','column','nl','tac','comm','diff','jq',
+  // NOTE: `sort` (-o FILE) and `uniq` (positional OUTPUT file) are deliberately
+  // NOT here — both can WRITE despite a read-only-looking leading token. Piping
+  // INTO them (`… | sort`) just costs a dispatch; safety wins.
+  // Windows native
+  'type','dir','findstr','tasklist','where','systeminfo','ver',
+  // PowerShell cmdlets + common aliases (lowercased; the guard sees raw text)
+  'get-content','gc','get-childitem','gci','get-item','get-itemproperty','select-string','sls',
+  'get-process','gps','ps','get-service','get-location','gl','measure-object','select-object','select',
+  'where-object','sort-object','format-list','format-table','ft','fl','test-path','resolve-path',
+  'get-date','get-computerinfo','get-command','gcm','get-member','gm','get-history','write-output','write-host',
+]);
+// git read-only subcommands (the 2nd token). Anything else after `git` → refuse.
+const GIT_READ = new Set([
+  'status','log','diff','show','rev-parse','describe','blame','shortlog','ls-files','ls-tree',
+  'cat-file','reflog','whatchanged','name-rev','merge-base','for-each-ref','count-objects','grep',
+]);
+// Injection / redirection / scriptblock vectors. If ANY appears → refuse (these
+// can run arbitrary code or write files past the leading-token check):
+//   > >>   redirection      |tee Tee-Object   write-to
+//   `...`  $(...)  ${...}  <(...)   command substitution
+//   {      PowerShell/awk scriptblock (e.g. `gci | ? { Remove-Item }`)
+const INJECT_RE = /(>>?|\|\s*tee\b|tee-object|`|\$\(|\$\{|<\(|\{|--output\b|-outfile\b)/i;
+
+function isReadOnlyBash(cmd) {
+  if (!RO_FASTPATH) return false;
+  if (typeof cmd !== 'string') return false;
+  const c = cmd.trim();
+  if (!c) return false;
+  if (INJECT_RE.test(c)) return false;
+  // env mutation (bash `export X=` / cmd `set X=` / PowerShell `$env:X =`)
+  if (/(^|[\s;&|])(export|set)\s+[A-Za-z_]\w*=/.test(c)) return false;
+  if (/\$env:[A-Za-z_]\w*\s*=/.test(c)) return false;
+  // Per-segment leading-token validation (compound chains: every segment must
+  // independently be read-only).
+  const segments = c.split(/;|&&|\|\||\||&|\n/).map(s => s.trim()).filter(Boolean);
+  if (!segments.length) return false;
+  for (const seg of segments) {
+    const parts = seg.split(/\s+/);
+    const tok = (parts[0] || '').toLowerCase();
+    if (!tok) return false;
+    if (tok === 'git') {
+      const sub = (parts[1] || '').toLowerCase();
+      if (!GIT_READ.has(sub)) return false;  // git WRITE subcommands refused here
+      continue;
+    }
+    if (!RO_LEADING.has(tok)) return false;
+  }
+  return true;
+}
+
 function sentinelPath(sessionId) {
   return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
 }
@@ -150,6 +219,18 @@ try {
   if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
     const fp = String(input.tool_input?.file_path || '');
     if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) process.exit(0);
+  }
+
+  // v5.3.2 — read-only quick-check fast path: a provably non-mutating Bash/
+  // PowerShell probe runs in the parent without a forced dispatch. Fail-closed
+  // (non-read-only → falls through to the normal dispatch logic below).
+  // mutation-guard + safety fire independently and still block writes.
+  if (toolName === 'Bash' || toolName === 'PowerShell') {
+    const cmd = input.tool_input?.command || input.tool_input?.cmd || '';
+    if (isReadOnlyBash(cmd)) {
+      appendLog({ts: new Date().toISOString(), event: 'dispatch_guard_ro_bash', session_id: sessionId, tool: toolName, mode: MODE});
+      process.exit(0);
+    }
   }
 
   if (ALWAYS_ALLOW.has(toolName)) {

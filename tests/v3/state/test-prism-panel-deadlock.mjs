@@ -156,9 +156,9 @@ test('dispatch-guard: STILL denies Write AND Bash to a normal file on a haiku tu
     assertEq(w.status, 2, 'Write of a normal file must stay gated pre-dispatch');
     const b = runHook(DISPATCH_GUARD, home, {
       tool_name: 'Bash', session_id: sid,
-      tool_input: {command: 'echo hi'},
+      tool_input: {command: 'echo hi > out.txt'},  // v5.3.2: a MUTATING Bash (redirect) — read-only Bash is now fast-path-exempt
     });
-    assertEq(b.status, 2, 'Bash must stay gated pre-dispatch');
+    assertEq(b.status, 2, 'mutating Bash must stay gated pre-dispatch');
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+// v5.3.2 — read-only quick-check fast path in hooks/prism-parent-dispatch-guard.mjs.
+// On a haiku/sonnet turn (work tools normally force-dispatched), a PROVABLY
+// read-only Bash/PowerShell probe must run in the PARENT (exit 0, no deny),
+// while anything not provably read-only still gets denied. FAIL-CLOSED.
+//
+// Run: node tests/v3/state/test-prism-ro-bash-fastpath.mjs
+
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const HOOK = join(__dirname, '..', '..', '..', 'hooks', 'prism-parent-dispatch-guard.mjs');
+
+let pass = 0, total = 0;
+const check = (l, c) => { total++; if (c) pass++; else console.log('FAIL: ' + l); };
+
+const SID = 'ro-fastpath-test';
+// Run the guard on a haiku turn (not dispatched, not force_opus) so work tools
+// are denied UNLESS the read-only fast path exempts them.
+function runGuard(command, toolName = 'Bash', extraEnv = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'prism-ro-home-'));
+  try {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', `.prism-turn-tier-${SID}.json`),
+      JSON.stringify({ tier: 'haiku', dispatched: false, force_opus: false, summon_panel: false, mode: 'hard' }));
+    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', ...extraEnv };
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ tool_name: toolName, tool_input: { command }, session_id: SID }),
+      encoding: 'utf-8', env, timeout: 10000,
+    });
+    return { status: r.status, out: r.stdout || '' };
+  } finally { rmSync(home, { recursive: true, force: true }); }
+}
+const exempt = (c, tool = 'Bash') => { const r = runGuard(c, tool); return r.status === 0 && !/denied/i.test(r.out); };
+const denied = (c, tool = 'Bash') => { const r = runGuard(c, tool); return r.status === 2 && /denied/i.test(r.out); };
+
+// ── EXEMPT: provably read-only probes run in the parent ──
+for (const c of [
+  'git status', 'git log --oneline -20', 'git diff HEAD~1', 'git show abc123', 'git rev-parse HEAD',
+  'ls -la', 'cat file.txt', 'head -50 log.txt', 'tail -n 50 app.log', 'wc -l x.js',
+  'grep -rn TODO src', 'rg pattern .',
+  'git log | grep fix | head -5',
+]) check(`EXEMPT: ${c}`, exempt(c));
+check('EXEMPT (PowerShell): Get-Content .\\x.log', exempt('Get-Content .\\x.log', 'PowerShell'));
+check('EXEMPT (PowerShell pipe): Get-Process | Select-Object Name', exempt('Get-Process | Select-Object Name', 'PowerShell'));
+
+// ── NOT EXEMPT: still denied (fail-closed) ──
+for (const c of [
+  'python -c "print(1)"', 'python manage.py shell -c "x"', 'node -e "x"',          // arbitrary code
+  'git commit -m x', 'git push', 'git checkout main',                               // git write
+  'cat x > out.txt', 'ls >> log.txt', 'git log | tee out.txt',                       // redirect / tee
+  'npm install', 'pip install foo',                                                   // mutators
+  'ls; rm -rf build', 'git status && python evil.py',                                // compound w/ bad segment
+  'cat $(python -c x)', 'echo `whoami`',                                              // command substitution
+  'git branch --list', 'git tag -l', 'git config --get x',  // conservative: branch/tag/remote/config can write → not fast-pathed
+  'sort -o out.txt in.txt', 'uniq in.txt out.txt',           // write-via-flag / positional output holes
+  'git diff --output=patch.txt',                              // --output writes
+]) check(`DENIED: ${c}`, denied(c));
+check('DENIED (PowerShell scriptblock): gci | ? { Remove-Item $_ }', denied('gci | ? { Remove-Item $_ }', 'PowerShell'));
+
+// ── kill switch: PRISM_RO_BASH_FASTPATH=off → even a read-only probe is denied ──
+{
+  const r = runGuard('git status', 'Bash', { PRISM_RO_BASH_FASTPATH: 'off' });
+  check('kill switch disables the fast path (git status denied)', r.status === 2 && /denied/i.test(r.out));
+}
+
+console.log(`tests passed: ${pass}/${total}`);
+process.exit(pass === total ? 0 : 1);

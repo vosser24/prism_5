@@ -128,12 +128,12 @@
       "capability": "parent_mutation_haiku_deny",
       "target_hook": "hooks/prism-parent-dispatch-guard.mjs",
       "input_event": "PreToolUse",
-      "input_payload": {"session_id": "audit-DSP-001", "tool_name": "Bash", "tool_input": {"command": "echo x"}},
+      "input_payload": {"session_id": "audit-DSP-001", "tool_name": "Bash", "tool_input": {"command": "echo x > out.txt"}},
       "setup_sentinel": {"tier": "haiku", "summon_panel": false, "dispatched": false},
       "expected_exit_code": 2,
       "expected_stdout_pattern": "DISPATCH-GUARD",
       "max_duration_ms": 500,
-      "notes": "v5.2.4: read-only tools (Read/Grep/Glob/LS) now PASS pre-dispatch — so this scenario exercises a MUTATING tool (Bash), which the guard still denies pre-dispatch on a haiku turn (exit 2). Read-only-allow is covered by tests/v3/state/test-prism-panel-deadlock.mjs."
+      "notes": "v5.2.4: read-only tools (Read/Grep/Glob/LS) PASS pre-dispatch. v5.3.2: read-only Bash/PowerShell probes ALSO pass via the read-only fast path — so this scenario uses a MUTATING Bash command (redirect to a file), which is NOT fast-path-exempt and the guard still denies pre-dispatch on a haiku turn (exit 2). Read-only Bash exemption is covered by tests/v3/state/test-prism-ro-bash-fastpath.mjs."
     },
     {
       "id": "DSP-002",

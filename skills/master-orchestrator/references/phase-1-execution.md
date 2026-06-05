@@ -80,6 +80,16 @@ the master. "Experts own planning; the master owns dispatch."
 
 ## Execution Patterns
 
+**Diagnosis budget (v5.3.2).** Investigation/diagnostic dispatches are BOUNDED:
+cap at ~15–20 tool calls, return PARTIAL findings if the cap is hit, and do NOT
+install dependencies, write throwaway scripts, or thrash on environment errors
+(note the blocker and return). A "is X done / why isn't Y showing" question is a
+quick state check — scope the sub-prompt tightly ("check ONLY these 3 things,
+answer in ≤5 lines"), don't hand it an open-ended forensic checklist. For purely
+read-only checks, prefer running the probe directly (the dispatch guard's
+read-only fast path allows non-mutating Bash/PowerShell in the parent) over
+spawning a subagent at all.
+
 Standard step (sequential): delegate with full context + "read your references/
 and lessons/" → validate result → if good: mark [x] → if bad: log correction
 to agent's lessons/improvements.md, re-delegate ONCE → if still bad: escalate.
