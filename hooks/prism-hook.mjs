@@ -202,7 +202,7 @@ try {
 
     // ─── NEW: EXPLICIT DELEGATION / PARALLEL ───
     const delegate = /\b(spawn (a |the )?subagent|delegate (this|it|the) to|run (these|them) in parallel|parallel (agents?|subagents?)|use a (haiku|sonnet|opus) (agent|subagent))\b/i;
-    if (delegate.test(ownPrompt) && shouldSuggest('delegate', 5)) {
+    if (delegate.test(ownPrompt) && shouldSuggest('delegate', 3)) {
       messages.push("PRISM: Explicit delegation detected — use Agent() tool. Multiple independent subtasks → send in a single message with multiple Agent tool uses to parallelize.");
       recordSuggestion('delegate'); matchedInvocation = true;
     }
@@ -212,18 +212,42 @@ try {
     // the explicit-delegation block above. Nudges toward batched Agent()
     // dispatch in ONE assistant message (N parallel subagents, wall-clock =
     // max(each), not sum(each)). 5-turn cooldown.
-    const parallel_enum     = /\b(these|each (of )?(the )?|all (of )?(the )?)\s*\d+\s+(files?|packages?|modules?|components?|tests?|endpoints?|repos?|PRs?|directories|services|functions?|classes|tables?|views?|queries|requests?)\b/i;
-    const parallel_multi    = /\b(run|scan|read|index|analyze|review|test|check|verify|process|audit|validate|benchmark|profile)\s+[^.?!]{0,80}\b(across|for each|for all|for every|on each|over (all|each|every))\b/i;
+    const parallel_enum     = /\b(these|each (of )?(the )?|all (of )?(the )?|both (of )?(the )?|every)\s*\d*\s*(files?|packages?|modules?|components?|tests?|endpoints?|repos?|PRs?|directories|services|functions?|classes|tables?|views?|queries|requests?|pages?|routes?|migrations?|scripts?)\b/i;
+    // Broadened verb set (v5.3.1): everyday build/fix/refactor work over multiple
+    // targets is just as parallelizable as scan/review work.
+    const parallel_multi    = /\b(run|scan|read|index|analyze|review|test|check|verify|process|audit|validate|benchmark|profile|implement|build|write|create|fix|update|refactor|add|migrate|convert|generate|translate|format|lint|document|rename)\s+[^.?!]{0,80}\b(across|for each|for all|for every|on each|in each|over (all|each|every)|in (all|both))\b/i;
     const parallel_compare  = /\b(compare|contrast|A\/B|evaluate|benchmark)\s+[^.?!]{0,80}\b(vs\.?|versus|against)\b/i;
     const parallel_list     = /\b(research|investigate|explore|look into|evaluate)\s+[A-Z][a-z]+(,\s+[A-Z][a-z]+){1,}(,?\s+(and|or)\s+[A-Z][a-z]+)?\b/;
-    const parallel_explicit = /\b(in parallel|concurrent(ly)?|simultaneously|at (the )?same time|side.?by.?side)\b/i;
+    const parallel_explicit = /\b(in parallel|concurrent(ly)?|simultaneously|at (the )?same time|side.?by.?side|one(-| )shot all)\b/i;
+    // Two or more distinct file references in one prompt (v5.3.1): a strong
+    // everyday signal that the same operation applies to independent files →
+    // batchable. Soft nudge only; occasional over-fire is harmless.
+    const fileExt = '(?:mjs|js|jsx|ts|tsx|py|md|json|ya?ml|toml|css|scss|less|html|go|rs|java|kt|rb|php|sql|sh|ps1|c|cpp|h|cs|swift)';
+    const parallel_files    = new RegExp('\\b[\\w./-]+\\.' + fileExt + '\\b[\\s\\S]{0,140}?\\b[\\w./-]+\\.' + fileExt + '\\b', 'i');
     if (
-      (parallel_enum.test(ownPrompt) || parallel_multi.test(ownPrompt) || parallel_compare.test(ownPrompt) || parallel_list.test(ownPrompt) || parallel_explicit.test(ownPrompt)) &&
+      (parallel_enum.test(ownPrompt) || parallel_multi.test(ownPrompt) || parallel_compare.test(ownPrompt) || parallel_list.test(ownPrompt) || parallel_explicit.test(ownPrompt) || parallel_files.test(ownPrompt)) &&
       !delegate.test(ownPrompt) &&   // avoid double-firing with the explicit-delegation nudge
-      shouldSuggest('parallel_opportunity', 5)
+      shouldSuggest('parallel_opportunity', 2)
     ) {
       messages.push("PRISM: Parallelizable work detected. Dispatch as MULTIPLE Agent() tool uses in a SINGLE assistant message — they run concurrently (wall-clock = max(each), not sum(each)). Sequential Agent() calls are strictly slower. Recipe: one assistant message with N Agent() tool_use blocks, one per independent subtask, each with the minimum model that clears the bar (haiku for scan/extract, sonnet for implement/review, opus only for architecture).");
       recordSuggestion('parallel_opportunity'); matchedInvocation = true;
+    }
+
+    // ─── NEW v5.3.1: PLAN-FIRST / TASK-LIST DETECTOR ───
+    // Medium-band multi-step work (3+ steps) that doesn't trip prism-plan's
+    // narrow triggers tends to "go full ladder" — execute with no visible plan.
+    // Nudge toward a TodoWrite task list first so progress is visible and steps
+    // aren't skipped. Conservative: fires only on clear multi-step markers.
+    // 3-turn cooldown. Soft (advice only).
+    const plan_then     = /\b(first\b[\s\S]{0,120}?\bthen\b|then\b[\s\S]{0,100}?\b(then|after that|finally|lastly)\b)/i;
+    const plan_numbered = /(^|\n)\s*1[.)]\s+\S[\s\S]{0,300}?\n\s*2[.)]\s+\S/;
+    const plan_explicit = /\b(multi[- ]?step|several steps|step[- ]by[- ]step|a (few|couple|number) of (things|steps|tasks)|then (also )?(add|build|write|create|set up|wire|update))\b/i;
+    if (
+      (plan_then.test(ownPrompt) || plan_numbered.test(ownPrompt) || plan_explicit.test(ownPrompt)) &&
+      shouldSuggest('plan_first', 3)
+    ) {
+      messages.push("PRISM: Multi-step work detected — before executing, lay out a TodoWrite task list (one item per step) so progress is visible, steps aren't skipped, and you can be redirected mid-flight. Mark each item done as you go. Independent steps in the list → batch them as parallel Agent() dispatches.");
+      recordSuggestion('plan_first'); matchedInvocation = true;
     }
 
     // ─── TIER 2 — MID tone ───

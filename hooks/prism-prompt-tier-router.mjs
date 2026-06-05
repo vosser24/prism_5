@@ -153,13 +153,22 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
   const isWin = process.platform === 'win32';
   let advice = `PRISM TIER ROUTER: ${tier}. ${rationale || '(no rationale)'}`;
   let emittedDispatchAdvice = false;
+  // v5.3.1: on every everyday dispatch turn, remind the main loop to BATCH
+  // independent subtasks. Only the main loop can fan out (dispatched workers
+  // have no Agent tool), and it only parallelises Agent() calls that arrive in
+  // ONE message — so the default "one dispatch per turn" silently serialises
+  // parallelisable work. This closes the everyday-path gap (the rich
+  // dispatch-shapes.md guidance only loads under a formal plan/orchestrator).
+  const parallelBatchNote = `\nPARALLEL: if this splits into 2+ INDEPENDENT subtasks (different files/targets, no shared output), dispatch them as MULTIPLE Agent() tool_use blocks in ONE message — they run concurrently (wall-clock = max(each), not sum). Don't dispatch one-at-a-time across turns. Cap 4 per batch (PRISM_PARALLEL_CAP).`;
   if (tier === 'haiku') {
     advice += `\nDispatch via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) instead of running tools directly in parent Opus.`;
     if (mode === 'hard') advice += ` Parent tools will be DENIED until you dispatch. Override: prefix user prompt with !opus-force:.`;
+    advice += parallelBatchNote;
     emittedDispatchAdvice = true;
   } else if (tier === 'sonnet') {
     advice += `\nDispatch implementation via Agent({subagent_type:'general-purpose', model:'sonnet'}). Parent Opus should orchestrate, plan, review.`;
     if (mode === 'hard') advice += ` Parent non-dispatch tools will be DENIED until you dispatch or call TaskCreate. Override: !opus-force:.`;
+    advice += parallelBatchNote;
     emittedDispatchAdvice = true;
   } else if (tier === 'opus' && summonPanel && activeMaster) {
     // v5.2.5: the active agent IS a project-master with the orchestrator skill.

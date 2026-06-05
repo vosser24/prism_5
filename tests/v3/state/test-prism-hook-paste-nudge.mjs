@@ -57,5 +57,36 @@ check('pasted transcript does NOT fire the git-worktree nudge', !/Git worktree w
 const genuine = run('please implement the settlement function with proper tests, TDD red-green first');
 check('genuine TDD request still fires the TDD nudge', /Test-driven work/.test(genuine));
 
+// ── v5.3.1: broadened parallel-opportunity detector ──────────────────────────
+// Everyday multi-target work should now trip the "Parallelizable work detected"
+// nudge so the main loop batches independent subtasks into ONE message.
+const PAR = /Parallelizable work detected/;
+check('multi-file edit fires the parallel nudge',
+  PAR.test(run('update config.js and utils.js and api.js to use the new logger')));
+check('verb + "across" fires the parallel nudge (broadened verb set)',
+  PAR.test(run('refactor the auth module across all services')));
+check('two source files fire the parallel nudge (parallel_files)',
+  PAR.test(run('implement the parser in lexer.py and emitter.py')));
+check('explicit "in parallel" fires the parallel nudge',
+  PAR.test(run('research Redis and Memcached in parallel')));
+check('single-file edit does NOT fire the parallel nudge (no over-fire)',
+  !PAR.test(run('fix the off-by-one bug in app.js')));
+check('pasted transcript does NOT fire the parallel nudge (paste dampening holds)',
+  !PAR.test(pasted));
+
+// ── v5.3.1: plan-first / task-list detector ──────────────────────────────────
+// Clear multi-step intent should nudge a TodoWrite task list before execution.
+const PLAN = /Multi-step work detected/;
+check('first/then sequence fires the plan-first nudge',
+  PLAN.test(run('first scaffold the data model, then build the API, then write the tests')));
+check('numbered list fires the plan-first nudge',
+  PLAN.test(run('do this:\n1. add the migration\n2. update the serializer\n3. add a test')));
+check('"then also add" phrasing fires the plan-first nudge',
+  PLAN.test(run('implement the export endpoint then also add rate limiting')));
+check('single-action request does NOT fire the plan-first nudge (no over-fire)',
+  !PLAN.test(run('rename the variable in app.js')));
+check('pasted transcript does NOT fire the plan-first nudge (paste dampening holds)',
+  !PLAN.test(pasted));
+
 console.log(`tests passed: ${pass}/${total}`);
 process.exit(pass === total ? 0 : 1);

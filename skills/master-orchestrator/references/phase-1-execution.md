@@ -85,6 +85,17 @@ and lessons/" → validate result → if good: mark [x] → if bad: log correcti
 to agent's lessons/improvements.md, re-delegate ONCE → if still bad: escalate.
 Pass summaries between steps, not raw output.
 
+**Equip the worker IN ITS PROMPT — don't expect a subagent to invoke skills.**
+A dispatched subagent does NOT hot-reload skills and is scoped to one task, so
+the master carries what it needs INTO the dispatch prompt: (a) the relevant
+DISCIPLINE inline — e.g. "follow red-green TDD: write the failing test first";
+"use systematic debugging: reproduce → isolate → fix → verify" — and (b) for a
+vertical procedure, the `SKILL.md` path (or its content) for the worker to
+`Read` and follow. Skill-tool invocation inside a worker is neither required nor
+reliable (no hot-reload, scoped context); injecting the skill's substance into
+the prompt is the supported mechanism. This is the same "Equip (same session)"
+rule as the panel experts' authored skills in `phase-0-team-assembly.md`.
+
 Parallel step (Agent() subagents): spawn 2-4 subagents via Agent() simultaneously.
   Each gets: specific scope, output file path, completion criteria.
   Parent waits for all, merges results, validates combined output.

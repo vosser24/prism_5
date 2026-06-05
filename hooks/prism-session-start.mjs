@@ -398,6 +398,15 @@ try {
     }
   } catch {}
 
+  // v5.3.1 — standing PARALLEL-BATCH reminder. Everyday multi-step work tends to
+  // serialise: only the main loop can fan out (dispatched workers have no Agent
+  // tool), and the rich dispatch-shapes.md guidance only loads under a formal
+  // plan/orchestrator. One concise always-on line keeps the batch-fan-out
+  // default in context from turn one. Suppress: PRISM_DISABLE_PARALLEL_REMINDER=1.
+  if (process.env.PRISM_DISABLE_PARALLEL_REMINDER !== '1') {
+    notices.push(`PRISM: when a request has 2+ INDEPENDENT subtasks (different files/targets, no shared output), dispatch them as MULTIPLE Agent() tool_use blocks in ONE message — they run concurrently (wall-clock = max(each), not sum). Only the main loop can fan out, so batch — don't serialise across turns. (Suppress: PRISM_DISABLE_PARALLEL_REMINDER=1.)`);
+  }
+
   // v5.x — surface the active PANEL MODE when overridden to role-play. Mirrors
   // the parallel-cap pattern: inject only on the non-default (roleplay) so a
   // default-"dispatch" session carries no extra token noise. Fail-open.

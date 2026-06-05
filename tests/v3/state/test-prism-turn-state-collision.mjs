@@ -110,5 +110,32 @@ test('prism-hook (UserPromptSubmit) does NOT clobber bootstrap state, writes tur
   } finally { rmSync(home, { recursive: true, force: true }); rmSync(proj, { recursive: true, force: true }); }
 });
 
+// ── v5.3.1: standing parallel-batch reminder in SessionStart context ──────────
+test('session-start emits the standing parallel-batch reminder by default', () => {
+  const { home, proj } = makeHomes();
+  try {
+    const r = spawnSync(process.execPath, [SESSION_START], {
+      cwd: proj, encoding: 'utf-8', input: JSON.stringify({ cwd: proj }),
+      env: { ...process.env, HOME: home, USERPROFILE: home }, timeout: 12000,
+    });
+    assert(r.status === 0, `exit ${r.status}: ${r.stderr}`);
+    let ctx = ''; try { ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext; } catch {}
+    assert(/dispatch them as MULTIPLE Agent/.test(ctx), 'parallel-batch reminder missing from default SessionStart context');
+  } finally { rmSync(home, { recursive: true, force: true }); rmSync(proj, { recursive: true, force: true }); }
+});
+
+test('PRISM_DISABLE_PARALLEL_REMINDER=1 suppresses the standing reminder', () => {
+  const { home, proj } = makeHomes();
+  try {
+    const r = spawnSync(process.execPath, [SESSION_START], {
+      cwd: proj, encoding: 'utf-8', input: JSON.stringify({ cwd: proj }),
+      env: { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISABLE_PARALLEL_REMINDER: '1' }, timeout: 12000,
+    });
+    assert(r.status === 0, `exit ${r.status}: ${r.stderr}`);
+    let ctx = ''; try { ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext; } catch {}
+    assert(!/dispatch them as MULTIPLE Agent/.test(ctx || ''), 'reminder should be suppressed by PRISM_DISABLE_PARALLEL_REMINDER=1');
+  } finally { rmSync(home, { recursive: true, force: true }); rmSync(proj, { recursive: true, force: true }); }
+});
+
 process.stdout.write(`tests passed: ${pass}/${pass + fail}\n`);
 process.exit(fail === 0 ? 0 : 1);
