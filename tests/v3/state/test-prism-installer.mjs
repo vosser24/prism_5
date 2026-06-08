@@ -600,6 +600,32 @@ function snapshotFiles(dir) {
   rmSync(sandbox, {recursive: true, force: true});
 }
 
+// v5.4.1: installer BOM auto-strip — a BOM-prefixed roster.json must NOT abort
+// install/update. PowerShell Set-Content/Out-File default to UTF-8 *with* BOM, so
+// a roster rewritten by a Bash/PowerShell path can carry a leading U+FEFF; the
+// installer strips it before JSON.parse so the merge still preserves user agents.
+{
+  const home = makeSandbox();
+  const skillsDir = join(home, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(skillsDir, {recursive: true});
+  const roster = {
+    schema_version: '3.1.0', version: '3.1.0',
+    agents: {'bom-user-agent': {name: 'bom-user-agent', model: 'sonnet', domain: 'custom'}},
+    skills: [], tools: [], mcps: [], index_meta: {last_indexed: '2026-01-01T00:00:00Z'}, domain_groups: {},
+  };
+  // Leading UTF-8 BOM (U+FEFF) — exactly what PowerShell's default writers emit.
+  writeFileSync(join(skillsDir, 'roster.json'), '﻿' + JSON.stringify(roster, null, 2));
+
+  const r = run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  ok('BOM1: install exits 0 with a BOM-prefixed roster (stripped, not aborted)', r.status === 0);
+  const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+  const merged = readJson(rosterPath);
+  ok('BOM1: user agent preserved through BOM-roster merge', merged && merged.agents && 'bom-user-agent' in merged.agents);
+  const raw = existsSync(rosterPath) ? readFileSync(rosterPath, 'utf8') : '';
+  ok('BOM1: rewritten roster is BOM-free (clean UTF-8)', raw.charCodeAt(0) !== 0xFEFF);
+  rmSync(home, {recursive: true, force: true});
+}
+
 // v4.5 regression: F5 — update on already-current version must not create a backup dir
 {
   const sandbox = makeSandbox();

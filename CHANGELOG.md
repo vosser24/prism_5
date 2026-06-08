@@ -4,6 +4,13 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.4.1] - 2026-06-08
+
+Installer hardening (handoff PENDING item): a leading UTF-8 BOM on `roster.json` no longer aborts `update`. PowerShell's default writers (`Set-Content`/`Out-File`/`>`) emit UTF-8 *with* BOM, so a roster touched by a Bash/PowerShell path could carry a leading U+FEFF — which made `JSON.parse` throw and tripped the installer's "roster.json is malformed; refusing to overwrite" abort, blocking the upgrade.
+
+- `tools/prism-installer.mjs` — new `stripBom()` helper applied at all four `roster.json` reads (detect, the update-time existing-roster load that previously `die()`d, the shipped-roster merge, and `verify`). A genuine BOM is stripped before parse; real corruption still surfaces (only the BOM is stripped — parse errors are not swallowed). Scoped to `roster.json`, the one PRISM file rewritten during normal operation; shipped/installer-written JSON stays clean.
+- Tests: `test-prism-installer.mjs` +3 (BOM-prefixed roster → install exits 0, user agent preserved through merge, rewritten roster is BOM-free). Verified deterministically via an isolated single-install check; the full installer suite's integration tests flake under batch/SMB load (orthogonal, pre-existing — re-run standalone to confirm green).
+
 ## [5.4.0] - 2026-06-08
 
 Friction fix (D010 §6, queued from the v5.3.x latency arc): the mutation-guard hard-blocked the **clean Edit/Write/MultiEdit tools** in the parent (Opus) context, citing a Windows UTF-8 BOM hazard — but that rationale only applies to Bash/PowerShell file-writes; the Edit/Write tools emit clean UTF-8 and are the recommended path. Blocking them was the single biggest source of everyday friction and duplicated the dispatch-guard's tier gating (it even blocked `/prism-clean`'s own artifact writes). Re-scoped with an adversarial enforcement-surface review by **@claude-master** (chose full-removal over tier-aware: option b would just double-gate what the dispatch-guard already owns, and both fail open identically on a missing tier file).

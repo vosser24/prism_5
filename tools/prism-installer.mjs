@@ -163,6 +163,16 @@ function readLineFromStdin() {
   }
 }
 
+// v5.4.1: strip a leading UTF-8 BOM (U+FEFF) before JSON.parse. roster.json is
+// the one PRISM file rewritten during normal operation (agents added/removed);
+// a Bash/PowerShell write path (Set-Content/Out-File default to UTF-8 *with*
+// BOM) can leave a leading BOM that makes JSON.parse throw — which previously
+// ABORTED `update` (the "roster.json is malformed; refusing to overwrite" die).
+// Stripping it makes the merge resilient without masking genuine corruption.
+function stripBom(s) {
+  return typeof s === 'string' && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
+}
+
 function loadManifest() {
   if (!existsSync(MANIFEST_PATH)) die(`manifest not found at ${MANIFEST_PATH}`);
   try { return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')); }
@@ -269,7 +279,7 @@ function detectInternal() {
   let rosterVersion = null;
   if (existsSync(rosterPath)) {
     try {
-      const r = JSON.parse(readFileSync(rosterPath, 'utf8'));
+      const r = JSON.parse(stripBom(readFileSync(rosterPath, 'utf8')));
       rosterVersion = r.schema_version || r.version || 'unknown';
     } catch {}
   }
@@ -619,7 +629,7 @@ async function install() {
     // Load existing roster (before removing files)
     let existingRoster = null;
     if (existsSync(rosterPath)) {
-      try { existingRoster = JSON.parse(readFileSync(rosterPath, 'utf8')); }
+      try { existingRoster = JSON.parse(stripBom(readFileSync(rosterPath, 'utf8'))); }
       catch {
         // C3: escalate to blocking abort instead of silently wiping user agent data
         const corruptBackupPath = backupDir
@@ -673,7 +683,7 @@ async function install() {
     if (!flags.dryRun) {
       let shippedRoster = null;
       if (existsSync(shippedRosterPath)) {
-        try { shippedRoster = JSON.parse(readFileSync(shippedRosterPath, 'utf8')); } catch {}
+        try { shippedRoster = JSON.parse(stripBom(readFileSync(shippedRosterPath, 'utf8'))); } catch {}
       }
       // After copyDirectories, the roster from the installed dir is already in place.
       // Now re-merge to restore user agents, protected by the roster lock.
@@ -969,7 +979,7 @@ function runVerifyInner(manifest) {
   const rosterPath = join(CLAUDE_DIR, 'skills', 'prism-plan', 'references', 'roster.json');
   if (existsSync(rosterPath)) {
     let rosterOk = false;
-    try { JSON.parse(readFileSync(rosterPath, 'utf8')); rosterOk = true; }
+    try { JSON.parse(stripBom(readFileSync(rosterPath, 'utf8'))); rosterOk = true; }
     catch { failures.push('MALFORMED: skills/prism-plan/references/roster.json'); }
     checks.push({label: 'roster.json parses', pass: rosterOk});
   }
