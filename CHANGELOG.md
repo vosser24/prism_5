@@ -4,6 +4,12 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.5.0] - 2026-06-08
+
+Discipline gap closed (found while diagnosing why dispatched agents never run TDD/debugging discipline). `using-superpowers` carries a `<SUBAGENT-STOP>` that suppresses superpowers auto-activation in **any dispatched subagent** — so every worker the master dispatches runs WITHOUT test-driven-development / systematic-debugging / brainstorming discipline unless the master injects it. The existing "equip the worker in its prompt" guidance named the principle but was soft: not mandatory, no task→skill mapping, and it didn't name the superpowers skills.
+
+- `skills/master-orchestrator/references/phase-1-execution.md` — new **MANDATORY superpowers discipline-match** step. For every worker dispatch, the master classifies the worker's task and injects the matching superpowers skill's *substance* (inline for short procedures) or its `SKILL.md` path for the worker to `Read` — **not** an "invoke the skill" instruction, because auto-activation is suppressed and Skill-tool calls are unreliable in a scoped subagent. Mapping: implement/bugfix → `test-driven-development`; diagnose bug/test failure → `systematic-debugging`; design/new capability → `brainstorming` (before any code); claims "done"/pre-merge → `verification-before-completion`; multi-step plan execution → `executing-plans`. Injection is skipped only for pure read-only scan/extract work. This implements "Option B" (orchestrator-injected, dynamic per task type) over per-agent static defaults, building on the existing main-loop-only dispatch model.
+
 ## [5.4.1] - 2026-06-08
 
 Installer hardening (handoff PENDING item): a leading UTF-8 BOM on `roster.json` no longer aborts `update`. PowerShell's default writers (`Set-Content`/`Out-File`/`>`) emit UTF-8 *with* BOM, so a roster touched by a Bash/PowerShell path could carry a leading U+FEFF — which made `JSON.parse` throw and tripped the installer's "roster.json is malformed; refusing to overwrite" abort, blocking the upgrade.

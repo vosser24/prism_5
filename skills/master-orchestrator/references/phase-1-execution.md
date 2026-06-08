@@ -106,6 +106,27 @@ reliable (no hot-reload, scoped context); injecting the skill's substance into
 the prompt is the supported mechanism. This is the same "Equip (same session)"
 rule as the panel experts' authored skills in `phase-0-team-assembly.md`.
 
+**MANDATORY: superpowers discipline-match (v5.5).** `using-superpowers` carries a
+`<SUBAGENT-STOP>` that makes dispatched agents SKIP superpowers auto-activation —
+so a worker gets ZERO of that discipline unless the master injects it. For EVERY
+worker dispatch, classify the worker's task and inject the matching superpowers
+discipline into its prompt (inline substance for short procedures; the `SKILL.md`
+path for the worker to `Read` when the full procedure is needed). Do NOT instruct
+the worker to "invoke the skill" — auto-activation is suppressed and Skill-tool
+calls are unreliable in a scoped subagent; inject the substance/path instead.
+
+  | Worker task type            | Inject superpowers skill                       |
+  | --------------------------- | ---------------------------------------------- |
+  | implement feature / bugfix  | `superpowers:test-driven-development`          |
+  | diagnose bug / test failure | `superpowers:systematic-debugging`             |
+  | design / new capability     | `superpowers:brainstorming` (before any code)  |
+  | claims "done" / pre-merge   | `superpowers:verification-before-completion`   |
+  | multi-step plan execution   | `superpowers:executing-plans`                  |
+
+  Skip injection ONLY when the worker's task is pure read-only scan/extract (no
+  code written, nothing to verify). When in doubt, inject — the cost is a few
+  lines of prompt; the cost of skipping is undisciplined worker output.
+
 Parallel step (Agent() subagents): spawn 2-4 subagents via Agent() simultaneously.
   Each gets: specific scope, output file path, completion criteria.
   Parent waits for all, merges results, validates combined output.
