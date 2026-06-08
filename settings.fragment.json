@@ -90,7 +90,7 @@
         ]
       },
       {
-        "matcher": "Edit|Write|MultiEdit|Bash",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",

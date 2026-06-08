@@ -82,31 +82,31 @@
     },
     {
       "id": "MUT-001",
-      "name": "Parent Edit on haiku turn → hard deny",
+      "name": "Parent Edit → mutation-guard passes (v5.4.0 re-scope)",
       "category": "mutation-guard",
-      "capability": "parent_edit_haiku_deny",
+      "capability": "parent_edit_passthrough",
       "target_hook": "hooks/prism-mutation-guard.mjs",
       "input_event": "PreToolUse",
       "input_payload": {"session_id": "audit-MUT-001", "tool_name": "Edit", "tool_input": {"file_path": "/tmp/x.txt"}},
       "setup_sentinel": {"tier": "haiku", "summon_panel": false, "dispatched": false},
-      "expected_exit_code": 2,
-      "expected_stdout_pattern": "MUTATION-GUARD",
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
       "max_duration_ms": 500,
-      "notes": "v5.x: default mode is HARD — parent Edit on a haiku turn with no dispatch is denied (exit 2)"
+      "notes": "v5.4.0 (D010 §6): mutation-guard is Bash-write-only; the clean Edit tool is no longer blocked in the parent (emits clean UTF-8). Tier-gating of parent edits is now owned solely by prism-parent-dispatch-guard — see the DSP scenarios."
     },
     {
       "id": "MUT-002",
-      "name": "Parent Write on parent context",
+      "name": "Parent Bash file-write → mutation-guard hard deny (BOM/bypass)",
       "category": "mutation-guard",
-      "capability": "parent_write_block",
+      "capability": "parent_bash_write_block",
       "target_hook": "hooks/prism-mutation-guard.mjs",
       "input_event": "PreToolUse",
-      "input_payload": {"session_id": "audit-MUT-002", "tool_name": "Write", "tool_input": {"file_path": "/tmp/y.txt", "content": "x"}},
-      "setup_sentinel": {"tier": "haiku", "summon_panel": false, "dispatched": false},
+      "input_payload": {"session_id": "audit-MUT-002", "tool_name": "Bash", "tool_input": {"command": "Set-Content -Path y.txt -Value x"}},
+      "setup_sentinel": {"tier": "opus", "summon_panel": false, "dispatched": false},
       "expected_exit_code": 2,
       "expected_stdout_pattern": "MUTATION-GUARD",
       "max_duration_ms": 500,
-      "notes": "v5.x: Write subject to mutation-guard same as Edit — hard deny (exit 2) on a haiku turn with no dispatch"
+      "notes": "v5.4.0: mutation-guard's retained unique value — parent Bash/PowerShell file-writes are still hard-denied (UTF-8 BOM hazard + orchestrator bypass). Opus sentinel proves the block is the mutation-guard's own, independent of the tier fence."
     },
     {
       "id": "MUT-003",

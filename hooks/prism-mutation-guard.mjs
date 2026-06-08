@@ -1,10 +1,22 @@
 #!/usr/bin/env node
-// PRISM Mutation Guard (v2.7.2)
+// PRISM Mutation Guard (v5.4.0)
 //
-// PreToolUse hook on Edit, Write, MultiEdit, AND Bash (v2.7.2+). When the
-// parent (Opus) context calls a mutation tool directly — instead of
-// dispatching the edit to a subagent — this guard emits a PRISM NOTICE and
-// optionally blocks the call.
+// PreToolUse hook on **Bash only** (v5.4.0+). When the parent (Opus) context
+// runs a Bash/PowerShell command that WRITES a file, this guard emits a PRISM
+// NOTICE and optionally blocks the call — because PowerShell's default writers
+// introduce UTF-8 BOM corruption on Windows and Bash-writes bypass the
+// orchestrator pattern.
+//
+// v5.4.0 re-scope (D010 §6): the guard NO LONGER blocks the clean Edit/Write/
+// MultiEdit tools in the parent. Those tools emit clean UTF-8 and are the
+// recommended path; the parent-dispatch-guard already owns tier-based
+// work-gating for them. Hard-blocking them was the single biggest source of
+// everyday friction and duplicated the dispatch-guard. The matcher is narrowed
+// to "Bash" in settings.fragment.json + plugin.json; MUTATION_TOOLS is empty so
+// a stale-matcher install degrades to ALLOW on Edit/Write rather than blocking.
+// NOTE: the Bash write-pattern list is positive-match / non-exhaustive by
+// design — it is a BOM-hazard nudge for common cases, NOT a complete write
+// fence. The permission allowlist is the real fence.
 //
 // v2.7.2 extensions:
 //   - Matcher expanded to include `Bash`. When Bash is called from parent
@@ -53,7 +65,14 @@ const MODE = (process.env.PRISM_MUTATION_GUARD !== undefined
   : 'hard').toLowerCase();
 const IS_WINDOWS = process.platform === 'win32';
 
-const MUTATION_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+// v5.4.0 (D010 §6): mutation-guard is now Bash/PowerShell-write-only. The clean
+// Edit/Write/MultiEdit tools emit clean UTF-8 and are the recommended path; the
+// parent-dispatch-guard owns tier-based work-gating for them (its positive-list
+// matcher includes Edit|Write|MultiEdit and they are absent from its
+// ALWAYS_ALLOW). This set is intentionally EMPTY so a stale-matcher install
+// (one still wired to `Edit|Write|MultiEdit|Bash` before the upgrade re-merges)
+// degrades to ALLOW on those tools instead of hard-blocking edits.
+const MUTATION_TOOLS = new Set();
 
 // v2.7.2: Bash commands that write files. When the command matches ANY
 // of these patterns and the caller is parent context (ROUTINE/NOVEL tier),
@@ -190,23 +209,21 @@ function main() {
   catch { process.exit(0); }
 
   const toolName = input.tool_name || '';
-  const isBash = toolName === 'Bash';
-  const isMutationTool = MUTATION_TOOLS.has(toolName);
 
-  if (!isMutationTool && !isBash) process.exit(0);
+  // v5.4.0 (D010 §6): Bash/PowerShell-write-only. Any non-Bash tool — including
+  // Edit/Write/MultiEdit on a stale-matcher install still firing this hook —
+  // exits cleanly here (degrades to ALLOW, never blocks edits). MUTATION_TOOLS
+  // is empty by design; this is the belt-and-suspenders for that contract.
+  if (toolName !== 'Bash' || MUTATION_TOOLS.has(toolName)) process.exit(0);
   if (MODE === 'off') process.exit(0);
 
   const ti = input.tool_input || {};
   const filePath = getFilePath(ti);
 
-  // v2.7.2: when Bash is the tool, only proceed if the command is a write.
-  // Non-write Bash (git status, ls, node --version, etc.) passes cleanly.
-  let bashClass = null;
-  if (isBash) {
-    const cmd = ti.command || ti.cmd || '';
-    bashClass = classifyBashCommand(cmd);
-    if (!bashClass.isWrite) process.exit(0);
-  }
+  // Only proceed if the Bash command is a file-write. Non-write Bash
+  // (git status, ls, node --version, etc.) passes cleanly.
+  const bashClass = classifyBashCommand(ti.command || ti.cmd || '');
+  if (!bashClass.isWrite) process.exit(0);
 
   // Bootstrap command auto-bypass.
   const bootstrapCmd = isBootstrapTurn(input);
@@ -265,7 +282,7 @@ function main() {
         : (isSubagentByEnv
             ? 'subagent-claude-code-entrypoint-passthrough'
             : 'subagent-sentinel-dispatched-passthrough'),
-      bash_write: isBash && bashClass?.isWrite ? true : undefined,
+      bash_write: true,
     });
     process.exit(0);
   }
@@ -318,29 +335,19 @@ function main() {
     process.exit(0);
   }
 
-  // Parent context + mutation tool OR parent context + Bash-write.
-  const noticeParts = [];
-  if (isBash) {
-    noticeParts.push(
-      `PRISM MUTATION-GUARD: Bash file-write detected in parent (Opus) context.`,
-      `Pattern: ${bashClass.matchedPattern}`,
-      `This was blocked because parent-context writes via Bash/PowerShell (a) bypass the orchestrator pattern and (b) on Windows introduce UTF-8 BOM corruption with the default PowerShell writers.`,
-      `Fixes (pick one):`,
-      `  1. Dispatch to a subagent: Agent({subagent_type:'general-purpose', model:'sonnet', prompt:'<spec for the edit>'}). Subagents can use Edit/Write directly.`,
-      `  2. Use the Edit/Write/MultiEdit tool in parent — the guard allows those when explicitly intended (they get the same nudge, but at least no BOM).`,
-      `  3. Override for this turn: prefix your user prompt with !opus-force:.`,
-      `  4. Disable the guard for the whole session: set PRISM_MUTATION_GUARD=off in settings.local.json env.`,
-    );
-    if (IS_WINDOWS && !bashClass.bomSafe) {
-      noticeParts.push(bomWarning());
-    }
-  } else {
-    noticeParts.push(
-      `PRISM MUTATION-GUARD: ${toolName} called directly in the parent (Opus) context.`,
-      `Dispatch via Agent({subagent_type:'general-purpose', model:'sonnet', prompt:'<paste your intended edit as a spec>'}).`,
-      `Set PRISM_MUTATION_GUARD=off to disable, or prefix the user prompt with !opus-force: to override.`,
-      `Tool: ${toolName}  File: ${filePath}`,
-    );
+  // Parent context + Bash/PowerShell file-write.
+  const noticeParts = [
+    `PRISM MUTATION-GUARD: Bash/PowerShell file-write detected in parent (Opus) context.`,
+    `Pattern: ${bashClass.matchedPattern}`,
+    `This was blocked because parent-context writes via Bash/PowerShell (a) bypass the orchestrator pattern and (b) on Windows introduce UTF-8 BOM corruption with the default PowerShell writers.`,
+    `Fixes (pick one):`,
+    `  1. Use the Edit/Write/MultiEdit tool directly — they emit clean UTF-8 and are NOT blocked in the parent (v5.4.0).`,
+    `  2. Dispatch to a subagent: Agent({subagent_type:'general-purpose', model:'sonnet', prompt:'<spec for the edit>'}).`,
+    `  3. Override for this turn: prefix your user prompt with !opus-force:.`,
+    `  4. Disable the guard for the whole session: set PRISM_MUTATION_GUARD=off in settings.local.json env.`,
+  ];
+  if (IS_WINDOWS && !bashClass.bomSafe) {
+    noticeParts.push(bomWarning());
   }
   const notice = noticeParts.join('\n');
 
@@ -353,12 +360,10 @@ function main() {
     tool: toolName,
     file: filePath,
     blocked,
-    reason: blocked
-      ? (isBash ? 'parent-bash-write-blocked' : 'parent-context-blocked')
-      : (isBash ? 'parent-bash-write-nudge' : 'parent-context-nudge'),
+    reason: blocked ? 'parent-bash-write-blocked' : 'parent-bash-write-nudge',
     file_hash: sha256short(filePath),
-    bash_pattern: isBash ? bashClass.matchedPattern : undefined,
-    bom_safe: isBash && IS_WINDOWS ? !!bashClass.bomSafe : undefined,
+    bash_pattern: bashClass.matchedPattern,
+    bom_safe: IS_WINDOWS ? !!bashClass.bomSafe : undefined,
     platform: process.platform,
   });
 
