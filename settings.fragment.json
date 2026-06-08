@@ -66,6 +66,7 @@
         "hooks": [
           {
             "type": "command",
+            "if": "Bash(git *)",
             "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-prepush-review.mjs"
           }
         ]
@@ -98,7 +99,7 @@
         ]
       },
       {
-        "matcher": "",
+        "matcher": "Agent|TaskCreate|Bash|Edit|Write|MultiEdit|NotebookEdit|PowerShell|WebFetch|WebSearch",
         "hooks": [
           {
             "type": "command",

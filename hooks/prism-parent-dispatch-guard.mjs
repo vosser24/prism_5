@@ -70,6 +70,12 @@ const ALWAYS_ALLOW = new Set([
 
 const DISPATCH_MARKERS = new Set(['Agent', 'TaskCreate']);
 
+// v5.3.3 — read-only tools never need this guard (they're in ALWAYS_ALLOW and
+// only ever exit 0). The shipped matcher excludes them so the hook does not
+// spawn; this set powers a top-of-guard early-exit as belt-and-suspenders for
+// any pre-upgrade install still carrying the old all-tools ("") matcher.
+const RO_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']);
+
 // ── v5.3.2 — Read-only quick-check fast path (D-review w/ claude-master) ──────
 // A 30-second diagnostic ("is this run done? why isn't X showing?") shouldn't be
 // forced into a throwaway subagent. Let the PARENT run PROVABLY read-only Bash/
@@ -201,6 +207,10 @@ try {
   const toolName = input.tool_name || '';
   const isSubagent = !!input.parent_tool_use_id;
   const sessionId = input.session_id || 'anon';
+
+  // v5.3.3 — read-only fast exit (see RO_TOOLS): these are always allowed; skip
+  // all work (sentinel read, logging) so a stray spawn is microseconds of JS.
+  if (RO_TOOLS.has(toolName)) process.exit(0);
 
   // --- v2.2.1: subagent bypass paths (any one passes cleanly) ---
   if (isSubagent) process.exit(0);

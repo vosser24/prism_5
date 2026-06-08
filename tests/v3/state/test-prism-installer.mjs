@@ -370,6 +370,20 @@ function snapshotFiles(dir) {
   ok('TM3: non-PRISM hook (some-other-tool.sh) preserved after install', hasNonPrismHook);
   ok('TM3: PRISM hooks also present after install', hasPrismHook);
 
+  // v5.3.3: the prepush-review hook's `if` conditional-spawn field must survive
+  // mergeSettings (regression guard for the per-hook key-drop at installer:471).
+  let prepushIf = null;
+  if (settings && settings.hooks) {
+    for (const evHooks of Object.values(settings.hooks)) {
+      for (const group of evHooks) {
+        for (const h of (group.hooks || [])) {
+          if (h.command && h.command.includes('prism-prepush-review')) prepushIf = h.if ?? null;
+        }
+      }
+    }
+  }
+  ok('TM3: prepush-review `if` (Bash(git *)) preserved through mergeSettings (v5.3.3)', prepushIf === 'Bash(git *)');
+
   // Also verify statusLine preservation (C1 regression test)
   const settingsWithStatusLine = {
     statusLine: {type: 'command', command: 'bash my-custom-statusline.sh'},

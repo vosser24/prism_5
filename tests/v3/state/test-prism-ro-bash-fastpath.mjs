@@ -62,6 +62,32 @@ for (const c of [
 ]) check(`DENIED: ${c}`, denied(c));
 check('DENIED (PowerShell scriptblock): gci | ? { Remove-Item $_ }', denied('gci | ? { Remove-Item $_ }', 'PowerShell'));
 
+// ── v5.3.3 Layer-2: read-only TOOLS (not Bash) exit 0 even on a haiku turn ──
+// (belt-and-suspenders for pre-upgrade installs still on the old "" matcher).
+function runGuardTool(toolName) {
+  const home = mkdtempSync(join(tmpdir(), 'prism-ro-tool-'));
+  try {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', `.prism-turn-tier-${SID}.json`),
+      JSON.stringify({ tier: 'haiku', dispatched: false, force_opus: false, summon_panel: false, mode: 'hard' }));
+    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard' };
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ tool_name: toolName, tool_input: { file_path: '/tmp/x' }, session_id: SID }),
+      encoding: 'utf-8', env, timeout: 10000,
+    });
+    return { status: r.status, out: r.stdout || '' };
+  } finally { rmSync(home, { recursive: true, force: true }); }
+}
+for (const t of ['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']) {
+  const r = runGuardTool(t);
+  check(`Layer-2: ${t} exits 0 on haiku turn (read-only early-exit)`, r.status === 0 && !/denied/i.test(r.out));
+}
+// Control: a work tool on the same turn IS still denied (guard still bites).
+{
+  const r = runGuardTool('Edit');
+  check('Layer-2 control: Edit still denied on haiku turn', r.status === 2 && /denied/i.test(r.out));
+}
+
 // ── kill switch: PRISM_RO_BASH_FASTPATH=off → even a read-only probe is denied ──
 {
   const r = runGuard('git status', 'Bash', { PRISM_RO_BASH_FASTPATH: 'off' });

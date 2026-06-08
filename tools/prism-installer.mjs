@@ -467,8 +467,13 @@ function mergeSettings(existing, fragment, dryRun, hookRoot = null) {
           if (found) break;
         }
         if (!found) {
-          // Add new group containing this hook
-          const newGroup = {hooks: [{type: fragHook.type, command}]};
+          // Add new group containing this hook. Preserve per-hook keys beyond
+          // type/command (v5.3.3: the `if` conditional-spawn field, e.g.
+          // "Bash(git *)" on prepush-review) — dropping it would make the hook
+          // spawn on every Bash call again.
+          const newHook = {type: fragHook.type, command};
+          if (fragHook.if !== undefined) newHook.if = fragHook.if;
+          const newGroup = {hooks: [newHook]};
           if (fragGroup.matcher !== undefined) newGroup.matcher = fragGroup.matcher;
           merged.hooks[event].push(newGroup);
         }
