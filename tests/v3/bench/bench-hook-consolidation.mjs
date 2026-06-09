@@ -55,5 +55,10 @@ bench('SubagentStop',
   'prism-subagentstop-dispatcher.mjs',
   JSON.stringify({subagent_type: 'general-purpose', output: 'done', session_id: 'bench-sas', model: 'claude-sonnet-4-6'}));
 
+bench('SessionEnd',
+  ['prism-clean-nudge-flag.mjs', 'prism-git-clean-nudge.mjs'],
+  'prism-sessionend-dispatcher.mjs',
+  JSON.stringify({reason: 'exit', cwd: process.cwd(), session_id: 'bench-se'}));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
