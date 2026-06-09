@@ -22,8 +22,9 @@ function timeRun(args, input, env) {
 }
 
 function bench(label, individualHooks, dispatcher, payload) {
-  const home = mkdtempSync(join(tmpdir(), `prism-bench-${label}-`));
-  const env = {...process.env, HOME: home, USERPROFILE: home};
+  const safeLabel = label.replace(/[/\\:*?"<>|]/g, '-');
+  const home = mkdtempSync(join(tmpdir(), `prism-bench-${safeLabel}-`));
+  const env = {...process.env, HOME: home, USERPROFILE: home, PRISM_DISABLE_OOB_REVIEW: '1'};
   try {
     const oldT = [], newT = [];
     for (let i = 0; i < REPS; i++) {
@@ -43,6 +44,11 @@ bench('UserPromptSubmit',
   ['prism-hook.mjs', 'prism-prompt-tier-router.mjs', 'prism-memory-save-nudge.mjs', 'prism-skill-trigger-guard.mjs'],
   'prism-userpromptsubmit-dispatcher.mjs',
   JSON.stringify({prompt: 'implement this feature with tests', session_id: 'bench-ups', cwd: process.cwd()}));
+
+bench('PostToolUse/Write',
+  ['prism-kb-autosync.mjs', 'prism-agent-write-register.mjs', 'prism-phase-0d-challenges.mjs', 'prism-phase-0d-oob.mjs', 'prism-panel-guard.mjs'],
+  'prism-posttooluse-dispatcher.mjs',
+  JSON.stringify({tool_name: 'Write', tool_input: {file_path: join(process.cwd(), 'README.md')}}));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
