@@ -57,4 +57,31 @@ await test('phase-1-5-oob run() exits 0 fast under recursion guard', async () =>
   } finally { if (prev === undefined) delete process.env.PRISM_OOB_REVIEWER_PROCESS; else process.env.PRISM_OOB_REVIEWER_PROCESS = prev; }
 });
 
+await test('SubagentStop dispatcher: fans to 3, panel-guard hard mode propagates exit 2', async () => {
+  const home = fakeHome('sas-disp');
+  try {
+    const DISP = join(HOOKS, 'prism-subagentstop-dispatcher.mjs');
+    const output = '**Quantum Astrologer**: my unindexed take';
+    const r = spawnSync(process.execPath, [DISP], {
+      input: JSON.stringify({subagent_type: 'panel', output, session_id: 's-sas'}),
+      encoding: 'utf8',
+      env: {...process.env, HOME: home, USERPROFILE: home, PRISM_PANEL_GUARD: 'hard', PRISM_OOB_REVIEWER_PROCESS: '1'},
+    });
+    assert(r.status === 2, 'hard-mode panel-guard exit 2 propagates, got ' + r.status + ' stderr=' + r.stderr);
+    assert(/unindexed persona/i.test(r.stderr), 'deny notice on stderr, got: ' + r.stderr);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+await test('SubagentStop dispatcher: soft mode advisory -> exit 0', async () => {
+  const home = fakeHome('sas-soft');
+  try {
+    const DISP = join(HOOKS, 'prism-subagentstop-dispatcher.mjs');
+    const r = spawnSync(process.execPath, [DISP], {
+      input: JSON.stringify({subagent_type: 'panel', output: '**Quantum Astrologer**: x', session_id: 's2'}),
+      encoding: 'utf8', env: {...process.env, HOME: home, USERPROFILE: home, PRISM_OOB_REVIEWER_PROCESS: '1'},
+    });
+    assert(r.status === 0, 'soft mode exit 0, got ' + r.status);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
