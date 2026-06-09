@@ -77,5 +77,21 @@ await test('skill-trigger-guard run() exports + exits 0 with no triggers file', 
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+await test('dispatcher reads stdin ONCE, fans to all 4 sub-hooks, concatenates stdout, exit 0', async () => {
+  const home = fakeHome('ups-disp');
+  try {
+    const DISP = join(HOOKS, 'prism-userpromptsubmit-dispatcher.mjs');
+    const r = spawnSync(process.execPath, [DISP], {
+      input: JSON.stringify({prompt: 'debug this, been stuck for hours, write tests first', session_id: 's-disp', cwd: home}),
+      encoding: 'utf8',
+      env: {...process.env, HOME: home, USERPROFILE: home},
+      cwd: home,
+    });
+    assert(r.status === 0, 'exit 0, stderr=' + r.stderr);
+    assert(/systematic-debugging/i.test(r.stdout), 'prism-hook debug nudge present, got: ' + r.stdout);
+    assert(/TIER ROUTER/i.test(r.stdout), 'tier-router additionalContext present, got: ' + r.stdout);
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
