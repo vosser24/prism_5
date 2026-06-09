@@ -346,6 +346,7 @@ function spawnRebuild(home, toolRel, lockRel) {
     const r = spawnSync(process.execPath, [tool, '--sync'], {
       timeout: REBUILD_TIMEOUT_MS,
       encoding: 'utf-8',
+      windowsHide: true,
       env: {...process.env, HOME: home, USERPROFILE: home},
     });
     status = r && typeof r.status === 'number' ? r.status : 1;
@@ -618,6 +619,7 @@ function checkHookIntegrity(home, snapshot) {
         const r = spawnSync(process.execPath, ['--check', f], {
           timeout: HOOK_CHECK_TIMEOUT_MS,
           encoding: 'utf-8',
+          windowsHide: true,
         });
         if (r.status !== 0) broken.push(basename(f));
       } catch {}

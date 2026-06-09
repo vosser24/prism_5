@@ -407,6 +407,7 @@ function spawnAsyncReviewer(sha, useLite = false) {
   const child = spawn('node', [process.argv[1], '--async-worker', sha], {
     detached: true,
     stdio: 'ignore',
+    windowsHide: true,
     env: {...process.env, PRISM_OOB_ASYNC_WORKER: '1', PRISM_OOB_USE_LITE: useLite ? '1' : '0'},
   });
   child.unref();

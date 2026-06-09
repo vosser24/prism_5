@@ -33,6 +33,7 @@ try {
     cwd,
     encoding: 'utf-8',
     timeout: 5000,
+    windowsHide: true,
   });
   if (res.status !== 0) process.exit(0);  // not a git repo, or git unavailable
 

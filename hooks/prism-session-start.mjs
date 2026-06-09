@@ -171,6 +171,7 @@ try {
     const res = spawnSync('node', [AUDIT_TOOL, '--json', '--cache'], {
       encoding: 'utf-8',
       timeout: 5000,
+      windowsHide: true,
     });
     if (res.status === 0 && res.stdout) {
       try { audit = JSON.parse(res.stdout); } catch {}

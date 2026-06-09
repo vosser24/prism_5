@@ -109,7 +109,7 @@ function gitSnapshot(cwd) {
   if (!cwd) return out;
   const run = (args) => {
     try {
-      const r = spawnSync('git', args, {cwd, encoding: 'utf-8', timeout: 800});
+      const r = spawnSync('git', args, {cwd, encoding: 'utf-8', timeout: 800, windowsHide: true});
       return r.status === 0 ? (r.stdout || '').trim() : '';
     } catch { return ''; }
   };

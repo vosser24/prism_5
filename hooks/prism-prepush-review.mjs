@@ -73,7 +73,7 @@ try {
   // repo — the safety hook will warn separately if push-to-main detected.
   let branch = '';
   const br = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-    cwd, encoding: 'utf-8', timeout: 3000,
+    cwd, encoding: 'utf-8', timeout: 3000, windowsHide: true,
   });
   if (br.status === 0) branch = (br.stdout || '').trim();
 
