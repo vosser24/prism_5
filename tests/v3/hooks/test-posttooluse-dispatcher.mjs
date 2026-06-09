@@ -70,5 +70,17 @@ await test('dispatch-cap run() no-ops on non-Agent tool, exit 0', async () => {
   assert(res.exit === 0 && res.stdout === '', 'silent on non-Agent tool');
 });
 
+// ─── Task 2.4: prism-panel-guard ────────────────────────────────────────────
+
+await test('panel-guard runPostToolUse() exists; no-ops on non-panel Write, exit 0', async () => {
+  const home = fakeHome('pg-b');
+  try {
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-panel-guard.mjs')).href);
+    assert(typeof mod.runPostToolUse === 'function', 'panel-guard must export runPostToolUse()');
+    const res = await mod.runPostToolUse({tool_name: 'Write', tool_input: {file_path: join(home, 'x.md')}});
+    assert(res.exit === 0 && res.stdout === '', 'silent on non-panel path');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

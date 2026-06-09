@@ -67,7 +67,7 @@
 // over the (typically <50KB) subagent output. No network, no heavy parse.
 
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
-import {join, dirname} from 'node:path';
+import {join, dirname, basename} from 'node:path';
 import {createHash} from 'node:crypto';
 
 const H = process.env.HOME || process.env.USERPROFILE;
@@ -243,6 +243,15 @@ function resolveMode() {
   return ['soft', 'hard', 'off'].includes(mode) ? mode : 'soft';
 }
 
+// ─── Path B: PanelGuardExit sentinel ────────────────────────────────────────
+// Used by runPostToolUse() to hoist process.exit() calls out of check* helpers
+// so the function is a pure {exit, stdout, stderr} return. Only the CLI path
+// (handleDroppedPositions / main) converts these back into process.exit().
+
+class PanelGuardExit {
+  constructor(code, stderr = '') { this.code = code; this.stderr = stderr; }
+}
+
 // ─── Path B helpers: SCOPE GUARD (T31) + alternatives-considered (T32) ──────
 
 // T31 — D3 SCOPE GUARD: detect positions whose titles share no keywords with
@@ -275,8 +284,7 @@ function checkScope(panel) {
     if (!overlap) {
       const msg = `SCOPE GUARD: position "${pos.title}" appears outside panel scope "${panel.scope}"`;
       if (strict) {
-        process.stderr.write(msg + '\n');
-        process.exit(2);
+        throw new PanelGuardExit(2, msg + '\n');
       } else {
         process.stderr.write(msg + ' (advisory; set PRISM_SCOPE_GUARD=strict to enforce)\n');
         // continue scanning — emit one stderr line per out-of-scope position
@@ -293,17 +301,14 @@ function checkAlternatives(panel) {
   const alts = panel.rationale?.alternatives_considered;
   if (alts === undefined) return; // additive — absent is fine (pre-v4.5 panels)
   if (!Array.isArray(alts)) {
-    process.stderr.write('[panel-guard] rationale.alternatives_considered must be an array\n');
-    process.exit(2);
+    throw new PanelGuardExit(2, '[panel-guard] rationale.alternatives_considered must be an array\n');
   }
   for (const alt of alts) {
     if (typeof alt !== 'object' || alt === null || Array.isArray(alt)) {
-      process.stderr.write('[panel-guard] each alternatives_considered entry must be a {approach, why_not} object\n');
-      process.exit(2);
+      throw new PanelGuardExit(2, '[panel-guard] each alternatives_considered entry must be a {approach, why_not} object\n');
     }
     if (typeof alt.approach !== 'string' || alt.approach.trim() === '' || typeof alt.why_not !== 'string' || alt.why_not.trim() === '') {
-      process.stderr.write('[panel-guard] each alternatives_considered entry must have non-empty approach + why_not strings\n');
-      process.exit(2);
+      throw new PanelGuardExit(2, '[panel-guard] each alternatives_considered entry must have non-empty approach + why_not strings\n');
     }
   }
 }
@@ -321,29 +326,25 @@ function checkDispatchMode(panel) {
   const mode = panel.dispatch_mode;
   if (mode === undefined) return; // additive — pre-v5.x panels are unenforced
   if (mode !== 'dispatch' && mode !== 'roleplay') {
-    process.stderr.write('[panel-guard] dispatch_mode must be "dispatch" or "roleplay"\n');
-    process.exit(2);
+    throw new PanelGuardExit(2, '[panel-guard] dispatch_mode must be "dispatch" or "roleplay"\n');
   }
   if (mode === 'roleplay') return; // sanctioned opt-in fast mode — no real dispatch required
   // mode === 'dispatch': every seat must be a distinct, real subagent dispatch.
   const positions = panel.positions ?? [];
   if (positions.length === 0) {
-    process.stderr.write('[panel-guard] dispatch_mode=dispatch but the panel has zero positions — a real dispatched panel needs at least one seat\n');
-    process.exit(2);
+    throw new PanelGuardExit(2, '[panel-guard] dispatch_mode=dispatch but the panel has zero positions — a real dispatched panel needs at least one seat\n');
   }
   const ids = [];
   for (const p of positions) {
     const id = p.dispatched_agent_id;
     if (typeof id !== 'string' || id.trim() === '') {
       const who = p.title ?? p.expert_name ?? '(unnamed)';
-      process.stderr.write(`[panel-guard] dispatch_mode=dispatch but position "${who}" has no dispatched_agent_id — a real per-seat Agent() dispatch is required (role-play masquerading as dispatch). Use dispatch_mode=roleplay for the opt-in fast mode.\n`);
-      process.exit(2);
+      throw new PanelGuardExit(2, `[panel-guard] dispatch_mode=dispatch but position "${who}" has no dispatched_agent_id — a real per-seat Agent() dispatch is required (role-play masquerading as dispatch). Use dispatch_mode=roleplay for the opt-in fast mode.\n`);
     }
     ids.push(id.trim());
   }
   if (new Set(ids).size < ids.length) {
-    process.stderr.write('[panel-guard] dispatch_mode=dispatch but dispatched_agent_id values are not unique — each seat must be a distinct real subagent dispatch\n');
-    process.exit(2);
+    throw new PanelGuardExit(2, '[panel-guard] dispatch_mode=dispatch but dispatched_agent_id values are not unique — each seat must be a distinct real subagent dispatch\n');
   }
 }
 
@@ -414,8 +415,7 @@ function checkFactoryFirst(panel) {
   });
 
   if (mode === 'hard') {
-    process.stderr.write(notice + '\n');
-    process.exit(2);
+    throw new PanelGuardExit(2, notice + '\n');
   }
   process.stderr.write(notice + '\n(advisory; set PRISM_PANEL_GUARD=hard to enforce)\n');
 }
@@ -478,85 +478,102 @@ function classifyPanelEvidence(panel) {
   return mutated;
 }
 
-// Path B entry point. Returns true if this payload was a panel.json write
-// (and we handled it — successfully or not). Returns false to fall through
+// Path B pure function — PostToolUse Write to panel.json.
+// Returns {exit, stdout, stderr}. Never calls process.exit().
+// Enforcement exits (exit 2) are surfaced via PanelGuardExit sentinel thrown
+// by check* helpers; the CLI path (handleDroppedPositions) converts them back.
+export function runPostToolUse(payload) {
+  const input = payload || {};
+  const panelPath = panelPathFromPayload(input);
+  if (!panelPath) return { exit: 0, stdout: '', stderr: '' }; // R2: not a panel.json write
+
+  // Kill switch.
+  if (process.env.PRISM_DISABLE_DROPPED_LOG === '1') return { exit: 0, stdout: '', stderr: '' };
+
+  try {
+    let panel;
+    try {
+      panel = JSON.parse(readFileSync(panelPath, 'utf-8'));
+    } catch (e) {
+      return { exit: 0, stdout: '', stderr: `[panel-guard/A3] cannot read panel.json: ${e.message}\n` };
+    }
+
+    // v5.x — DISPATCH-MODE guard (runs first; hard structural gate that catches
+    // role-play masquerading as a real dispatched panel).
+    checkDispatchMode(panel);
+
+    // v5.x — FACTORY-FIRST seat-sourcing guard (adjacency-is-not-fitness, D009).
+    // Runs after dispatch_mode is validated; enforces only vertical:true seats.
+    checkFactoryFirst(panel);
+
+    // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
+    checkScope(panel);
+
+    // T32 — G2 alternatives-considered shape validation.
+    checkAlternatives(panel);
+
+    // Q2 — classify challenge evidence_class at panel-write (single source of truth).
+    const evidenceMutated = classifyPanelEvidence(panel);
+
+    const ts = new Date().toISOString();
+    const newDrops = [];
+
+    for (const position of (panel.positions ?? [])) {
+      const reason = classifyDropReason(position);
+      if (reason === null) continue;
+      newDrops.push({
+        position: position.title ?? position.name ?? '(unnamed)',
+        reason,
+        dropped_at_phase: '0d',
+        ts,
+      });
+    }
+
+    // Push dropped_positions only when there ARE drops (no spurious empty pushes).
+    if (newDrops.length > 0) {
+      if (!Array.isArray(panel.dropped_positions)) panel.dropped_positions = [];
+      panel.dropped_positions.push(...newDrops);
+    }
+
+    // Write-back when drops occurred OR evidence_class was classified (Q2).
+    if (newDrops.length > 0 || evidenceMutated) {
+      try {
+        atomicWritePanel(panelPath, panel);
+      } catch (e) {
+        // Fallback: direct write (mirrors prism-phase-0d-oob.mjs atomicWrite fallback).
+        try { writeFileSync(panelPath, JSON.stringify(panel, null, 2), 'utf-8'); } catch {}
+        process.stderr.write(`[panel-guard/A3] atomic write failed, used direct fallback: ${e.message}\n`);
+      }
+    }
+
+    if (newDrops.length > 0) {
+      appendLog({
+        ts,
+        event: 'panel_guard_dropped',
+        schema_version: 4,
+        panel_path: panelPath,
+        dropped_count: newDrops.length,
+        dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),
+      });
+    }
+
+    return { exit: 0, stdout: '', stderr: '' };
+  } catch (e) {
+    if (e instanceof PanelGuardExit) return { exit: e.code, stdout: '', stderr: e.stderr };
+    return { exit: 0, stdout: '', stderr: '' };
+  }
+}
+
+// Path B CLI entry point. Returns true if this payload was a panel.json write
+// (and we handled it — calls process.exit). Returns false to fall through
 // to Path A (SubagentStop).
 function handleDroppedPositions(payload) {
   const panelPath = panelPathFromPayload(payload);
   if (!panelPath) return false;
 
-  // Kill switch.
-  if (process.env.PRISM_DISABLE_DROPPED_LOG === '1') process.exit(0);
-
-  let panel;
-  try {
-    panel = JSON.parse(readFileSync(panelPath, 'utf-8'));
-  } catch (e) {
-    process.stderr.write(`[panel-guard/A3] cannot read panel.json: ${e.message}\n`);
-    process.exit(0);
-  }
-
-  // v5.x — DISPATCH-MODE guard (runs first; hard structural gate that catches
-  // role-play masquerading as a real dispatched panel).
-  checkDispatchMode(panel);
-
-  // v5.x — FACTORY-FIRST seat-sourcing guard (adjacency-is-not-fitness, D009).
-  // Runs after dispatch_mode is validated; enforces only vertical:true seats.
-  checkFactoryFirst(panel);
-
-  // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
-  checkScope(panel);
-
-  // T32 — G2 alternatives-considered shape validation.
-  checkAlternatives(panel);
-
-  // Q2 — classify challenge evidence_class at panel-write (single source of truth).
-  const evidenceMutated = classifyPanelEvidence(panel);
-
-  const positions = panel.positions ?? [];
-  const ts = new Date().toISOString();
-  const newDrops = [];
-
-  for (const position of positions) {
-    const reason = classifyDropReason(position);
-    if (reason === null) continue;
-    newDrops.push({
-      position: position.title ?? position.name ?? '(unnamed)',
-      reason,
-      dropped_at_phase: '0d',
-      ts,
-    });
-  }
-
-  // Push dropped_positions only when there ARE drops (no spurious empty pushes).
-  if (newDrops.length > 0) {
-    if (!Array.isArray(panel.dropped_positions)) panel.dropped_positions = [];
-    panel.dropped_positions.push(...newDrops);
-  }
-
-  // Write-back when drops occurred OR evidence_class was classified (Q2).
-  if (newDrops.length > 0 || evidenceMutated) {
-    try {
-      atomicWritePanel(panelPath, panel);
-    } catch (e) {
-      // Fallback: direct write (mirrors prism-phase-0d-oob.mjs atomicWrite fallback).
-      try { writeFileSync(panelPath, JSON.stringify(panel, null, 2), 'utf-8'); } catch {}
-      process.stderr.write(`[panel-guard/A3] atomic write failed, used direct fallback: ${e.message}\n`);
-    }
-  }
-
-  if (newDrops.length > 0) {
-    appendLog({
-      ts,
-      event: 'panel_guard_dropped',
-      schema_version: 4,
-      panel_path: panelPath,
-      dropped_count: newDrops.length,
-      dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),
-    });
-  }
-
-  process.exit(0);
+  const res = runPostToolUse(payload);
+  if (res.stderr) process.stderr.write(res.stderr);
+  process.exit(res.exit);
 }
 
 // ─── Path A: SubagentStop panel-hallucination guard ──────────────────────────
@@ -713,4 +730,8 @@ function main() {
   process.exit(0);
 }
 
-try { main(); } catch { process.exit(0); }
+// Guard: only run main() when invoked as a hook, NOT when imported by tests.
+const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-panel-guard.mjs';
+if (invokedDirectly) {
+  try { main(); } catch { process.exit(0); }
+}
