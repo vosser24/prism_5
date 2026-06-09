@@ -159,17 +159,15 @@ function resolveMode() {
   return ['soft', 'off'].includes(mode) ? mode : 'soft';
 }
 
-function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
+function run(payload) {
+  const input = payload || {};
 
   const MODE = resolveMode();
-  if (MODE === 'off') process.exit(0);
+  if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
 
   const sessionId = input.session_id || 'anon';
   const userPrompt = String(input.user_prompt || input.prompt || '');
-  if (!userPrompt) process.exit(0);
+  if (!userPrompt) return {exit: 0, stdout: '', stderr: ''};
 
   // Three-path subagent bypass (defensive parity).
   const isSubagentById = !!input.parent_tool_use_id;
@@ -186,7 +184,7 @@ function main() {
       reason: isSubagentById ? 'parent_tool_use_id' : 'env',
       mode: MODE,
     });
-    process.exit(0);
+    return {exit: 0, stdout: '', stderr: ''};
   }
 
   // force_opus passthrough — user explicitly bypassing all gates.
@@ -201,18 +199,18 @@ function main() {
       action: 'passthrough-opus-force',
       mode: MODE,
     });
-    process.exit(0);
+    return {exit: 0, stdout: '', stderr: ''};
   }
 
   const triggers = loadTriggers();
-  if (triggers.length === 0) process.exit(0);
+  if (triggers.length === 0) return {exit: 0, stdout: '', stderr: ''};
 
   // Match prompt against triggers.
   const matched = [];
   for (const t of triggers) {
     if (t.regex.test(userPrompt)) matched.push(t);
   }
-  if (matched.length === 0) process.exit(0);
+  if (matched.length === 0) return {exit: 0, stdout: '', stderr: ''};
 
   // Read pending. Increment turn_count. Drop entries older than TTL.
   const pending = readPending(sessionId);
@@ -260,8 +258,21 @@ function main() {
     prompt_hash: sha256short(userPrompt),
   });
 
-  if (lines.length) process.stdout.write(lines.join('\n'));
-  process.exit(0);
+  return {exit: 0, stdout: lines.length ? lines.join('\n') : '', stderr: ''};
 }
 
-try { main(); } catch { process.exit(0); }
+export {run};
+
+import {basename as _basename} from 'node:path';
+const invokedDirectly = process.argv[1] && _basename(process.argv[1]) === 'prism-skill-trigger-guard.mjs';
+if (invokedDirectly) {
+  (async () => {
+    try {
+      let payload = {};
+      try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch {}
+      const res = run(payload);
+      if (res.stdout) process.stdout.write(res.stdout);
+      process.exit(res.exit || 0);
+    } catch { process.exit(0); }
+  })();
+}

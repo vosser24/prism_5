@@ -71,52 +71,64 @@ function writeCounter(sessionId, data) {
   }
 }
 
-try {
-  if (MODE === 'off') process.exit(0);
+export async function run(payload) {
+  try {
+    if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
 
-  // v5.1: stand down when claude-mem is installed — it captures continuously and
-  // registers its own UserPromptSubmit hook, so PRISM's nudge would double up
-  // (duplicate injector + redundant "save before /clear"). claude-mem owns the
-  // ambient-memory tier in that mode; PRISM-native capture is the fallback only.
-  if (claudeMemInstalled(H)) {
-    appendLog({event: 'memory_save_nudge', action: 'standdown-claude-mem'});
-    process.exit(0);
-  }
+    // v5.1: stand down when claude-mem is installed — it captures continuously and
+    // registers its own UserPromptSubmit hook, so PRISM's nudge would double up
+    // (duplicate injector + redundant "save before /clear"). claude-mem owns the
+    // ambient-memory tier in that mode; PRISM-native capture is the fallback only.
+    if (claudeMemInstalled(H)) {
+      appendLog({event: 'memory_save_nudge', action: 'standdown-claude-mem'});
+      return {exit: 0, stdout: '', stderr: ''};
+    }
 
-  const raw = readFileSync(0, 'utf-8');
-  const input = JSON.parse(raw || '{}');
-  const sessionId = input.session_id || 'anon';
+    const input = payload || {};
+    const sessionId = input.session_id || 'anon';
 
-  const state = readCounter(sessionId);
-  state.turn_count = (state.turn_count || 0) + 1;
-  state.last_ts = new Date().toISOString();
-  state.session_id = sessionId;
+    const state = readCounter(sessionId);
+    state.turn_count = (state.turn_count || 0) + 1;
+    state.last_ts = new Date().toISOString();
+    state.session_id = sessionId;
 
-  let shouldNudge = false;
-  if (state.turn_count === FIRST) shouldNudge = true;
-  else if (state.turn_count > FIRST && (state.turn_count - FIRST) % INTERVAL === 0) shouldNudge = true;
+    let shouldNudge = false;
+    if (state.turn_count === FIRST) shouldNudge = true;
+    else if (state.turn_count > FIRST && (state.turn_count - FIRST) % INTERVAL === 0) shouldNudge = true;
 
-  if (shouldNudge && state.last_nudge_turn !== state.turn_count) {
-    state.last_nudge_turn = state.turn_count;
-    const nextTurn = state.turn_count + INTERVAL;
-    const directive = `PRISM MEMORY-SAVE NUDGE: session at turn ${state.turn_count}. Before the user runs /clear, run /prism-clean to (1) write/update the session handoff doc and (2) fold this session's durable learnings into the project-master's MEMORY.md (.claude/agents/MEMORY.md) + docs/prism/ — applying the auto-memory guidance in your system prompt. If everything memorable is already saved since the last nudge, say so explicitly and move on. Next nudge at turn ${nextTurn} unless /clear resets the counter.`;
+    if (shouldNudge && state.last_nudge_turn !== state.turn_count) {
+      state.last_nudge_turn = state.turn_count;
+      const nextTurn = state.turn_count + INTERVAL;
+      const directive = `PRISM MEMORY-SAVE NUDGE: session at turn ${state.turn_count}. Before the user runs /clear, run /prism-clean to (1) write/update the session handoff doc and (2) fold this session's durable learnings into the project-master's MEMORY.md (.claude/agents/MEMORY.md) + docs/prism/ — applying the auto-memory guidance in your system prompt. If everything memorable is already saved since the last nudge, say so explicitly and move on. Next nudge at turn ${nextTurn} unless /clear resets the counter.`;
+
+      writeCounter(sessionId, state);
+      appendLog({event: 'memory_save_nudge', session_id: sessionId, turn: state.turn_count, next: nextTurn});
+
+      const out = {
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: directive,
+        },
+      };
+      return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
+    }
 
     writeCounter(sessionId, state);
-    appendLog({event: 'memory_save_nudge', session_id: sessionId, turn: state.turn_count, next: nextTurn});
-
-    const out = {
-      hookSpecificOutput: {
-        hookEventName: 'UserPromptSubmit',
-        additionalContext: directive,
-      },
-    };
-    process.stdout.write(JSON.stringify(out));
-    process.exit(0);
+    return {exit: 0, stdout: '', stderr: ''};
+  } catch (e) {
+    appendLog({event: 'memory_save_nudge', error: String(e)});
+    return {exit: 0, stdout: '', stderr: ''};
   }
+}
 
-  writeCounter(sessionId, state);
-  process.exit(0);
-} catch (e) {
-  appendLog({event: 'memory_save_nudge', error: String(e)});
-  process.exit(0);
+import {basename as _basename} from 'node:path';
+const invokedDirectly = process.argv[1] && _basename(process.argv[1]) === 'prism-memory-save-nudge.mjs';
+if (invokedDirectly) {
+  (async () => {
+    let payload = {};
+    try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch {}
+    const res = await run(payload);
+    if (res.stdout) process.stdout.write(res.stdout);
+    process.exit(res.exit || 0);
+  })();
 }

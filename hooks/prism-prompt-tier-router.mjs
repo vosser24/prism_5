@@ -218,12 +218,11 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
   return advice;
 }
 
-async function main() {
+export async function run(payload) {
   try {
-    if (MODE === 'off') process.exit(0);
+    if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
 
-    const raw = readFileSync(0, 'utf-8');
-    const input = JSON.parse(raw || '{}');
+    const input = payload || {};
     const prompt = String(input.prompt || '');
     const sessionId = input.session_id || 'anon';
     const cwd = input.cwd || process.cwd();
@@ -275,8 +274,7 @@ async function main() {
           additionalContext: advice,
         },
       };
-      process.stdout.write(JSON.stringify(out));
-      process.exit(0);
+      return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
     }
 
     const git = gitSnapshot(cwd);
@@ -346,12 +344,21 @@ async function main() {
         additionalContext: advice,
       },
     };
-    process.stdout.write(JSON.stringify(out));
-    process.exit(0);
+    return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
   } catch (e) {
     appendLog({event: 'prompt_tier_router', error: String(e && e.message || e), phase_1_5: null});
-    process.exit(0);
+    return {exit: 0, stdout: '', stderr: ''};
   }
 }
 
-main();
+import {basename as _basename} from 'node:path';
+const invokedDirectly = process.argv[1] && _basename(process.argv[1]) === 'prism-prompt-tier-router.mjs';
+if (invokedDirectly) {
+  (async () => {
+    let payload = {};
+    try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch {}
+    const res = await run(payload);
+    if (res.stdout) process.stdout.write(res.stdout);
+    process.exit(res.exit || 0);
+  })();
+}
