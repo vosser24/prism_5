@@ -82,5 +82,19 @@ await test('panel-guard runPostToolUse() exists; no-ops on non-panel Write, exit
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+// ─── Task 2.5: prism-phase-0d-oob ───────────────────────────────────────────
+
+await test('phase-0d-oob run() returns immediately on non-panel Write (R2 early-exit)', async () => {
+  const home = fakeHome('0doob-run');
+  try {
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-phase-0d-oob.mjs')).href);
+    assert(typeof mod.run === 'function', 'phase-0d-oob must export run()');
+    const t0 = Date.now();
+    const res = await mod.run({tool_name: 'Write', tool_input: {file_path: join(home, 'notes.md')}});
+    assert(res.exit === 0, 'exit 0');
+    assert(Date.now() - t0 < 2000, 'must return fast on non-panel path (no reviewer spawn)');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
