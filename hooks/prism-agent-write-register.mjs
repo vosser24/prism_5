@@ -29,11 +29,8 @@
 // emits one short stdout line on a real registration.
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'node:fs';
-import {join, dirname, sep} from 'node:path';
+import {join, dirname, sep, basename} from 'node:path';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
-
-const H = process.env.HOME || process.env.USERPROFILE;
-const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 
 // Matches `.../.claude/agents/<name>.md`. <name> is anything that isn't
 // a directory separator. roster.json itself is excluded in isAgentPath().
@@ -67,7 +64,7 @@ function agentName(p) {
 // Returns {roster_path, scope}. Scope is 'global' if the agent lives directly
 // under ~/.claude/agents/; otherwise 'project' and the roster path is the
 // project's local .claude/agents/roster.json.
-function locateRoster(agentPath) {
+function locateRoster(agentPath, H, GLOBAL_ROSTER) {
   const normalised = agentPath.split(/[\\/]/).join(sep);
   const expectedGlobal = join(H, '.claude', 'agents') + sep;
   if (normalised.startsWith(expectedGlobal)) {
@@ -160,11 +157,11 @@ function parseFrontmatter(body) {
   return out;
 }
 
-async function registerAgent(agentPath) {
+async function registerAgent(agentPath, H, GLOBAL_ROSTER) {
   const name = agentName(agentPath);
   if (!name) return {registered: false};
 
-  const {roster_path, scope} = locateRoster(agentPath);
+  const {roster_path, scope} = locateRoster(agentPath, H, GLOBAL_ROSTER);
 
   return await withRosterLock(roster_path, async () => {
     const roster = readRoster(roster_path);
@@ -208,32 +205,51 @@ async function registerAgent(agentPath) {
   });
 }
 
-// ---------- entry point ----------
+// ---------- exported run() ----------
 
-async function main() {
-  if (process.env.PRISM_DISABLE_AGENT_WRITE_HOOK === '1') return;
+export async function run(payload) {
+  // Recompute per-call so HOME-override in tests is honored.
+  const H = process.env.HOME || process.env.USERPROFILE;
+  const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { return; }
+  // Cheap early-exits first.
+  if (process.env.PRISM_DISABLE_AGENT_WRITE_HOOK === '1') {
+    return {exit: 0, stdout: '', stderr: ''};
+  }
+  if (!['Write', 'Edit', 'MultiEdit'].includes(payload.tool_name)) {
+    return {exit: 0, stdout: '', stderr: ''};
+  }
 
-  if (!['Write', 'Edit', 'MultiEdit'].includes(input.tool_name)) return;
-
-  const paths = collectPaths(input.tool_input);
+  const paths = collectPaths(payload.tool_input);
   const agentWrites = paths.filter(isAgentPath);
-  if (!agentWrites.length) return;
+  if (!agentWrites.length) return {exit: 0, stdout: '', stderr: ''};
 
   const messages = [];
   for (const agentPath of agentWrites) {
-    const result = await registerAgent(agentPath);
+    const result = await registerAgent(agentPath, H, GLOBAL_ROSTER);
     if (result.registered) {
       messages.push(`PRISM: registered ${result.name} → ${result.roster_label}`);
     } else if (result.alreadyKnown) {
       messages.push(`PRISM: ${result.name} already registered`);
     }
   }
-  if (messages.length) process.stdout.write(messages.join('\n'));
+  const stdout = messages.join('\n');
+  return {exit: 0, stdout, stderr: ''};
 }
 
+// ---------- CLI entry point ----------
+
+async function main() {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
+  catch { process.exit(0); }
+
+  const {exit: code, stdout} = await run(input);
+  if (stdout) process.stdout.write(stdout);
+  process.exit(code);
+}
+
+// Guard: only run main() when invoked as a hook, NOT when imported by tests.
+const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-agent-write-register.mjs';
 // Defensive: any throw exits 0. We never want to fail a tool call from this hook.
-main().catch(e => { process.stderr.write(String(e) + '\n'); }).finally(() => process.exit(0));
+if (invokedDirectly) main().catch(e => { process.stderr.write(String(e) + '\n'); process.exit(0); });

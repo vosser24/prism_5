@@ -1,0 +1,74 @@
+#!/usr/bin/env node
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const HOOKS = join(__dirname, '..', '..', '..', 'hooks');
+let pass = 0, fail = 0;
+function test(name, fn) { return Promise.resolve().then(fn).then(() => { pass++; console.log(`  ok  ${name}`); }, e => { fail++; console.log(`  FAIL ${name}\n        ${e.stack || e.message}`); }); }
+function assert(c, m) { if (!c) throw new Error('assert: ' + (m || '')); }
+function fakeHome(label) { return mkdtempSync(join(tmpdir(), `prism-ptu-${label}-`)); }
+
+// ─── Task 2.1: prism-kb-autosync ────────────────────────────────────────────
+
+await test('kb-autosync run() marks a .claude/skills write dirty, returns stdout exit 0', async () => {
+  const home = fakeHome('kb-run');
+  try {
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-kb-autosync.mjs')).href);
+    assert(typeof mod.run === 'function', 'kb-autosync must export run()');
+    const prevH = process.env.HOME, prevU = process.env.USERPROFILE;
+    process.env.HOME = home; process.env.USERPROFILE = home;
+    try {
+      const fp = join(home, '.claude', 'skills', 'foo', 'SKILL.md');
+      const res = await mod.run({tool_name: 'Write', tool_input: {file_path: fp}});
+      assert(res.exit === 0, 'exit 0');
+      assert(existsSync(join(home, '.claude', '.prism-kb-dirty')), 'dirty flag written');
+    } finally { process.env.HOME = prevH; process.env.USERPROFILE = prevU; }
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ─── Task 2.2: prism-agent-write-register ───────────────────────────────────
+
+await test('agent-write-register run() registers a global agent, returns stdout exit 0', async () => {
+  const home = fakeHome('awr-run');
+  try {
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-agent-write-register.mjs')).href);
+    assert(typeof mod.run === 'function', 'agent-write-register must export run()');
+    const prevH = process.env.HOME, prevU = process.env.USERPROFILE;
+    process.env.HOME = home; process.env.USERPROFILE = home;
+    try {
+      const ap = join(home, '.claude', 'agents', 'foo.md');
+      mkdirSync(dirname(ap), {recursive: true});
+      writeFileSync(ap, '---\nname: foo\ndescription: does foo\n---\n# foo\n');
+      const res = await mod.run({tool_name: 'Write', tool_input: {file_path: ap}});
+      assert(res.exit === 0, 'exit 0');
+      assert(/registered foo/i.test(res.stdout), 'stdout: ' + res.stdout);
+    } finally { process.env.HOME = prevH; process.env.USERPROFILE = prevU; }
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ─── Task 2.3: prism-phase-0d-challenges ────────────────────────────────────
+
+await test('phase-0d-challenges run() no-ops on non-panel Write, exit 0', async () => {
+  const home = fakeHome('0dc-run');
+  try {
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-phase-0d-challenges.mjs')).href);
+    assert(typeof mod.run === 'function', 'phase-0d-challenges must export run()');
+    const res = await mod.run({tool_name: 'Write', tool_input: {file_path: join(home, 'notes.md')}});
+    assert(res.exit === 0 && res.stdout === '', 'silent on non-panel path');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+// ─── Task 2.6: prism-dispatch-cap ───────────────────────────────────────────
+
+await test('dispatch-cap run() no-ops on non-Agent tool, exit 0', async () => {
+  const mod = await import(pathToFileURL(join(HOOKS, 'prism-dispatch-cap.mjs')).href);
+  assert(typeof mod.run === 'function', 'dispatch-cap must export run()');
+  const res = await mod.run({tool_name: 'Write', tool_input: {}});
+  assert(res.exit === 0 && res.stdout === '', 'silent on non-Agent tool');
+});
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -16,11 +16,6 @@
 import {readFileSync, appendFileSync, existsSync, mkdirSync} from 'fs';
 import {join, dirname, resolve, basename} from 'path';
 
-const H = process.env.HOME || process.env.USERPROFILE;
-const CLAUDE_DIR = join(H, '.claude');
-const DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-dirty');
-const KNOWLEDGE_DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-knowledge-dirty');
-
 const KB_PATH_PATTERNS = [
   /[/\\]\.claude[/\\]skills[/\\]/i,
   /[/\\]\.claude[/\\]agents[/\\]/i,
@@ -124,14 +119,19 @@ function appendDirtyTo(flagPath, paths) {
   }
 }
 
-function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
+export async function run(payload) {
+  // Recompute per-call so HOME-override in tests is honored.
+  const H = process.env.HOME || process.env.USERPROFILE;
+  const CLAUDE_DIR = join(H, '.claude');
+  const DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-dirty');
+  const KNOWLEDGE_DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-knowledge-dirty');
 
-  if (!['Write', 'Edit', 'MultiEdit'].includes(input.tool_name)) process.exit(0);
+  // Cheap early-exit: only react to write-class tools.
+  if (!['Write', 'Edit', 'MultiEdit'].includes(payload.tool_name)) {
+    return {exit: 0, stdout: '', stderr: ''};
+  }
 
-  const allPaths = [...collectPaths(input.tool_input)];
+  const allPaths = [...collectPaths(payload.tool_input)];
 
   const kbPaths = allPaths.filter(isKbPath);
   const knowledgePaths = allPaths.filter(p => isKnowledgeDirtyPath(p));
@@ -145,8 +145,18 @@ function main() {
     const added = appendDirtyTo(KNOWLEDGE_DIRTY_FLAG, knowledgePaths);
     if (added.length) msgs.push(`PRISM KB: ${added.length} knowledge file(s) marked dirty. Cross-project index will refresh at session end.`);
   }
-  if (msgs.length) process.stdout.write(msgs.join('\n'));
-  process.exit(0);
+  const stdout = msgs.join('\n');
+  return {exit: 0, stdout, stderr: ''};
+}
+
+async function main() {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
+  catch { process.exit(0); }
+
+  const {exit: code, stdout} = await run(input);
+  if (stdout) process.stdout.write(stdout);
+  process.exit(code);
 }
 
 // Guard: only run main() when invoked as a hook, NOT when imported by tests.

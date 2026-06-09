@@ -6,18 +6,10 @@
 // event per challenge under each position.
 
 import { appendFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 
 const ROUTING_LOG = join(homedir(), '.claude', '.prism-routing.jsonl');
-
-async function readHookPayload() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf-8');
-  if (!raw.trim()) return null;
-  try { return JSON.parse(raw); } catch { return null; }
-}
 
 function panelPathFromToolInput(payload) {
   // PostToolUse for Write tool: tool_input.file_path is the destination.
@@ -32,17 +24,17 @@ function extractTaskSha(panelPath) {
   return m ? m[1] : 'unknown';
 }
 
-async function main() {
-  const payload = await readHookPayload();
-  const panelPath = payload && panelPathFromToolInput(payload);
-  if (!panelPath) { process.exit(0); }
+export async function run(payload) {
+  // Cheap early-exit: only proceed when payload points at a panel.json path.
+  const panelPath = panelPathFromToolInput(payload);
+  if (!panelPath) return {exit: 0, stdout: '', stderr: ''};
 
   let panel;
   try {
     panel = JSON.parse(readFileSync(panelPath, 'utf-8'));
   } catch (e) {
     process.stderr.write(`[phase-0d-challenges] cannot read ${panelPath}: ${e.message}\n`);
-    process.exit(0);
+    return {exit: 0, stdout: '', stderr: ''};
   }
 
   const taskSha = extractTaskSha(panelPath);
@@ -65,10 +57,27 @@ async function main() {
       catch (e) { process.stderr.write(`[phase-0d-challenges] log write failed: ${e.message}\n`); }
     }
   }
+  return {exit: 0, stdout: '', stderr: ''};
+}
+
+async function main() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString('utf-8');
+  let payload = null;
+  if (raw.trim()) {
+    try { payload = JSON.parse(raw); } catch { /* ignore */ }
+  }
+  if (!payload) { process.exit(0); }
+  await run(payload);
   process.exit(0);
 }
 
-main().catch((e) => {
-  process.stderr.write(`[phase-0d-challenges] uncaught: ${e.message}\n`);
-  process.exit(0); // non-blocking; telemetry must never fail loud
-});
+// Guard: only run main() when invoked as a hook, NOT when imported by tests.
+const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-phase-0d-challenges.mjs';
+if (invokedDirectly) {
+  main().catch((e) => {
+    process.stderr.write(`[phase-0d-challenges] uncaught: ${e.message}\n`);
+    process.exit(0); // non-blocking; telemetry must never fail loud
+  });
+}
