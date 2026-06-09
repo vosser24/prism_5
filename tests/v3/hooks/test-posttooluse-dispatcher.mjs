@@ -96,5 +96,33 @@ await test('phase-0d-oob run() returns immediately on non-panel Write (R2 early-
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
+await test('PostToolUse dispatcher: Write fans to 5 (kb-autosync dirty flag written), exit 0', async () => {
+  const home = fakeHome('ptu-write');
+  try {
+    const DISP = join(HOOKS, 'prism-posttooluse-dispatcher.mjs');
+    const fp = join(home, '.claude', 'skills', 'foo', 'SKILL.md');
+    const r = spawnSync(process.execPath, [DISP], {
+      input: JSON.stringify({tool_name: 'Write', tool_input: {file_path: fp}}),
+      encoding: 'utf8',
+      env: {...process.env, HOME: home, USERPROFILE: home, PRISM_DISABLE_OOB_REVIEW: '1'},
+    });
+    assert(r.status === 0, 'exit 0, stderr=' + r.stderr);
+    assert(existsSync(join(home, '.claude', '.prism-kb-dirty')), 'kb-autosync ran inside dispatcher');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
+await test('PostToolUse dispatcher: Agent routes ONLY to dispatch-cap, exit 0', async () => {
+  const home = fakeHome('ptu-agent');
+  try {
+    const DISP = join(HOOKS, 'prism-posttooluse-dispatcher.mjs');
+    const r = spawnSync(process.execPath, [DISP], {
+      input: JSON.stringify({tool_name: 'Agent', tool_input: {subagent_type: 'general-purpose', description: 'x'}}),
+      encoding: 'utf8', env: {...process.env, HOME: home, USERPROFILE: home},
+    });
+    assert(r.status === 0, 'exit 0');
+    assert(!existsSync(join(home, '.claude', '.prism-kb-dirty')), 'kb-autosync NOT run for Agent');
+  } finally { rmSync(home, {recursive: true, force: true}); }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

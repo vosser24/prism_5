@@ -275,6 +275,7 @@ async function runReviewerInProcess(payload, panelPath, taskSha) {
 // ─── exported run() — fire-and-forget for PostToolUse dispatcher ──────────────
 
 export async function run(payload) {
+  if (process.env.PRISM_PHASE_0D_OOB_PROCESS === '1') return { exit: 0, stdout: '', stderr: '' };
   if (process.env.PRISM_DISABLE_OOB_REVIEW === '1') return { exit: 0, stdout: '', stderr: '' };
 
   const panelPath = payload && panelPathFromToolInput(payload);
