@@ -28,7 +28,7 @@
 // subscription auth (no separate ANTHROPIC_API_KEY required).
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync} from 'fs';
-import {join, dirname} from 'path';
+import {join, dirname, basename} from 'path';
 import {createHash} from 'crypto';
 import {pathToFileURL} from 'url';
 import {spawn} from 'child_process';
@@ -70,35 +70,31 @@ function logEvent(event, extra) {
   });
 }
 
-async function main() {
+// Exported pure function — SubagentStop OOB Phase 1.5 review.
+// Returns {exit, stdout, stderr}. Never calls process.exit().
+// R4: async mode returns {exit:0} IMMEDIATELY after spawn().unref() — never awaits child.
+export async function run(payload) {
   // Recursion guard: if we're running inside a Claude Code session that
   // was spawned by this hook (e.g., the OOB reviewer's own session),
   // bail out immediately. Without this, an inner SubagentStop would
   // refire the hook → spawn another claude → ad infinitum.
   if (process.env.PRISM_OOB_REVIEWER_PROCESS === '1') {
     logEvent('recursion-guard');
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // Kill switch
   if (process.env.PRISM_DISABLE_OOB_REVIEW === '1') {
     logEvent('killswitch-env');
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
-  // Parse input
-  let input;
-  try {
-    input = JSON.parse(readFileSync(0, 'utf-8'));
-  } catch {
-    logEvent('malformed-input');
-    return 0;
-  }
+  const input = payload;
 
   const agentName = String(input.agent_name || input.agent || input.subagent_type || '').replace(/^@/, '');
   if (!agentName) {
     logEvent('no-agent-name');
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   const sessionId = input.session_id || 'anon';
@@ -107,7 +103,7 @@ async function main() {
 
   if (!output || typeof output !== 'string' || output.length < 10) {
     logEvent('no-output');
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // Read roster to check tag
@@ -117,13 +113,13 @@ async function main() {
     roster = JSON.parse(readFileSync(rosterPath, 'utf-8'));
   } catch {
     logEvent('roster-unreadable');
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   const entry = roster.agents && roster.agents[agentName];
   if (!entry || entry.requires_phase_1_5 !== true) {
     logEvent('agent-not-tagged', {agent: agentName});
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // V1 — one-shot skip
@@ -141,7 +137,7 @@ async function main() {
     } catch (e) { process.stderr.write(`[oob] failed to clear skip_next_oob: ${e.message}\n`); }
     process.stderr.write(`[oob] skip_next_oob honored for '${agentName}'; flag cleared\n`);
     logEvent('skip-next-oob', {agent: agentName});
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   const blockMode = entry.requires_phase_1_5_block === true;
@@ -164,7 +160,7 @@ async function main() {
     }
   } catch (e) {
     logEvent('lib-load-failed', {error: String(e && e.message)});
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // Extract load-bearing claims (simple regex pass — anything that looks like an assertion)
@@ -200,7 +196,7 @@ async function main() {
 
   logEvent('pending-written', {agent: agentName, sha, claims_count: claims.length, mode: blockMode ? 'block' : 'async'});
 
-  // Test-mode short-circuit
+  // Test-mode short-circuit (PRISM_OOB_TEST_MOCK_SDK path — preserved verbatim)
   if (process.env.PRISM_OOB_TEST_MOCK_SDK === '1') {
     flagLib.writeVerdict('1-5', sha, {
       session_id: sessionId,
@@ -220,7 +216,7 @@ async function main() {
     });
     flagLib.clearPending(sha);
     logEvent('verdict-mock', {sha});
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // Real invocation via claude -p (Claude Code subscription auth)
@@ -230,15 +226,30 @@ async function main() {
     if (verdict && (verdict.summary.un_cited > 0 || verdict.summary.rejected > 0)) {
       // Block: decision-block JSON via stdout (Claude Code reads it)
       const reason = 'OOB PHASE 1.5 reviewer flagged ' + verdict.summary.un_cited + ' UN-CITED + ' + verdict.summary.rejected + ' REJECTED claims on @' + agentName + '. Verdict file: ~/.claude/.prism-phase-1-5-verdicts-' + sha + '.json. Bounce-ONCE per protocol.';
-      process.stdout.write(JSON.stringify({decision: 'block', reason}));
-      return 2;
+      return { exit: 2, stdout: JSON.stringify({decision: 'block', reason}), stderr: '' };
     }
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   } else {
-    // Async: spawn child to invoke reviewer, return immediately
+    // Async: spawn child to invoke reviewer, return immediately (R4: never await).
     spawnAsyncReviewer(sha, useLite);
-    return 0;
+    return { exit: 0, stdout: '', stderr: '' };
   }
+}
+
+async function main() {
+  // Parse input from stdin
+  let input;
+  try {
+    input = JSON.parse(readFileSync(0, 'utf-8'));
+  } catch {
+    logEvent('malformed-input');
+    process.exit(0);
+  }
+
+  const res = await run(input);
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
+  process.exit(res.exit);
 }
 
 function extractClaims(output) {
@@ -413,7 +424,9 @@ function spawnAsyncReviewer(sha, useLite = false) {
   child.unref();
 }
 
-// Async-worker entry: invoked by spawnAsyncReviewer
+// Async-worker entry: invoked by spawnAsyncReviewer.
+// Must remain outside the invokedDirectly guard — the async-worker path
+// uses process.argv[2] === '--async-worker', not the script filename.
 if (process.argv[2] === '--async-worker' && process.argv[3]) {
   (async () => {
     const sha = process.argv[3];
@@ -424,5 +437,9 @@ if (process.argv[2] === '--async-worker' && process.argv[3]) {
     process.exit(0);
   })().catch(() => process.exit(0));
 } else {
-  main().then(code => process.exit(code || 0)).catch(() => process.exit(0));
+  // Guard: only run main() when invoked as a hook, NOT when imported by tests.
+  const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-phase-1-5-oob.mjs';
+  if (invokedDirectly) {
+    main().catch(() => process.exit(0));
+  }
 }

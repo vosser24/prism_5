@@ -4,8 +4,10 @@
 import{readFileSync as r,writeFileSync as w,appendFileSync as ap,existsSync as e,mkdirSync as mk}from'fs';
 import{join as j}from'path';
 import{pathToFileURL}from'url';
-try{
-const input=JSON.parse(r(0,'utf-8'));
+import{basename}from'path';
+
+export async function run(payload) {
+const input = payload;
 const H=process.env.HOME||process.env.USERPROFILE;
 const agentName=(input.agent_name||input.agent||'').replace(/^@/,'');
 const project=(process.cwd().split(/[/\\]/).pop())||'unknown';
@@ -66,5 +68,17 @@ try{
     mod.close(db);
   }catch{}
 }catch{}
-}catch{}
-process.exit(0);
+return {exit: 0};
+}
+
+// Guard: only run as hook when invoked directly, NOT when imported by tests.
+const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-subagent-stop.mjs';
+if (invokedDirectly) {
+  (async () => {
+    try {
+      const input = JSON.parse(r(0,'utf-8'));
+      await run(input);
+    } catch {}
+    process.exit(0);
+  })();
+}

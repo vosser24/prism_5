@@ -578,19 +578,13 @@ function handleDroppedPositions(payload) {
 
 // ─── Path A: SubagentStop panel-hallucination guard ──────────────────────────
 
-function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
-
-  // Dispatch to Path B if this looks like a PostToolUse Write event.
-  // handleDroppedPositions calls process.exit(0) when it handles the event.
-  // It returns false (without exiting) only when the payload is NOT a
-  // panel.json Write, allowing Path A (SubagentStop) to proceed.
-  handleDroppedPositions(input);
+// Path A pure function — SubagentStop panel-hallucination check.
+// Returns {exit, stdout, stderr}. Never calls process.exit().
+export function runSubagentStop(payload) {
+  const input = payload || {};
 
   const MODE = resolveMode();
-  if (MODE === 'off') process.exit(0);
+  if (MODE === 'off') return { exit: 0, stdout: '', stderr: '' };
 
   // SubagentStop payload: subagent_type, output (or transcript), session_id.
   const subagentType = String(
@@ -599,10 +593,10 @@ function main() {
     input.agent_type ||
     ''
   ).toLowerCase();
-  if (!subagentType) process.exit(0);
+  if (!subagentType) return { exit: 0, stdout: '', stderr: '' };
 
   const matchesPanel = PANEL_SUBAGENT_HINTS.some(h => subagentType.includes(h));
-  if (!matchesPanel) process.exit(0);
+  if (!matchesPanel) return { exit: 0, stdout: '', stderr: '' };
 
   const sessionId = input.session_id || 'anon';
 
@@ -623,7 +617,7 @@ function main() {
       reason: isSubagentById ? 'parent_tool_use_id' : 'env',
       mode: MODE,
     });
-    process.exit(0);
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // force_opus passthrough.
@@ -635,7 +629,7 @@ function main() {
       action: 'passthrough-opus-force',
       mode: MODE,
     });
-    process.exit(0);
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   // Read subagent output. Field name varies across Claude Code builds.
@@ -647,7 +641,7 @@ function main() {
     input.result ||
     '';
 
-  if (!output || typeof output !== 'string') process.exit(0);
+  if (!output || typeof output !== 'string') return { exit: 0, stdout: '', stderr: '' };
 
   const candidates = extractPersonas(output);
   if (candidates.length === 0) {
@@ -660,7 +654,7 @@ function main() {
       output_hash: sha256short(output),
       mode: MODE,
     });
-    process.exit(0);
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   const roster = loadRoster();
@@ -695,7 +689,7 @@ function main() {
         mode: MODE,
       });
     }
-    process.exit(0);
+    return { exit: 0, stdout: '', stderr: '' };
   }
 
   writeFlagCache(sessionId, {ts: now, flagged_key: flaggedKey, flagged});
@@ -722,12 +716,28 @@ function main() {
 
   if (MODE === 'hard') {
     // SubagentStop hooks signal block via exit code 2 + stderr message.
-    process.stderr.write(notice + '\n');
-    process.exit(2);
+    return { exit: 2, stdout: '', stderr: notice + '\n' };
   }
 
-  process.stdout.write(notice);
-  process.exit(0);
+  return { exit: 0, stdout: notice, stderr: '' };
+}
+
+function main() {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
+  catch { process.exit(0); }
+
+  // Dispatch to Path B if this looks like a PostToolUse Write event.
+  // handleDroppedPositions calls process.exit() when it handles the event.
+  // It returns false (without exiting) only when the payload is NOT a
+  // panel.json Write, allowing Path A (SubagentStop) to proceed.
+  handleDroppedPositions(input);
+
+  // Path A — SubagentStop
+  const res = runSubagentStop(input);
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
+  process.exit(res.exit);
 }
 
 // Guard: only run main() when invoked as a hook, NOT when imported by tests.
