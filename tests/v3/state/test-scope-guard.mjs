@@ -302,14 +302,19 @@ function runPanelGuard(sandbox, panelObj, panelRelPath = '.prism-task-d3/panel.j
   rmSync(sandbox, { recursive: true, force: true });
 }
 
-// F1 regression: panel-guard must be registered on PostToolUse Write in both manifests
+// F1 regression: panel-guard must be reachable on PostToolUse Write in both manifests.
+// Phase 4b consolidation: panel-guard is now dispatched internally by
+// prism-posttooluse-dispatcher.mjs (matcher Write|Edit|MultiEdit|Agent covers Write).
+// The check is updated to verify the dispatcher is wired — the dispatcher's own
+// tests (test-posttooluse-dispatcher.mjs) enforce that it calls panel-guard for Write.
 {
   const plugin = JSON.parse(readFileSync(join(repoRoot, '.claude-plugin', 'plugin.json'), 'utf-8'));
   const settings = JSON.parse(readFileSync(join(repoRoot, 'settings.fragment.json'), 'utf-8'));
   const has = (manifest) => {
     for (const group of (manifest.hooks?.PostToolUse || [])) {
-      if (group.matcher !== 'Write') continue;
       for (const h of (group.hooks || [])) {
+        if (h.command && h.command.includes('prism-posttooluse-dispatcher.mjs')) return true;
+        // legacy: direct panel-guard wiring also accepted (pre-consolidation)
         if (h.command && h.command.includes('prism-panel-guard.mjs')) return true;
       }
     }
