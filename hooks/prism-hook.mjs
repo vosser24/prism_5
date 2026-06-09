@@ -29,8 +29,9 @@ try {
   if (typeof tc.pastedRatio === 'function') pastedRatio = tc.pastedRatio;
 } catch {}
 
-try {
-  const input = JSON.parse(r(0, 'utf-8'));
+export async function run(payload, ctx = {}) {
+  try {
+  const input = payload || {};
   const prompt = (input.prompt || '');
   const promptLC = prompt.toLowerCase().trim();
   // v5.2.1: skill/MCP/router NUDGE matching runs on the user's OWN words. When the
@@ -337,6 +338,18 @@ try {
   } catch {}
 
   // Output
-  if (messages.length > 0) process.stdout.write(messages.join('\n'));
-  process.exit(0);
-} catch { process.exit(0); }
+  return {exit: 0, stdout: messages.length > 0 ? messages.join('\n') : '', stderr: ''};
+  } catch { return {exit: 0, stdout: '', stderr: ''}; }
+}
+
+import {basename as _basename} from 'path';
+const invokedDirectly = process.argv[1] && _basename(process.argv[1]) === 'prism-hook.mjs';
+if (invokedDirectly) {
+  (async () => {
+    let payload = {};
+    try { payload = JSON.parse(r(0, 'utf-8') || '{}'); } catch {}
+    const res = await run(payload);
+    if (res.stdout) process.stdout.write(res.stdout);
+    process.exit(res.exit || 0);
+  })();
+}
