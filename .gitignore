@@ -7,6 +7,9 @@ id_rsa*
 credentials.json
 *.pfx
 
+# Stray runtime dirs from path-resolution bugs (e.g. undefined/.claude/)
+undefined/
+
 # Local / user overlays (runtime convention)
 CLAUDE.local.md
 .claude/settings.local.json
