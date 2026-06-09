@@ -1,5 +1,5 @@
 {
-  "prism_version": "5.5.0",
+  "prism_version": "5.6.0",
   "installed_date": "2026-04-20T10:10:21.359481",
   "last_update_check": "2026-06-09T00:00:00.000000",
   "next_scheduled_update": "2026-06-24T00:00:00.000000",
@@ -56,6 +56,10 @@
     {
       "date": "2026-06-09T00:00:00.000000",
       "action": "Reconciled the shipped update-log + PRISM_VERSION constant to v5.5.0 (was frozen at the 2.8.0/3.11.0 stamps) and set next_scheduled_update to a future date so a fresh install does not emit a spurious 'Update is due' nag on first run."
+    },
+    {
+      "date": "2026-06-09T00:00:00.000000",
+      "action": "Upgraded to PRISM v5.6.0 (hook consolidation: 4 advisory per-event dispatchers — UserPromptSubmit 4->1, PostToolUse 5->1, SubagentStop 3->1, SessionEnd 2->1; ~11->4 hook spawns per turn on Windows, benchmark-verified faster; PreToolUse enforcement consolidation deferred to a future release)"
     }
   ]
 }

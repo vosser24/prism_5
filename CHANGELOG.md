@@ -4,6 +4,18 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.6.0] - 2026-06-09
+
+Hook consolidation: advisory per-event dispatchers replace the previous fan-out of individually-registered hook entries, cutting advisory spawns from ~11 to ~4 per turn on Windows, benchmark-verified to improve latency.
+
+- **4 advisory dispatchers introduced.** `UserPromptSubmit` 4→1 (`prism-userpromptsubmit-dispatcher.mjs`), `PostToolUse` 5→1 (`prism-posttooluse-dispatcher.mjs`), `SubagentStop` 3→1 (`prism-subagentstop-dispatcher.mjs`), `SessionEnd` 2→1 (`prism-sessionend-dispatcher.mjs`). Each dispatcher uses a `run()` pattern that calls its constituent advisors inline — one `node` cold-start per event instead of N, with no change to advisor behaviour or ordering.
+- **~11→4 advisory spawns per turn.** On a typical haiku/sonnet turn (UserPromptSubmit + PostToolUse × 2): was 4+5+2=11 advisory spawns per turn; now 1+1+1=3 per turn (plus the unchanged PreToolUse enforcement hooks). Benchmark suite (`tests/v3/bench/bench-hook-consolidation.mjs`) verifies the latency improvement is real and consistent.
+- **`run()` refactor pattern.** Each dispatcher `import`s its constituent hook modules and calls their exported `run(payload)` (or equivalent) directly — no spawning, no shell. Constituent hooks retain their own files and remain individually testable.
+- **`plugin.json` and `settings.fragment.json` wiring updated.** Each of the 4 consolidated events now has a single registered hook entry pointing at its dispatcher. The previously separate per-advisor registrations are removed.
+- **Install manifest updated.** `tools/install-manifest.json` lists all 4 dispatcher files for deployment.
+- **PreToolUse enforcement consolidation deferred.** The enforcement hooks (`prism-safety`, `prism-prepush-review`, `prism-agent-model-guard`, `prism-parallel-guard`, `prism-mutation-guard`, `prism-parent-dispatch-guard`, `prism-task-tier-advisor`) remain individually registered; consolidating them carries higher risk and is deferred to a future release.
+- **Tests.** `tests/v3/hooks/test-*-dispatcher.mjs` (4 files, 5/8/5/3 passed); `tests/v3/state/test-settings-dispatcher-wiring.mjs` (6 passed); bench suite 4/4. Full audit ~29/0 green.
+
 ## [5.5.0] - 2026-06-08
 
 Discipline gap closed (found while diagnosing why dispatched agents never run TDD/debugging discipline). `using-superpowers` carries a `<SUBAGENT-STOP>` that suppresses superpowers auto-activation in **any dispatched subagent** — so every worker the master dispatches runs WITHOUT test-driven-development / systematic-debugging / brainstorming discipline unless the master injects it. The existing "equip the worker in its prompt" guidance named the principle but was soft: not mandatory, no task→skill mapping, and it didn't name the superpowers skills.
