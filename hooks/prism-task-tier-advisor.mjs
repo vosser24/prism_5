@@ -96,10 +96,14 @@ async function logAdvice(row) {
   } catch {}
 }
 
-async function main() {
-  const input = readStdin();
-  if (!input) process.exit(0);
-  if (input.tool_name !== 'TaskCreate') process.exit(0);
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// wire behavior (byte-identical, verified by golden-master).
+export async function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
+  if (input.tool_name !== 'TaskCreate') return done(0);
 
   const {subject, description, taskId, metadata} = extractTaskFields(input);
   const classPrompt = `${subject}\n${description}`.trim();
@@ -134,7 +138,7 @@ async function main() {
       h: 0, s: 0, o: 0,
       mode: MODE,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // Force-opus override — the user explicitly bypassed all tier gates.
@@ -150,7 +154,7 @@ async function main() {
       h: 0, s: 0, o: 0,
       mode: MODE,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // v2.7.0: three-source tier resolution, in priority order.
@@ -233,8 +237,8 @@ async function main() {
         permissionDecisionReason: `PRISM TIER task "${subjShort}": OPUS detected (${rationale}). Hard mode requires either metadata.tier_ack:"opus" OR a "[opus]" plan annotation in the task description. Retry with one of those, or split into smaller sub-tasks.`,
       },
     };
-    process.stdout.write(JSON.stringify(deny));
-    process.exit(0);
+    write(JSON.stringify(deny));
+    return done(0);
   }
 
   // Soft-mode nudge.
@@ -263,8 +267,17 @@ async function main() {
     mode: MODE,
   });
 
-  if (lines.length) process.stdout.write(lines.join('\n'));
-  process.exit(0);
+  if (lines.length) write(lines.join('\n'));
+  return done(0);
 }
 
-main().catch(() => process.exit(0));
+// Standalone shim — preserves original wire behavior (readStdin → null = exit 0).
+import {basename} from 'path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-task-tier-advisor.mjs') {
+  const input = readStdin();
+  if (!input) process.exit(0);
+  run(input).then((r) => {
+    if (r.stdout) process.stdout.write(r.stdout);
+    process.exit(r.exit || 0);
+  }).catch(() => process.exit(0));
+}

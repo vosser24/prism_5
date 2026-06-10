@@ -26,66 +26,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell|Agent|TaskCreate|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-safety.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git *)",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-prepush-review.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-agent-model-guard.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-parallel-guard.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-mutation-guard.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|TaskCreate|Bash|Edit|Write|MultiEdit|NotebookEdit|PowerShell|WebFetch|WebSearch",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-parent-dispatch-guard.mjs"
-          }
-        ]
-      },
-      {
-        "matcher": "TaskCreate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-task-tier-advisor.mjs"
+            "command": "bash ~/.claude/hooks/lib/prism-exec.sh ~/.claude/hooks/prism-pretooluse-dispatcher.mjs"
           }
         ]
       }

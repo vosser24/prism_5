@@ -370,19 +370,16 @@ function snapshotFiles(dir) {
   ok('TM3: non-PRISM hook (some-other-tool.sh) preserved after install', hasNonPrismHook);
   ok('TM3: PRISM hooks also present after install', hasPrismHook);
 
-  // v5.3.3: the prepush-review hook's `if` conditional-spawn field must survive
-  // mergeSettings (regression guard for the per-hook key-drop at installer:471).
-  let prepushIf = null;
-  if (settings && settings.hooks) {
-    for (const evHooks of Object.values(settings.hooks)) {
-      for (const group of evHooks) {
-        for (const h of (group.hooks || [])) {
-          if (h.command && h.command.includes('prism-prepush-review')) prepushIf = h.if ?? null;
-        }
-      }
-    }
-  }
-  ok('TM3: prepush-review `if` (Bash(git *)) preserved through mergeSettings (v5.3.3)', prepushIf === 'Bash(git *)');
+  // v5.7: PreToolUse consolidation — after strip-then-merge upgrade, PreToolUse
+  // must hold the SINGLE dispatcher entry and NONE of the 7 folded guards as
+  // separate hooks (regression guard against double-gating: strip must remove
+  // the old per-guard entries before the fragment's dispatcher is added).
+  const ptu = (settings && settings.hooks && settings.hooks.PreToolUse) || [];
+  const ptuCmds = ptu.flatMap(g => (g.hooks || []).map(h => h.command || ''));
+  const hasDispatcher = ptuCmds.some(c => c.includes('prism-pretooluse-dispatcher'));
+  const hasOldGuards = ptuCmds.some(c => /prism-(safety|prepush-review|agent-model-guard|parallel-guard|mutation-guard|parent-dispatch-guard|task-tier-advisor)\.mjs/.test(c));
+  ok('TM3: PreToolUse wires the dispatcher after merge', hasDispatcher);
+  ok('TM3: old per-guard PreToolUse entries removed (no double-gating on upgrade)', !hasOldGuards);
 
   // Also verify statusLine preservation (C1 regression test)
   const settingsWithStatusLine = {

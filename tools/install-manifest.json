@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.6.0",
+  "prism_version": "5.7.0",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -38,6 +38,7 @@
     {"src": "hooks/prism-task-tier-advisor.mjs", "dst": "hooks/prism-task-tier-advisor.mjs", "executable": true},
     {"src": "hooks/prism-userpromptsubmit-dispatcher.mjs", "dst": "hooks/prism-userpromptsubmit-dispatcher.mjs", "executable": true},
     {"src": "hooks/prism-posttooluse-dispatcher.mjs", "dst": "hooks/prism-posttooluse-dispatcher.mjs", "executable": true},
+    {"src": "hooks/prism-pretooluse-dispatcher.mjs", "dst": "hooks/prism-pretooluse-dispatcher.mjs", "executable": true},
     {"src": "hooks/prism-subagentstop-dispatcher.mjs", "dst": "hooks/prism-subagentstop-dispatcher.mjs", "executable": true},
     {"src": "hooks/prism-sessionend-dispatcher.mjs", "dst": "hooks/prism-sessionend-dispatcher.mjs", "executable": true},
     {"src": "hooks/lib/prism-exec.sh", "dst": "hooks/lib/prism-exec.sh", "executable": true},
@@ -45,6 +46,8 @@
     {"src": "hooks/lib/prism-cap.mjs", "dst": "hooks/lib/prism-cap.mjs", "executable": false},
     {"src": "hooks/lib/prism-panel-mode.mjs", "dst": "hooks/lib/prism-panel-mode.mjs", "executable": false},
     {"src": "hooks/lib/prism-claude-mem-detect.mjs", "dst": "hooks/lib/prism-claude-mem-detect.mjs", "executable": false},
+    {"src": "hooks/lib/prism-claude-mem-guard.mjs", "dst": "hooks/lib/prism-claude-mem-guard.mjs", "executable": false},
+    {"src": "hooks/lib/prism-home.mjs", "dst": "hooks/lib/prism-home.mjs", "executable": false},
     {"src": "hooks/lib/prism-freshness-sweep.mjs", "dst": "hooks/lib/prism-freshness-sweep.mjs", "executable": true},
     {"src": "hooks/lib/prism-opus-classifier.mjs", "dst": "hooks/lib/prism-opus-classifier.mjs", "executable": true},
     {"src": "hooks/lib/prism-router.mjs", "dst": "hooks/lib/prism-router.mjs", "executable": true},

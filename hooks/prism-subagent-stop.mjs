@@ -5,10 +5,12 @@ import{readFileSync as r,writeFileSync as w,appendFileSync as ap,existsSync as e
 import{join as j}from'path';
 import{pathToFileURL}from'url';
 import{basename}from'path';
+import{withRosterLock}from'../tools/lib/prism-roster-lock.mjs';
+import{prismHome}from'./lib/prism-home.mjs';
 
 export async function run(payload) {
 const input = payload;
-const H=process.env.HOME||process.env.USERPROFILE;
+const H=prismHome();
 const agentName=(input.agent_name||input.agent||'').replace(/^@/,'');
 const project=(process.cwd().split(/[/\\]/).pop())||'unknown';
 const sessionId=input.session_id||'';
@@ -20,18 +22,23 @@ const tokens=(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creat
 const rp=j(H,'.claude','skills','prism-plan','references','roster.json');
 if(e(rp)&&agentName&&!['master-orchestrator','agent-factory','prism-updater'].includes(agentName)){
   try{
-    const roster=JSON.parse(r(rp,'utf-8'));
-    if(roster.agents&&roster.agents[agentName]){
-      const a=roster.agents[agentName];
-      a.total_tasks_completed=(a.total_tasks_completed||0)+1;
-      a.last_used=new Date().toISOString();
-      a.projects_worked=a.projects_worked||[];
-      const p=a.projects_worked.find(x=>x.name===project);
-      if(p){p.tasks_completed++;p.date=a.last_used}
-      else a.projects_worked.push({name:project,date:a.last_used,tasks_completed:1});
-      roster.last_updated=new Date().toISOString();
-      w(rp,JSON.stringify(roster,null,2));
-    }
+    // Locked read-modify-write: under the SubagentStop dispatcher's Promise.all
+    // this races phase-1-5-oob's locked roster write. withRosterLock serialises
+    // them so neither increment is lost.
+    await withRosterLock(rp, async () => {
+      const roster=JSON.parse(r(rp,'utf-8'));
+      if(roster.agents&&roster.agents[agentName]){
+        const a=roster.agents[agentName];
+        a.total_tasks_completed=(a.total_tasks_completed||0)+1;
+        a.last_used=new Date().toISOString();
+        a.projects_worked=a.projects_worked||[];
+        const p=a.projects_worked.find(x=>x.name===project);
+        if(p){p.tasks_completed++;p.date=a.last_used}
+        else a.projects_worked.push({name:project,date:a.last_used,tasks_completed:1});
+        roster.last_updated=new Date().toISOString();
+        w(rp,JSON.stringify(roster,null,2));
+      }
+    });
   }catch{}
 }
 

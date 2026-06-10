@@ -199,23 +199,28 @@ function markOrchestratorDispatched(sessionId, sentinel) {
   writeSentinel(sessionId, sentinel);
 }
 
-try {
-  if (MODE === 'off') process.exit(0);
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// wire behavior (byte-identical, verified by golden-master).
+export function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
+  try {
+  if (MODE === 'off') return done(0);
 
-  const raw = readFileSync(0, 'utf-8');
-  const input = JSON.parse(raw || '{}');
   const toolName = input.tool_name || '';
   const isSubagent = !!input.parent_tool_use_id;
   const sessionId = input.session_id || 'anon';
 
   // v5.3.3 — read-only fast exit (see RO_TOOLS): these are always allowed; skip
   // all work (sentinel read, logging) so a stray spawn is microseconds of JS.
-  if (RO_TOOLS.has(toolName)) process.exit(0);
+  if (RO_TOOLS.has(toolName)) return done(0);
 
   // --- v2.2.1: subagent bypass paths (any one passes cleanly) ---
-  if (isSubagent) process.exit(0);
+  if (isSubagent) return done(0);
   if (String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent') {
-    process.exit(0);
+    return done(0);
   }
   // ----------------------------------------------------------------
 
@@ -228,7 +233,7 @@ try {
   // turn), so omitting Read re-deadlocks the documented escape. (finding #1, live-repro 2026-06-02)
   if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
     const fp = String(input.tool_input?.file_path || '');
-    if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) process.exit(0);
+    if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) return done(0);
   }
 
   // v5.3.2 — read-only quick-check fast path: a provably non-mutating Bash/
@@ -239,7 +244,7 @@ try {
     const cmd = input.tool_input?.command || input.tool_input?.cmd || '';
     if (isReadOnlyBash(cmd)) {
       appendLog({ts: new Date().toISOString(), event: 'dispatch_guard_ro_bash', session_id: sessionId, tool: toolName, mode: MODE});
-      process.exit(0);
+      return done(0);
     }
   }
 
@@ -259,12 +264,12 @@ try {
         }
       }
     }
-    process.exit(0);
+    return done(0);
   }
 
   const sentinel = readSentinel(sessionId);
-  if (!sentinel) process.exit(0);
-  if (sentinel.force_opus) process.exit(0);
+  if (!sentinel) return done(0);
+  if (sentinel.force_opus) return done(0);
 
   // v2.5.0: NOVEL-tier orchestrator gate.
   // Opus tier with summon_panel requires @master-orchestrator dispatch first.
@@ -308,23 +313,23 @@ try {
           permissionDecisionReason: panelNotice,
         },
       };
-      process.stdout.write(JSON.stringify(deny));
-      process.exit(2);
+      write(JSON.stringify(deny));
+      return done(2);
     }
-    process.stdout.write(panelNotice);
-    process.exit(0);
+    write(panelNotice);
+    return done(0);
   }
 
   // Opus tier without panel signal: parent can act directly.
-  if (sentinel.tier === 'opus') process.exit(0);
+  if (sentinel.tier === 'opus') return done(0);
 
   // v2.2.1 Path 3: haiku/sonnet tier + already dispatched → pass.
-  if (sentinel.dispatched) process.exit(0);
+  if (sentinel.dispatched) return done(0);
 
   // Defense-in-depth: orchestration-command allowlist match → pass.
   if (typeof sentinel.rationale === 'string' &&
       /orchestration command \/prism-/i.test(sentinel.rationale)) {
-    process.exit(0);
+    return done(0);
   }
 
   // Haiku/Sonnet tier, parent context, no dispatch yet → deny.
@@ -354,12 +359,25 @@ try {
         permissionDecisionReason: notice,
       },
     };
-    process.stdout.write(JSON.stringify(deny));
-    process.exit(2);
+    write(JSON.stringify(deny));
+    return done(2);
   }
 
-  process.stdout.write(notice);
-  process.exit(0);
-} catch {
-  process.exit(0);
+  write(notice);
+  return done(0);
+  } catch {
+    return done(0);
+  }
+}
+
+// Standalone shim — preserves original wire behavior + parse-error fail-open.
+import {basename} from 'node:path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-parent-dispatch-guard.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { process.exit(0); }
+  try {
+    const r = run(input);
+    if (r.stdout) process.stdout.write(r.stdout);
+    process.exit(r.exit || 0);
+  } catch { process.exit(0); }
 }

@@ -15,8 +15,10 @@
 //   B3 (subagent):  subagent context is unaffected (both kinds pass).
 //   B4 (no hole):   the dispatch-guard remains the sole tier fence for parent
 //                   Edit/Write on haiku/sonnet (proves no mutating path opens).
-//   B5 (matcher):   the mutation-guard matcher is exactly "Bash" in BOTH
-//                   settings.fragment.json and .claude-plugin/plugin.json.
+//   B5 (wiring):    v5.7 folds the mutation-guard into the PreToolUse dispatcher
+//                   (no standalone entry) in BOTH settings.fragment.json and
+//                   .claude-plugin/plugin.json; the dispatcher matcher still
+//                   covers Bash + PowerShell so the write-fence keeps firing.
 //
 // Run: node tests/v3/state/test-prism-mutation-guard-unblock.mjs
 
@@ -225,13 +227,25 @@ test('dispatch-guard: ALLOWS Edit on an opus non-panel turn (intended: parent Op
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
-// ── B5: matcher narrowed to exactly "Bash" in BOTH manifests ─────────────────
-test('settings.fragment.json: mutation-guard matcher is exactly "Bash"', () => {
-  assertEq(matcherFor(FRAGMENT, 'prism-mutation-guard.mjs'), 'Bash', 'fragment matcher must be narrowed to Bash');
+// ── B5: mutation-guard folded into the PreToolUse dispatcher (v5.7) ───────────
+// Pre-5.7 the guard was its OWN PreToolUse entry, narrowed to matcher "Bash".
+// v5.7 folds the advisory PreToolUse guards into prism-pretooluse-dispatcher.mjs,
+// and the Bash/PowerShell narrowing now lives INSIDE the dispatcher (the mutation
+// branch only runs classifyBashCommand for Bash/PowerShell — see
+// tests/v3/hooks/test-mutation-guard-classify.mjs). So the wiring invariant is now:
+// NO standalone mutation-guard entry, and a single dispatcher entry whose matcher
+// still covers Bash + PowerShell (so the BOM/bypass write-fence still reaches).
+function coversBashAndPowerShell(m) {
+  return typeof m === 'string' && /\bBash\b/.test(m) && /\bPowerShell\b/.test(m);
+}
+test('settings.fragment.json: mutation-guard folded into PreToolUse dispatcher (no standalone entry)', () => {
+  assertEq(matcherFor(FRAGMENT, 'prism-mutation-guard.mjs'), undefined, 'no standalone mutation-guard PreToolUse entry after v5.7 consolidation');
+  assertEq(coversBashAndPowerShell(matcherFor(FRAGMENT, 'prism-pretooluse-dispatcher.mjs')), true, 'dispatcher matcher must still cover Bash + PowerShell');
 });
 
-test('.claude-plugin/plugin.json: mutation-guard matcher is exactly "Bash"', () => {
-  assertEq(matcherFor(PLUGIN, 'prism-mutation-guard.mjs'), 'Bash', 'plugin matcher must be narrowed to Bash');
+test('.claude-plugin/plugin.json: mutation-guard folded into PreToolUse dispatcher (no standalone entry)', () => {
+  assertEq(matcherFor(PLUGIN, 'prism-mutation-guard.mjs'), undefined, 'no standalone mutation-guard PreToolUse entry after v5.7 consolidation');
+  assertEq(coversBashAndPowerShell(matcherFor(PLUGIN, 'prism-pretooluse-dispatcher.mjs')), true, 'dispatcher matcher must still cover Bash + PowerShell');
 });
 
 (async () => {

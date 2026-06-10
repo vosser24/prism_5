@@ -1,10 +1,14 @@
 {
-  "prism_version": "5.6.0",
+  "prism_version": "5.7.0",
   "installed_date": "2026-04-20T10:10:21.359481",
-  "last_update_check": "2026-06-09T00:00:00.000000",
+  "last_update_check": "2026-06-10T00:00:00.000000",
   "next_scheduled_update": "2026-06-24T00:00:00.000000",
   "calibration_history": [],
   "update_history": [
+    {
+      "date": "2026-06-10T00:00:00.000000",
+      "action": "Upgraded to PRISM v5.7.0 (PreToolUse enforcement consolidation: 7 guards -> prism-pretooluse-dispatcher.mjs; prism-home.mjs hardened HOME resolver fixes the Windows 'undefined/.claude/' artifact; self-healing claude-mem performance guard for Windows)"
+    },
     {
       "date": "2026-04-20T10:10:21.359481",
       "action": "Installed PRISM v2.1.24"

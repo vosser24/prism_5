@@ -34,11 +34,15 @@
 import {readFileSync} from 'fs';
 import {spawnSync} from 'child_process';
 
-try {
-  if (String(process.env.PRISM_DISABLE_PREPUSH_NUDGE || '') === '1') process.exit(0);
-
-  let input = {};
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// wire behavior (byte-identical, verified by golden-master).
+export async function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
+  try {
+    if (String(process.env.PRISM_DISABLE_PREPUSH_NUDGE || '') === '1') return done(0);
 
   const cmd = (input.tool_input && input.tool_input.command) || '';
 
@@ -59,13 +63,13 @@ try {
   // Match git push variants. Conservative — only the canonical forms.
   // We deliberately MISS unusual forms like aliases; Phase A goal is
   // catch the 99% case, not the 100% case.
-  if (!/(^|\s|;|&&|\|\|)git\s+(-\S+\s+)*push(\s|$)/i.test(scan)) process.exit(0);
+  if (!/(^|\s|;|&&|\|\|)git\s+(-\S+\s+)*push(\s|$)/i.test(scan)) return done(0);
   // Exclude --dry-run: a preview push doesn't need a code-review gate.
   // Same for --help (e.g., `git push --help` is doc-lookup, not a push).
   // \b doesn't anchor before "--" (dash is non-word and so is space), so use
   // an explicit boundary class.
-  if (/(?:^|\s)--dry-run(?:\s|$)/.test(scan)) process.exit(0);
-  if (/(?:^|\s)--help(?:\s|$)/.test(scan)) process.exit(0);
+  if (/(?:^|\s)--dry-run(?:\s|$)/.test(scan)) return done(0);
+  if (/(?:^|\s)--help(?:\s|$)/.test(scan)) return done(0);
 
   const cwd = input.cwd || process.cwd();
 
@@ -84,7 +88,7 @@ try {
     const reviewDone = flags.find(
       (f) => f.flag === 'review-done' && f.payload && f.payload.branch === branch
     );
-    if (reviewDone) process.exit(0);
+    if (reviewDone) return done(0);
   }
 
   const reason = branch
@@ -95,7 +99,7 @@ try {
   // PreToolUse decision-control: both permissionDecision and additionalContext
   // live inside hookSpecificOutput (matches every other PreToolUse hook in
   // this codebase — see prism-memory-save-nudge / prism-prompt-tier-router).
-  process.stdout.write(JSON.stringify({
+  write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'ask',
@@ -103,5 +107,16 @@ try {
       additionalContext: nudge,
     },
   }));
-} catch {}
-process.exit(0);
+  } catch {}
+  return done(0);
+}
+
+// Standalone shim — preserves original wire behavior + parse-error fail-open.
+import {basename} from 'path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-prepush-review.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+  const r = await run(input);
+  if (r.stdout) process.stdout.write(r.stdout);
+  process.exit(r.exit || 0);
+}

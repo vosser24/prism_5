@@ -28,13 +28,20 @@ test('SessionEnd has ONE dispatcher entry', () => {
   const c = cmds('SessionEnd');
   assert(c.length === 1 && /prism-sessionend-dispatcher\.mjs/.test(c[0]), 'cmds: ' + JSON.stringify(c));
 });
-test('PreToolUse UNCHANGED (Phase 5 deferred) — still has its enforcement entries', () => {
+test('PreToolUse has ONE dispatcher entry (Phase 5 consolidation, v5.7)', () => {
+  const grp = s.hooks.PreToolUse;
+  assert(grp.length === 1, `expected 1 group, got ${grp.length}`);
   const c = cmds('PreToolUse');
-  assert(c.some(x => /prism-safety\.mjs/.test(x)), 'safety still wired individually');
-  assert(c.some(x => /prism-parent-dispatch-guard\.mjs/.test(x)), 'dispatch-guard still wired');
+  assert(c.length === 1, `expected 1 command, got ${c.length}`);
+  assert(/prism-pretooluse-dispatcher\.mjs/.test(c[0]), 'wires the PreToolUse dispatcher: ' + c[0]);
+  // matcher must cover every tool the 7 folded guards routed on.
+  for (const tool of ['Bash','PowerShell','Agent','TaskCreate','Edit','Write','MultiEdit','NotebookEdit','WebFetch','WebSearch'])
+    assert(new RegExp(`(^|\\|)${tool}(\\||$)`).test(grp[0].matcher), `matcher missing ${tool}: ${grp[0].matcher}`);
+  // the individual guards must NOT be wired individually anymore.
+  assert(!c.some(x => /prism-safety\.mjs|prism-parent-dispatch-guard\.mjs/.test(x)), 'guards must not be wired individually post-consolidation');
 });
-test('all 4 dispatcher files exist on disk', () => {
-  for (const f of ['prism-userpromptsubmit-dispatcher.mjs','prism-posttooluse-dispatcher.mjs','prism-subagentstop-dispatcher.mjs','prism-sessionend-dispatcher.mjs'])
+test('all 5 dispatcher files exist on disk', () => {
+  for (const f of ['prism-userpromptsubmit-dispatcher.mjs','prism-posttooluse-dispatcher.mjs','prism-pretooluse-dispatcher.mjs','prism-subagentstop-dispatcher.mjs','prism-sessionend-dispatcher.mjs'])
     assert(existsSync(join(ROOT, 'hooks', f)), 'missing ' + f);
 });
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -85,12 +85,15 @@ function appendLog(obj) {
   } catch {}
 }
 
-async function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// wire behavior (byte-identical, verified by golden-master).
+export async function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
 
-  if (input.tool_name !== 'Agent') process.exit(0);
+  if (input.tool_name !== 'Agent') return done(0);
 
   const ti = input.tool_input || {};
   const subagentType = ti.subagent_type || 'unknown';
@@ -125,7 +128,7 @@ async function main() {
       reason: isSubagentById ? 'parent_tool_use_id' : isSubagentByEnv ? 'env' : 'sentinel.dispatched',
       prompt_hash: sha256short(prompt),
     });
-    process.exit(0);
+    return done(0);
   }
 
   // Master-orchestrator dispatch is always allowed without extra classification.
@@ -137,7 +140,7 @@ async function main() {
       subagent_type: subagentType,
       action: 'passthrough-master-orchestrator',
     });
-    process.exit(0);
+    return done(0);
   }
 
   // v3.8.0: if the dispatch already specifies model: opus AND parent sentinel
@@ -151,7 +154,7 @@ async function main() {
       subagent_type: subagentType,
       action: 'passthrough-explicit-opus-on-non-haiku',
     });
-    process.exit(0);
+    return done(0);
   }
 
   if (hasModel) {
@@ -164,7 +167,7 @@ async function main() {
       explicit_model: ti.model,
       prompt_hash: sha256short(prompt),
     });
-    process.exit(0);
+    return done(0);
   }
 
   // v2.7.0: sentinel-first. Prefer the turn-level classification over
@@ -252,12 +255,21 @@ async function main() {
         permissionDecisionReason: denyMsg,
       },
     };
-    process.stdout.write(JSON.stringify(deny));
-    process.exit(0);
+    write(JSON.stringify(deny));
+    return done(0);
   }
 
-  if (msg.length) process.stdout.write(msg.join('\n'));
-  process.exit(0);
+  if (msg.length) write(msg.join('\n'));
+  return done(0);
 }
 
-main().catch(() => process.exit(0));
+// Standalone shim — preserves original wire behavior + parse-error fail-open.
+import {basename} from 'path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-agent-model-guard.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+  run(input).then((r) => {
+    if (r.stdout) process.stdout.write(r.stdout);
+    process.exit(r.exit || 0);
+  }).catch(() => process.exit(0));
+}

@@ -138,15 +138,17 @@ function extractPgroup(text) {
   return m ? m[1].toLowerCase() : null;
 }
 
-function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
-
-  if (input.tool_name !== 'Agent') process.exit(0);
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// wire behavior (byte-identical, verified by golden-master).
+export function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
+  if (input.tool_name !== 'Agent') return done(0);
 
   const MODE = resolveMode();
-  if (MODE === 'off') process.exit(0);
+  if (MODE === 'off') return done(0);
 
   const sessionId = input.session_id || 'anon';
   const ti = input.tool_input || {};
@@ -170,7 +172,7 @@ function main() {
       reason: isSubagentById ? 'parent_tool_use_id' : isSubagentByEnv ? 'env' : 'sentinel.dispatched',
       mode: MODE,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // force_opus sentinel: one-turn user override.
@@ -182,7 +184,7 @@ function main() {
       action: 'passthrough-opus-force',
       mode: MODE,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // Compute current call's pgroup signal. Sources, in priority order:
@@ -245,7 +247,7 @@ function main() {
       mode: MODE,
       prompt_hash: sha256short(prompt),
     });
-    process.exit(0);
+    return done(0);
   }
 
   const notice = [
@@ -276,12 +278,22 @@ function main() {
         permissionDecisionReason: notice,
       },
     };
-    process.stdout.write(JSON.stringify(deny));
-    process.exit(2);
+    write(JSON.stringify(deny));
+    return done(2);
   }
 
-  process.stdout.write(notice);
-  process.exit(0);
+  write(notice);
+  return done(0);
 }
 
-try { main(); } catch { process.exit(0); }
+// Standalone shim — preserves original wire behavior + parse-error fail-open.
+import {basename} from 'node:path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-parallel-guard.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+  try {
+    const r = run(input);
+    if (r.stdout) process.stdout.write(r.stdout);
+    process.exit(r.exit || 0);
+  } catch { process.exit(0); }
+}

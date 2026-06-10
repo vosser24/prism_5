@@ -55,10 +55,11 @@
 // Logs to ~/.claude/.prism-routing.jsonl.
 
 import {readFileSync, appendFileSync, mkdirSync, existsSync} from 'fs';
-import {join, dirname} from 'path';
+import {join, dirname, basename} from 'path';
 import {createHash} from 'crypto';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = (process.env.PRISM_MUTATION_GUARD !== undefined
   ? process.env.PRISM_MUTATION_GUARD
@@ -94,8 +95,14 @@ const BASH_WRITE_PATTERNS = [
   // Extension whitelist keeps this from matching `... > /dev/null` or `... > &2`
   /\s>>?\s+["']?[^|&;<>\s"']*\.(md|json|jsonc|yaml|yml|toml|ts|tsx|js|jsx|mjs|cjs|py|sh|cmd|ps1|env|txt|xml|css|scss|sass|less|html|htm|sql|rs|go|java|kt|swift|rb|php|c|cc|cpp|h|hpp|csv|tsv|ini|conf|cfg)\b/,
 
-  // echo / printf / cat heredoc to file  (POSIX + PowerShell)
-  /\b(echo|printf|cat)\b[^|&;]*?>\s*["']?[^|&;<>\s"']+/,
+  // echo / printf / cat redirect to a file  (POSIX + PowerShell)
+  // - `[^|&;<>]*?` so the lazy run can't swallow a `>` and re-anchor on a later
+  //   one (which let `2>>err.log` slip through).
+  // - `(?<![0-9&])` rejects fd redirects: `2>`, `2>>`, `&>` are stderr/dup, not
+  //   a stdout-to-file write. This is what fixes the `cat <file> 2>/dev/null`
+  //   false-positive that blocked read-only state inspection.
+  // - `(?!&|/dev/null\b)` rejects `>&fd` and the `/dev/null` sink.
+  /\b(echo|printf|cat)\b[^|&;<>]*?(?<![0-9&])>>?\s*(?!&|\/dev\/null\b)["']?[^|&;<>\s"']+/,
 
   // Here-doc to file
   /<<[-\s]*['"]?[A-Z]+['"]?[^|&;]*?>\s*[^\s]+/,
@@ -175,7 +182,7 @@ function getFilePath(toolInput) {
 // Check whether a Bash command string looks like a file-writing command.
 // Returns { isWrite, bomSafe, matchedPattern } — bomSafe only meaningful
 // when isWrite=true AND platform=win32.
-function classifyBashCommand(cmd) {
+export function classifyBashCommand(cmd) {
   if (!cmd) return { isWrite: false };
   const s = String(cmd);
   for (const re of BASH_WRITE_PATTERNS) {
@@ -203,10 +210,15 @@ function bomWarning() {
   ].join('\n');
 }
 
-function main() {
-  let input;
-  try { input = JSON.parse(readFileSync(0, 'utf-8')); }
-  catch { process.exit(0); }
+// v5.7: dual-mode. Exported run(input) returns {exit, stdout, stderr} so the
+// consolidated PreToolUse dispatcher can execute this guard in-process (one node
+// spawn for all Bash guards). The standalone shim at the bottom preserves the
+// original wire behavior (stdin → stdout → exit) for direct invocation + the
+// golden-master harness. Behavior is byte-identical; only the I/O boundary moved.
+export function run(input) {
+  let out = '';
+  const write = (s) => { out += s; };
+  const done = (code) => ({exit: code, stdout: out, stderr: ''});
 
   const toolName = input.tool_name || '';
 
@@ -214,8 +226,8 @@ function main() {
   // Edit/Write/MultiEdit on a stale-matcher install still firing this hook —
   // exits cleanly here (degrades to ALLOW, never blocks edits). MUTATION_TOOLS
   // is empty by design; this is the belt-and-suspenders for that contract.
-  if (toolName !== 'Bash' || MUTATION_TOOLS.has(toolName)) process.exit(0);
-  if (MODE === 'off') process.exit(0);
+  if (toolName !== 'Bash' || MUTATION_TOOLS.has(toolName)) return done(0);
+  if (MODE === 'off') return done(0);
 
   const ti = input.tool_input || {};
   const filePath = getFilePath(ti);
@@ -223,7 +235,7 @@ function main() {
   // Only proceed if the Bash command is a file-write. Non-write Bash
   // (git status, ls, node --version, etc.) passes cleanly.
   const bashClass = classifyBashCommand(ti.command || ti.cmd || '');
-  if (!bashClass.isWrite) process.exit(0);
+  if (!bashClass.isWrite) return done(0);
 
   // Bootstrap command auto-bypass.
   const bootstrapCmd = isBootstrapTurn(input);
@@ -238,7 +250,7 @@ function main() {
       reason: 'bootstrap-command-passthrough',
       command: bootstrapCmd,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // Subagent detection — three bypass paths (parity with parent-dispatch-guard
@@ -284,7 +296,7 @@ function main() {
             : 'subagent-sentinel-dispatched-passthrough'),
       bash_write: true,
     });
-    process.exit(0);
+    return done(0);
   }
 
   // FIX-A (v5.x): the conversation-model tier-override file must stay writable
@@ -292,7 +304,7 @@ function main() {
   // documented in-session escape from a false-positive panel/dispatch block
   // (v5.0 stress-test finding). Without this the override is unreachable.
   if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(String(filePath || ''))) {
-    process.exit(0);
+    return done(0);
   }
 
   // User override via !opus-force: prefix.
@@ -315,7 +327,7 @@ function main() {
       reason: 'opus-force-sentinel',
       file_hash: sha256short(filePath),
     });
-    process.exit(0);
+    return done(0);
   }
   // Legacy path: some Claude Code versions may still include user_prompt on
   // PreToolUse. Keep this as defense-in-depth so the prefix works even in
@@ -332,7 +344,7 @@ function main() {
       reason: 'opus-force-prompt',
       file_hash: sha256short(filePath),
     });
-    process.exit(0);
+    return done(0);
   }
 
   // Parent context + Bash/PowerShell file-write.
@@ -375,12 +387,20 @@ function main() {
         permissionDecisionReason: notice,
       },
     };
-    process.stdout.write(JSON.stringify(deny));
-    process.exit(2);
+    write(JSON.stringify(deny));
+    return done(2);
   }
 
-  process.stdout.write(notice);
-  process.exit(0);
+  write(notice);
+  return done(0);
 }
 
-main();
+// Guard: only run as a hook when invoked directly, NOT when imported by tests.
+const invokedDirectly = process.argv[1] && basename(process.argv[1]) === 'prism-mutation-guard.mjs';
+if (invokedDirectly) {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+  const r = run(input);
+  if (r.stdout) process.stdout.write(r.stdout);
+  process.exit(r.exit || 0);
+}

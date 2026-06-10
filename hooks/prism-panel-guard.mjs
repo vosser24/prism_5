@@ -69,11 +69,16 @@
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname, basename} from 'node:path';
 import {createHash} from 'node:crypto';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
-const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
-const POLICY_PATH = join(H, '.claude', 'prism-policy.json');
-const ROSTER_PATH = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+// Home-derived paths are resolved at CALL time (not captured at module load):
+// (a) the in-process dispatcher imports this module once, so a frozen module-top
+//     HOME would leak across sessions / defeat test isolation; and
+// (b) prismHome() rejects the literal "undefined"/"null" env that produced the
+//     stray `undefined/.claude/...` artifact.
+const logPath = () => join(prismHome(), '.claude', '.prism-routing.jsonl');
+const policyPath = () => join(prismHome(), '.claude', 'prism-policy.json');
+const rosterPath = () => join(prismHome(), '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 
 // §6 Expert archetype roster from skills/prism-chat/SKILL.md. Hardcoded
 // fallback whitelist — these names are always considered legitimate even
@@ -102,7 +107,7 @@ const PERSONA_PATTERNS = [
 ];
 
 function sentinelPath(sessionId) {
-  return join(H, '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
+  return join(prismHome(), '.claude', `.prism-turn-tier-${sessionId || 'anon'}.json`);
 }
 
 function readSentinel(sessionId) {
@@ -114,7 +119,7 @@ function readSentinel(sessionId) {
 }
 
 function flagCachePath(sessionId) {
-  return join(H, '.claude', `.prism-panel-flag-${sessionId || 'anon'}.json`);
+  return join(prismHome(), '.claude', `.prism-panel-flag-${sessionId || 'anon'}.json`);
 }
 
 function readFlagCache(sessionId) {
@@ -140,8 +145,9 @@ function writeFlagCache(sessionId, payload) {
 
 function appendLog(obj) {
   try {
-    mkdirSync(dirname(LOG_PATH), {recursive: true});
-    appendFileSync(LOG_PATH, JSON.stringify(obj) + '\n');
+    const lp = logPath();
+    mkdirSync(dirname(lp), {recursive: true});
+    appendFileSync(lp, JSON.stringify(obj) + '\n');
   } catch {}
 }
 
@@ -153,8 +159,9 @@ let _rosterCache = null;
 function loadRoster() {
   if (_rosterCache !== null) return _rosterCache;
   try {
-    if (!existsSync(ROSTER_PATH)) { _rosterCache = {agents: {}, skills: {}, tools: {}}; return _rosterCache; }
-    const r = JSON.parse(readFileSync(ROSTER_PATH, 'utf-8'));
+    const rpath = rosterPath();
+    if (!existsSync(rpath)) { _rosterCache = {agents: {}, skills: {}, tools: {}}; return _rosterCache; }
+    const r = JSON.parse(readFileSync(rpath, 'utf-8'));
     _rosterCache = {
       agents: r.agents || {},
       skills: r.skills || {},
@@ -226,8 +233,9 @@ function resolveMode() {
 
   let policyMode = null;
   try {
-    if (existsSync(POLICY_PATH)) {
-      const policy = JSON.parse(readFileSync(POLICY_PATH, 'utf-8'));
+    const pp = policyPath();
+    if (existsSync(pp)) {
+      const policy = JSON.parse(readFileSync(pp, 'utf-8'));
       if (policy && policy.guards && typeof policy.guards.panel === 'string') {
         policyMode = policy.guards.panel.toLowerCase();
       }

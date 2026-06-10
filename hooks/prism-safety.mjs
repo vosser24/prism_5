@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 // PRISM Safety Gate — blocks dangerous Bash commands via PreToolUse
 import{readFileSync}from'fs';
+// v5.7: dual-mode. run(input) returns {exit, stdout, stderr} for the consolidated
+// PreToolUse dispatcher; the standalone shim at the bottom preserves the original
+// stdin→stdout/stderr→exit wire behavior (byte-identical, verified by golden-master).
+export function run(input) {
+const out = {s: '', e: ''};
+const write = (x) => { out.s += x; };
+const ewrite = (x) => { out.e += x; };
+const done = (code) => ({exit: code, stdout: out.s, stderr: out.e});
 try{
-const input=JSON.parse(readFileSync(0,'utf-8'));
 const cmd=(input.tool_input&&input.tool_input.command)||'';
 
 // v5.0 stress-test finding #6 — OVER-FIRE. The gate used to substring-scan the
@@ -62,14 +69,14 @@ const cmdScan = hasEvalWrapper ? cmd : stripHeredocs(cmd).replace(/'[^']*'|"[^"]
 
 for(const [pattern, reason] of blockedRaw){
   if(pattern.test(cmd)){
-    process.stderr.write(reason);
-    process.exit(2);
+    ewrite(reason);
+    return done(2);
   }
 }
 for(const [pattern, reason] of blockedCmd){
   if(pattern.test(cmdScan)){
-    process.stderr.write(reason);
-    process.exit(2);
+    ewrite(reason);
+    return done(2);
   }
 }
 
@@ -102,8 +109,8 @@ function rmRfDanger(s){
   return false;
 }
 if(rmRfDanger(cmdScan)){
-  process.stderr.write('rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)');
-  process.exit(2);
+  ewrite('rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)');
+  return done(2);
 }
 
 // Warning patterns — allow but add context (Claude sees stdout)
@@ -112,16 +119,28 @@ const warned=[
 ];
 for(const [pattern, reason] of warned){
   if(pattern.test(cmd)){
-    process.stdout.write(JSON.stringify({additionalContext:reason}));
+    write(JSON.stringify({additionalContext:reason}));
   }
 }
 
-process.exit(0);
+return done(0);
 } catch {
   // v2.8.0: fail-open on parse error. Was `exit(1)` with stderr "Safety hook
   // error: <msg>" which surfaced to user on every malformed PreToolUse payload.
   // Other PRISM hooks all exit 0 silently on bad input; this one was
   // inconsistent. The only intentional error path is exit 2 above (dangerous
   // pattern matched).
-  process.exit(0);
+  return done(0);
+}
+}
+
+// Standalone shim — preserves original wire behavior + the parse-error fail-open.
+import {basename} from 'path';
+if (process.argv[1] && basename(process.argv[1]) === 'prism-safety.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { process.exit(0); }
+  const r = run(input);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  process.exit(r.exit || 0);
 }

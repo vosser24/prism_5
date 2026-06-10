@@ -424,6 +424,22 @@ try {
     }
   } catch {}
 
+  // ── v5.7 — self-healing claude-mem performance guard ──
+  // claude-mem auto-updates silently and, on Windows, its hooks (a) ran a ~1s
+  // login-shell PATH probe on every tool call and (b) bound a deterministic
+  // worker port (37777) that ghosts on abnormal exit and blocks every restart.
+  // This guard idempotently neutralizes the probe in the active hooks.json and
+  // pins the worker to a fresh port in claude-mem's own settings.json, re-
+  // asserting both after every claude-mem update. Config-only (manages no
+  // processes); fail-open. Off-switch: PRISM_DISABLE_CLAUDE_MEM_GUARD=1.
+  try {
+    const cmGuard = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-claude-mem-guard.mjs')).href).catch(() => null);
+    if (cmGuard && typeof cmGuard.healClaudeMem === 'function') {
+      const r = await cmGuard.healClaudeMem({home: H});
+      if (r && Array.isArray(r.notices)) { for (const n of r.notices) notices.push(n); }
+    }
+  } catch {}
+
   if (notices.length) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
