@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.2] - 2026-06-12
+
+Self-healing hook recognizer — fixes duplicate hooks that lingered after upgrades. Symptom: after `update`, a machine that had an older PRISM still showed **two Stop hooks**. Root cause: `install()` already does strip-then-merge (Step 3 strips PRISM hooks before re-adding the canonical set), but the recognizer `isPrismHookCommand` only matched the **prism-exec.sh/.cmd wrapper** form — so a pre-wrapper legacy registration (e.g. `bash ~/.claude/hooks/prism-session-end.mjs`) wasn't recognized as PRISM, strip skipped it, and the canonical wrapped hook was added beside it = duplicate.
+
+- `tools/prism-installer.mjs` — `isPrismHookCommand` now also matches any `prism-*.{mjs,sh,cmd}` script directly under a `hooks/` (or `hooks/lib/`) dir, covering legacy non-wrapper registrations. Conservative: unrelated user hooks (e.g. `hooks/my-helper.mjs`) are never matched, so they stay preserved. **Net: a normal `update` now self-heals duplicate/stale PRISM hooks on every machine — no uninstall dance.**
+- `tools/prism-installer.mjs` — added a `basename` main-guard so the module is importable for unit testing without triggering the CLI; exported `isPrismHookCommand` + `stripPrismHooks`. CLI behavior is unchanged.
+- Tests: new `test-prism-hook-recognizer.mjs` (14 pure cases — wrapper + legacy recognized, user hooks not); new installer integration case **TM4** (legacy Stop hooks reduced to exactly one on upgrade, user hook preserved).
+- No data-loss risk: roster/user agents, `prism-policy.json`, routing logs, non-PRISM settings, and custom `statusLine` are preserved exactly as before.
+
 ## [5.7.1] - 2026-06-12
 
 Fixes a cross-build conflict in the v5.3.1 plan-first nudge. The nudge told the main loop to "lay out a **TodoWrite** task list", but on builds where the harness renamed the to-do tool to the **Task\*** family (`TaskCreate` / `TaskUpdate` / `TaskList`) there is no `TodoWrite` — so the nudge fired correctly on multi-step work yet produced **no visible task bullets**. Diagnosed live (the user kept tracking steps inline because "TodoWrite isn't enabled here").

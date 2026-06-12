@@ -400,6 +400,49 @@ function snapshotFiles(dir) {
   rmSync(home, {recursive: true, force: true});
 }
 
+// ─── Test M4: legacy (non-wrapper) PRISM hooks are stripped on upgrade (v5.7.2) ──
+// Pre-wrapper installs registered hooks directly, e.g.
+//   "bash ~/.claude/hooks/prism-session-end.mjs"   (no hooks/lib/prism-exec.sh).
+// The old recognizer only matched the prism-exec wrapper, so strip MISSED these and
+// the canonical wrapped hook was added next to the legacy one = duplicate Stop hooks.
+// After broadening isPrismHookCommand, strip-then-merge must leave exactly ONE PRISM
+// Stop hook and preserve any non-PRISM hook.
+{
+  const home = makeSandbox();
+  const claudeDir = join(home, '.claude');
+  mkdirSync(claudeDir, {recursive: true});
+  const legacyBash = 'bash ~/.claude/hooks/prism-session-end.mjs';   // no wrapper
+  const legacyNode = 'node ~/.claude/hooks/prism-stop.mjs';          // even older, removed file
+  const userHook = 'bash my-stop-logger.sh';
+  const seed = {
+    hooks: {
+      Stop: [
+        {hooks: [{type: 'command', command: legacyBash}]},
+        {hooks: [{type: 'command', command: legacyNode}]},
+        {hooks: [{type: 'command', command: userHook}]},
+      ],
+    },
+  };
+  writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(seed, null, 2));
+
+  const r = run(['install', '--quiet'], {HOME: home, USERPROFILE: home});
+  ok('TM4: install exits 0 with legacy Stop hooks in seed', r.status === 0);
+
+  const settings = readJson(join(claudeDir, 'settings.json'));
+  const stop = (settings && settings.hooks && settings.hooks.Stop) || [];
+  const cmds = stop.flatMap(g => (g.hooks || []).map(h => h.command || ''));
+  const prismStopCount = cmds.filter(c => /prism-/.test(c)).length;
+  const legacyGone = !cmds.includes(legacyBash) && !cmds.includes(legacyNode);
+  const userPreserved = cmds.some(c => c.includes('my-stop-logger.sh'));
+  const canonicalPresent = cmds.some(c => c.includes('prism-exec') && c.includes('prism-session-end.mjs'));
+
+  ok('TM4: exactly ONE PRISM Stop hook after upgrade (no duplicate)', prismStopCount === 1);
+  ok('TM4: legacy non-wrapper PRISM Stop hooks stripped', legacyGone);
+  ok('TM4: canonical wrapped Stop hook present', canonicalPresent);
+  ok('TM4: non-PRISM Stop hook preserved', userPreserved);
+  rmSync(home, {recursive: true, force: true});
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // v4.5: I4/I5/I6/I7 installer additions
 // ─────────────────────────────────────────────────────────────────────────────

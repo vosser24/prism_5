@@ -195,11 +195,18 @@ function readSettings() {
   }
 }
 
-// Check if a hook command is a PRISM hook (by name pattern)
-function isPrismHookCommand(cmd) {
-  return typeof cmd === 'string' &&
-    (cmd.includes('prism-exec.sh') || cmd.includes('prism-exec.cmd')) &&
-    cmd.includes('prism-');
+// Check if a hook command is a PRISM hook (by name pattern).
+// Matches the current wrapper form (prism-exec.sh/.cmd) AND any LEGACY pre-wrapper
+// registration that references a prism-*.{mjs,sh,cmd} script under a hooks/ dir
+// (e.g. "bash ~/.claude/hooks/prism-session-end.mjs"). Pre-v5.7.2 this required the
+// prism-exec wrapper substring, so legacy hooks were NOT recognized → strip left
+// them → upgrades added the canonical hook beside the legacy one = duplicate hooks.
+// Conservative: the prism- script must sit directly under hooks/ (or hooks/lib/),
+// so unrelated user hooks (e.g. hooks/my-helper.mjs) are never matched.
+export function isPrismHookCommand(cmd) {
+  if (typeof cmd !== 'string') return false;
+  return /prism-exec\.(?:sh|cmd)\b/.test(cmd) ||
+    /[\\/]hooks[\\/](?:lib[\\/])?prism-[\w.-]+\.(?:mjs|cmd|sh)\b/.test(cmd);
 }
 
 // H3: the fragment's hook commands hard-code the `~/.claude/` prefix. When
@@ -494,7 +501,7 @@ function mergeSettings(existing, fragment, dryRun, hookRoot = null) {
   return merged;
 }
 
-function stripPrismHooks(settings) {
+export function stripPrismHooks(settings) {
   // Remove all PRISM hook entries from settings.json
   const stripped = JSON.parse(JSON.stringify(settings));
   if (!stripped.hooks) return stripped;
@@ -1142,7 +1149,12 @@ async function main() {
   }
 }
 
-main().catch(e => {
-  console.error(`[prism-installer] Fatal error: ${e.message}`);
-  process.exit(1);
-});
+// Only run the CLI when invoked directly (node prism-installer.mjs <subcommand>),
+// not when imported for unit testing — importing must NOT trigger main()/help()
+// (keeps isPrismHookCommand/stripPrismHooks unit-testable without a process exit).
+if (process.argv[1] && basename(process.argv[1]) === 'prism-installer.mjs') {
+  main().catch(e => {
+    console.error(`[prism-installer] Fatal error: ${e.message}`);
+    process.exit(1);
+  });
+}
