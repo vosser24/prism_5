@@ -142,8 +142,10 @@ test('agent-write: creates <root>/.claude/agents/master-<slug>.md with locked fr
     // v5.2.8: the project-master runs in the MAIN LOOP and talks to the user, so
     // its baseline must include the interactive/orchestration tools the deep-dive,
     // panel, and plan-approval flows call — notably AskUserQuestion (the command
-    // body invokes it 5×) and TodoWrite — plus Skill (v5.2.7).
-    for (const t of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent', 'Skill', 'AskUserQuestion', 'TodoWrite']) {
+    // body invokes it 5×) and the Task* tracking family — TaskCreate/TaskUpdate/
+    // TaskList — plus Skill (v5.2.7). TodoWrite kept for builds that still expose
+    // the legacy name; listing both is additive and cross-build safe (v5.7.1).
+    for (const t of ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent', 'Skill', 'AskUserQuestion', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList']) {
       assert(toolset.includes(t), `canonical toolset must include ${t}; got: ${toolsLine}`);
     }
   } finally { rmSync(root, {recursive: true, force: true}); }

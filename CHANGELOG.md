@@ -4,6 +4,16 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.1] - 2026-06-12
+
+Fixes a cross-build conflict in the v5.3.1 plan-first nudge. The nudge told the main loop to "lay out a **TodoWrite** task list", but on builds where the harness renamed the to-do tool to the **Task\*** family (`TaskCreate` / `TaskUpdate` / `TaskList`) there is no `TodoWrite` — so the nudge fired correctly on multi-step work yet produced **no visible task bullets**. Diagnosed live (the user kept tracking steps inline because "TodoWrite isn't enabled here").
+
+- **Approach: name the capability + both tool families, additively — never replace.** An unknown tool name in a `tools:` allowlist is ignored by the harness, so listing both `TodoWrite` and the `Task*` family is safe on every machine and survives the harness exposing either name. No machine is left without a task tool, and a future rename does not re-break it.
+- `hooks/prism-hook.mjs` — the `plan_first` nudge text now names `TaskCreate`/`TaskUpdate` (with "or TodoWrite on builds that expose that name"). The stable trigger phrase **"Multi-step work detected"** is unchanged, so the `test-prism-hook-paste-nudge.mjs` assertion (which matches the phrase, not the tool name) is untouched.
+- `tools/prism-deep-dive.mjs` — `PROJECT_MASTER_TOOLS` additively gains `TaskCreate, TaskUpdate, TaskList` (keeps `TodoWrite`) so generated `master-*` agents declare a task tool that exists on both old and new builds.
+- Tests: `test-prism-deep-dive.mjs` required-tools loop extended to assert the `Task*` family is present (keeps `TodoWrite`); `test-prism-hook-paste-nudge.mjs` comment refreshed (assertion unchanged).
+- No interaction with the 5.7.0 PreToolUse consolidation / golden-master: only the `UserPromptSubmit` advisory nudge text and the deep-dive toolset constant changed — neither is part of the consolidated dispatcher or any byte-identical golden-master.
+
 ## [5.7.0] - 2026-06-10
 
 Completes the hook-consolidation arc started in 5.6.0 (which deferred the PreToolUse enforcement hooks as higher-risk), and lands two Windows robustness fixes diagnosed this session.

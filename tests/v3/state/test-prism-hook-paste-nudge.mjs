@@ -75,7 +75,10 @@ check('pasted transcript does NOT fire the parallel nudge (paste dampening holds
   !PAR.test(pasted));
 
 // ── v5.3.1: plan-first / task-list detector ──────────────────────────────────
-// Clear multi-step intent should nudge a TodoWrite task list before execution.
+// Clear multi-step intent should nudge a task list (TaskCreate/TaskUpdate; or
+// TodoWrite on builds that expose the legacy name) before execution. The assertion
+// matches the stable trigger phrase "Multi-step work detected", not the tool name,
+// so the v5.7.1 tool-name change does not touch it.
 const PLAN = /Multi-step work detected/;
 check('first/then sequence fires the plan-first nudge',
   PLAN.test(run('first scaffold the data model, then build the API, then write the tests')));

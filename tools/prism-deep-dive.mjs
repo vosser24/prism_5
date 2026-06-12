@@ -201,9 +201,14 @@ Load skill: master-orchestrator
 //              skill itself is frontmatter-preloaded via `skills:` (v5.2.7)
 //   • AskUserQuestion — clarifying questions / plan approval / panel decisions; the
 //              /prism-deep-dive + /prism-clean command bodies call it directly (v5.2.8)
-//   • TodoWrite — orchestration / plan task tracking (v5.2.8)
+//   • TaskCreate/TaskUpdate/TaskList — orchestration / plan task tracking, the
+//     Task* family this build ships (supersedes the legacy TodoWrite name, v5.2.8).
+//     TodoWrite is kept in the list too so a build that still exposes the legacy
+//     name — rather than Task* — also gets a task tool. Additive on purpose: an
+//     unknown tool in a `tools:` allowlist is ignored, so listing both is safe on
+//     every machine and never conflicts when the harness renames it (v5.7.1).
 // Keep this list in sync with the test in tests/v3/state/test-prism-deep-dive.mjs.
-const PROJECT_MASTER_TOOLS = 'Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TodoWrite';
+const PROJECT_MASTER_TOOLS = 'Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TodoWrite, TaskCreate, TaskUpdate, TaskList';
 
 function renderMasterAgent({slug, protocol, created}) {
   const today = created || new Date().toISOString().slice(0, 10);

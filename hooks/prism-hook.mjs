@@ -237,9 +237,13 @@ export async function run(payload, ctx = {}) {
     // ─── NEW v5.3.1: PLAN-FIRST / TASK-LIST DETECTOR ───
     // Medium-band multi-step work (3+ steps) that doesn't trip prism-plan's
     // narrow triggers tends to "go full ladder" — execute with no visible plan.
-    // Nudge toward a TodoWrite task list first so progress is visible and steps
-    // aren't skipped. Conservative: fires only on clear multi-step markers.
-    // 3-turn cooldown. Soft (advice only).
+    // Nudge toward a task list first so progress is visible and steps aren't
+    // skipped. Names the Task* tracking tools this build ships (TaskCreate /
+    // TaskUpdate) AND keeps TodoWrite for builds that still expose that name —
+    // the v5.3.1 nudge originally said only "TodoWrite", which is inert on builds
+    // where the harness renamed it to Task* (no bullets ever rendered). Naming
+    // both families keeps it working across machines (v5.7.1). Conservative:
+    // fires only on clear multi-step markers. 3-turn cooldown. Soft (advice only).
     const plan_then     = /\b(first\b[\s\S]{0,120}?\bthen\b|then\b[\s\S]{0,100}?\b(then|after that|finally|lastly)\b)/i;
     const plan_numbered = /(^|\n)\s*1[.)]\s+\S[\s\S]{0,300}?\n\s*2[.)]\s+\S/;
     const plan_explicit = /\b(multi[- ]?step|several steps|step[- ]by[- ]step|a (few|couple|number) of (things|steps|tasks)|then (also )?(add|build|write|create|set up|wire|update))\b/i;
@@ -247,7 +251,7 @@ export async function run(payload, ctx = {}) {
       (plan_then.test(ownPrompt) || plan_numbered.test(ownPrompt) || plan_explicit.test(ownPrompt)) &&
       shouldSuggest('plan_first', 3)
     ) {
-      messages.push("PRISM: Multi-step work detected — before executing, lay out a TodoWrite task list (one item per step) so progress is visible, steps aren't skipped, and you can be redirected mid-flight. Mark each item done as you go. Independent steps in the list → batch them as parallel Agent() dispatches.");
+      messages.push("PRISM: Multi-step work detected — before executing, lay out a task list (one item per step) using your task-tracking tool — TaskCreate to add each item, TaskUpdate to mark it done (or TodoWrite on builds that expose that name) — so progress is visible, steps aren't skipped, and you can be redirected mid-flight. Mark each item done as you go. Independent steps in the list → batch them as parallel Agent() dispatches.");
       recordSuggestion('plan_first'); matchedInvocation = true;
     }
 
