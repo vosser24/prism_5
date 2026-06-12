@@ -13,6 +13,7 @@ Fixes a cross-build conflict in the v5.3.1 plan-first nudge. The nudge told the 
 - `tools/prism-deep-dive.mjs` — `PROJECT_MASTER_TOOLS` additively gains `TaskCreate, TaskUpdate, TaskList` (keeps `TodoWrite`) so generated `master-*` agents declare a task tool that exists on both old and new builds.
 - Tests: `test-prism-deep-dive.mjs` required-tools loop extended to assert the `Task*` family is present (keeps `TodoWrite`); `test-prism-hook-paste-nudge.mjs` comment refreshed (assertion unchanged).
 - No interaction with the 5.7.0 PreToolUse consolidation / golden-master: only the `UserPromptSubmit` advisory nudge text and the deep-dive toolset constant changed — neither is part of the consolidated dispatcher or any byte-identical golden-master.
+- **`install.ps1` wrapper fix.** The wrapper declared a `-Home` parameter, but `$Home` collides with PowerShell's read-only automatic `$HOME` variable, so the script died at param binding (`Cannot overwrite variable Home because it is read-only or constant`) — the "proper installer" never ran on Windows; only the underlying `node tools/prism-installer.mjs install` worked. Renamed the internal variable to `$HomeDir` with `[Alias('Home')]` (so `-Home` still works), and the banner version now reads from `install-manifest.json` instead of a hardcoded (stale `4.4.0`) string so it can't drift.
 
 ## [5.7.0] - 2026-06-10
 

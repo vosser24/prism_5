@@ -1,4 +1,4 @@
-# PRISM v4.4.0 installer — Windows PowerShell 5.1+ wrapper
+# PRISM installer — Windows PowerShell 5.1+ wrapper
 #
 # Usage:
 #   pwsh .\install.ps1 [options]
@@ -8,7 +8,9 @@
 #   -DryRun           Simulate install; no filesystem changes
 #   -NoBackup         Skip backup of existing settings/roster
 #   -Quiet            Suppress progress output
-#   -Home <path>      Override HOME directory
+#   -Home <path>      Override HOME directory (alias of -HomeDir; the internal
+#                     variable is NOT named $Home — that collides with the
+#                     read-only automatic $HOME and breaks param binding)
 #
 # Requirements:
 #   - Node.js 18+ on PATH
@@ -21,13 +23,22 @@ param(
     [switch]$DryRun,
     [switch]$NoBackup,
     [switch]$Quiet,
-    [string]$Home = ''
+    # NB: must NOT be named $Home — that collides with PowerShell's read-only
+    # automatic $HOME variable and fails at param binding ("Cannot overwrite
+    # variable Home because it is read-only or constant"). Alias keeps -Home usable.
+    [Alias('Home')][string]$HomeDir = ''
 )
 
-$PrismVersion = '4.4.0'
 $ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $Installer    = Join-Path $ScriptDir 'tools\prism-installer.mjs'
+$ManifestPath = Join-Path $ScriptDir 'tools\install-manifest.json'
 $InstallDest  = Join-Path $env:USERPROFILE '.claude'
+
+# Read the canonical version from the manifest so the banner never drifts.
+$PrismVersion = '5.7.1'
+if (Test-Path $ManifestPath) {
+    try { $PrismVersion = (Get-Content $ManifestPath -Raw | ConvertFrom-Json).prism_version } catch {}
+}
 
 # ─── Banner ────────────────────────────────────────────────────────────────────
 Write-Host '+--------------------------------------------------+' -ForegroundColor Cyan
@@ -65,7 +76,7 @@ $nodeArgs = @($Installer, 'install')
 if ($DryRun)   { $nodeArgs += '--dry-run' }
 if ($NoBackup) { $nodeArgs += '--no-backup' }
 if ($Quiet)    { $nodeArgs += '--quiet' }
-if ($Home -ne '') { $nodeArgs += @('--home', $Home) }
+if ($HomeDir -ne '') { $nodeArgs += @('--home', $HomeDir) }
 
 # ─── Execute ───────────────────────────────────────────────────────────────────
 & node @nodeArgs
