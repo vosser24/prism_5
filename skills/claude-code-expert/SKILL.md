@@ -235,7 +235,7 @@ hooks:
 ```
 
 ### Subagent Constraints
-- Subagents **cannot spawn other subagents** — no recursion
+- Subagent recursion is fragile: older builds stripped the `Agent` tool from subagents (no recursion at all); current builds may allow a nested spawn, but it readily stalls the tree — treat dispatch as **main-loop-only**
 - Subagents report back to parent — they don't communicate peer-to-peer
 - For peer-to-peer coordination → use Agent Teams instead
 

@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.7] - 2026-06-16
+
+Doctrine accuracy — aligns the always-read dispatch prose with the post-5.7.6 runtime. No behavior change; prose only. 5.7.6 added the nested-dispatch guard after discovering the runtime no longer (a) strips the `Agent` tool from subagents nor (b) skips hooks inside subagents. The orchestrator doctrine still asserted both as facts — true when written (2026-06-02), false now — and they were the stale rationale for why hook enforcement supposedly "couldn't" exist.
+
+- **`skills/master-orchestrator/SKILL.md`** — the SOLE DISPATCHER note now states the rule is unchanged ("dispatch is main-loop-only") but its ENFORCEMENT moved from runtime tool-stripping (old builds) to the 5.7.6 PreToolUse hook (current builds). The DISPATCH CONTRACT preamble is corrected: "hooks don't fire inside subagents" → they do, and the nested-dispatch guard now uses that; the contract's OTHER gates (reuse-vs-rebuild, right-sized decomposition, throttle-validation) still can't be mechanically forced and remain parent doctrine.
+- **`skills/claude-code-expert/SKILL.md`** — the "subagents cannot spawn other subagents — no recursion" line corrected: current builds may permit a (fragile, tree-stalling) nested spawn, so treat dispatch as main-loop-only.
+- No code, hook, or golden-master change. `dispatch-contract.test.mjs` (23 prose assertions) + master-orchestrator drift suites stay green.
+
 ## [5.7.6] - 2026-06-16
 
 Nested-dispatch guard — closes a hole that opened when the Claude Code runtime evolved underneath PRISM. PRISM 5.x's "dispatch is main-loop-only" guarantee relied on two runtime behaviors that **silently stopped being true** on current builds: (1) a dispatched subagent had its `Agent` tool stripped, and (2) hooks did not fire inside subagents. On updated builds neither holds — a worker subagent CAN spawn a sub-subagent, and that nested `Agent()` call now reaches PreToolUse — so an unsanctioned nested spawn slips through and **stalls the agent tree** (live-repro: a Sonnet worker spawned a research sub-subagent that throttled to ~12.8k tokens over 98 minutes). Diagnosed live on a 5.7.4 machine ("1 PreToolUse hook ran" observed on the nested call).
