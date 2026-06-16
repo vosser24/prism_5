@@ -59,5 +59,9 @@ check('SKILL: ad-hoc carve-out for one-offs', SKILL, 'ad-hoc is fine');
 check('P0: factory-hire test extends to PHASE-1 workers', P0, 'factory-hire test');
 check('P0: names PHASE-1 execution workers', P0, 'PHASE-1');
 
+// ── v5.8: task-list-at-execution-start + master self-invokes superpowers ──
+check('P1: TaskCreate task list at execution start (v5.8)', P1, 'surface the task list');
+check('P1: master invokes superpowers itself via Skill (v5.8)', P1, 'bind YOUR OWN work');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

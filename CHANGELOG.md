@@ -4,6 +4,16 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.8.0] - 2026-06-16
+
+Two surgical doctrine gaps closed — the orchestrator now (a) surfaces a task list at execution start and (b) uses superpowers for its OWN planning, not just for workers. Motivated by a live session where the master wrote a good multi-phase plan but executed it **monolithically in Opus with no task list and no skill usage.** **Deliberately minimal:** investigation confirmed the dispatch / decompose / model-tier / worker-injection doctrine already exists and is thorough, and SKILL.md is already near the instruction-following size limit — adding more there would dilute, not help. So both additions land in the on-demand `phase-1-execution.md` reference, NOT the always-loaded SKILL.md.
+
+- **Task list at execution start.** `phase-1-execution.md` gains "Step 0 — surface the task list (FIRST action of execution)": one `TaskCreate` per phase/slice before any dispatch or mutation, `TaskUpdate` as you go. This was the genuine gap — both SKILL.md and the phase docs were silent on `TaskCreate`. Closes the "no task list ever appears" symptom.
+- **Master invokes superpowers for its OWN work.** The mandatory v5.5 discipline-match table only covered *injecting* superpowers into workers (which can't reliably invoke skills). Nothing told the session-level master — which uniquely holds the `Skill` tool — to use it itself. New note: run `superpowers:brainstorming` before designing a plan from scratch and `superpowers:systematic-debugging` when the master debugs, via a real `Skill(...)` call. Closes the "I don't see superpowers brainstorming used" symptom.
+- **Deliberately NOT changed:** dispatch-during-execution, decompose-into-3-5-slices, model-tiering, and worker-side superpowers injection — all already present and thorough; re-adding would dilute a near-limit skill. **No new hooks, no hard gates** (avoids the friction that drives users to disable hooks).
+- **Honest ceiling:** these are read DOCTRINE, not hard-enforced — adherence is still the model's. The change closes the literal doctrine *absences*; it cannot compel a model that ignores read prose.
+- Tests: `dispatch-contract.test.mjs` +2 (25/25). master-orchestrator drift suites green (14 / 16 / 9).
+
 ## [5.7.9] - 2026-06-16
 
 Read-only fast-path now tolerates sink/merge redirects — the last of the "read-only probe gets force-dispatched" papercuts (after 5.7.8's `cd`). A diagnostic like `git status 2>/dev/null` or `… 2>&1 | head` is read-only, but `INJECT_RE` flagged the `>` in the stderr redirect and denied it. Surfaced by a real project-master verification command (`cd … && git rev-parse && git status --short 2>&1 | head`).

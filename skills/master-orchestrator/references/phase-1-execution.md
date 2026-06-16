@@ -45,6 +45,15 @@ Steps, pros, risks, mitigation. Still generate task-id. WAIT for approval.
 
 # PHASE 1: Execution (after approval)
 
+## Step 0 — surface the task list (FIRST action of execution, v5.8)
+Before any worker dispatch or mutating action, write the plan to the live task
+list: one `TaskCreate` per phase/slice, then `TaskUpdate` each to `in_progress` /
+`completed` as you go. Mandatory for any multi-phase or multi-slice plan — it
+makes progress visible, lets the user redirect you mid-flight, and is the thing
+that stops a plan from being ground out monolithically in your own context with
+no checkpoints. (On builds that expose only the legacy `TodoWrite` name, use
+that.) Do NOT begin executing a phase whose task you have not created.
+
 ## Parallelism Decision (evaluate for EVERY plan)
 
 Before executing, classify each step pair and choose dispatch shape — see
@@ -138,6 +147,14 @@ discipline into its prompt (inline substance for short procedures; the `SKILL.md
 path for the worker to `Read` when the full procedure is needed). Do NOT instruct
 the worker to "invoke the skill" — auto-activation is suppressed and Skill-tool
 calls are unreliable in a scoped subagent; inject the substance/path instead.
+
+**These disciplines also bind YOUR OWN work as the master (v5.8).** Workers get
+injection because they cannot reliably invoke skills; YOU, the session-level
+master, hold the `Skill` tool and MUST use it directly — run
+`superpowers:brainstorming` before designing a plan from a blank slate (PHASE 0),
+and `superpowers:systematic-debugging` (not ad-hoc poking) when YOU diagnose a
+bug. Same match as the table below — applied to the worker via injection, and to
+yourself via a real `Skill(...)` call.
 
   | Worker task type            | Inject superpowers skill                       |
   | --------------------------- | ---------------------------------------------- |
