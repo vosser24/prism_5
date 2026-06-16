@@ -47,6 +47,7 @@
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {createHash} from 'node:crypto';
+import {resolveParallelCap} from './lib/prism-cap.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
@@ -205,10 +206,21 @@ export function run(input) {
   // Find the most recent prior entry for the same turn (sentinel-tagged
   // turn id if available, else fall back to time window only).
   const turnId = sentinel?.turn_id || sentinel?.session_turn || null;
-  const recent = (trace.entries || [])
+  // Reuse the SAME trace object already read above (no extra I/O). The filtered
+  // set = how many Agent dispatches have already fired this turn within the
+  // window; its length drives WS3 cap-enforcement, its last element drives the
+  // pre-existing pgroup detection.
+  const recentSameTurn = (trace.entries || [])
     .filter(e => (now - (e.ts || 0)) <= RECENT_WINDOW_MS)
-    .filter(e => !turnId || e.turn_id === turnId)
-    .pop();
+    .filter(e => !turnId || e.turn_id === turnId);
+  const recent = recentSameTurn[recentSameTurn.length - 1] || undefined;
+  // WS3 (v5.7.3): concurrency-cap ceiling. A correct single-message batch of
+  // N≤cap calls fires N rapid same-turn hook invocations counting 0..N-1, all
+  // < cap. The (cap+1)th same-turn in-window dispatch is the first over-cap
+  // call → flagged. resolveParallelCap() is a regex test over a short env
+  // string; recentSameTurn is bounded by MAX_TRACE_ENTRIES — microsecond cost.
+  const cap = resolveParallelCap();
+  const overCap = recentSameTurn.length >= cap;
 
   // Default action: append this call to the trace and exit cleanly.
   // Trim to MAX_TRACE_ENTRIES so the file stays small.
@@ -230,7 +242,8 @@ export function run(input) {
   const promptSignalsParallel = !!(sentinel && /\bpgroup\b|\bin parallel\b|\bbatch dispatch\b/i.test(
     sentinel.user_prompt_meta || sentinel.rationale || ''
   ));
-  const flagged = !!recent && (sharedPgroup || (pgroup && promptSignalsParallel));
+  const pgroupFlagged = !!recent && (sharedPgroup || (pgroup && promptSignalsParallel));
+  const flagged = pgroupFlagged || (!!recent && overCap);
 
   // Persist the trace before deciding — even denied calls should be
   // recorded so a subsequent retry isn't double-counted.
@@ -250,11 +263,17 @@ export function run(input) {
     return done(0);
   }
 
-  const notice = [
+  // pgroup-flagged calls keep the original notice; an over-cap-only flag (no
+  // shared pgroup) gets a cap-specific message explaining the ceiling + knobs.
+  const notice = pgroupFlagged ? [
     `PRISM PARALLEL-GUARD: this Agent({subagent_type:'${subagentType}'}) call shares pgroup='${pgroup}' with a prior dispatch ${Math.round((now - (recent.ts || now)) / 1000)}s ago in the same turn.`,
     `Parallel-tagged subagents must dispatch in a SINGLE assistant message — the harness only parallelises Agent() calls that arrive together.`,
     `Fix: re-emit both Agent() calls in one message. Or remove the pgroup tag if the work is genuinely sequential.`,
     `Override for this turn: prefix the user prompt with !opus-force:. Disable: set PRISM_PARALLEL_GUARD=off.`,
+  ].join('\n') : [
+    `PRISM PARALLEL-GUARD: this Agent({subagent_type:'${subagentType}'}) dispatch is over the concurrency cap — ${recentSameTurn.length} Agent call(s) already fired this turn within ${Math.round(RECENT_WINDOW_MS / 1000)}s, cap=${cap}.`,
+    `Spawning past the cap risks a 429 spawn-storm. Decompose into ≤${cap} concurrent slices, or pipeline the extras sequentially after the first batch returns.`,
+    `Raise the ceiling deliberately: set PRISM_PARALLEL_CAP (up to 16). Override for this turn: prefix the user prompt with !opus-force:. Disable: set PRISM_PARALLEL_GUARD=off.`,
   ].join('\n');
 
   appendLog({
@@ -265,6 +284,9 @@ export function run(input) {
     pgroup,
     prior_pgroup: recentPgroup,
     delta_ms: now - (recent.ts || now),
+    reason: pgroupFlagged ? 'pgroup' : 'over-cap',
+    cap,
+    count: recentSameTurn.length,
     action: MODE === 'hard' ? 'deny' : 'nudge',
     mode: MODE,
     prompt_hash: sha256short(prompt),

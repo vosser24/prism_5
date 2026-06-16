@@ -90,10 +90,27 @@ read-only checks, prefer running the probe directly (the dispatch guard's
 read-only fast path allows non-mutating Bash/PowerShell in the parent) over
 spawning a subagent at all.
 
+**Build-slice budget (v5.7.3) — distinct from the diagnosis budget above.** The
+diagnosis cap (~15–20 calls) bounds an *investigation* so it returns fast. A
+heavy *build* is not globally capped — it is DECOMPOSED (see SKILL.md DISPATCH
+CONTRACT step 2): split into 3-5 bounded sequential slices, give each slice its
+own build-slice budget (~20 tool calls), and dispatch one at a time, feeding
+each slice's summary forward. Never dispatch a monolithic 65-tool-use builder —
+that is the stall pattern. A globally-capped builder wrongly throttles
+legitimate work; a decomposed builder bounds the blast radius of any one stall.
+
 Standard step (sequential): delegate with full context + "read your references/
 and lessons/" → validate result → if good: mark [x] → if bad: log correction
 to agent's lessons/improvements.md, re-delegate ONCE → if still bad: escalate.
 Pass summaries between steps, not raw output.
+
+**Validate the result before accepting it (v5.7.3).** A subagent reporting a
+**near-zero** result — ~0 tokens AND sub-second AND 0 tool-uses (e.g.
+`Done (0 tokens · 1s)`) — is a throttled/failed spawn, NOT a completed step:
+treat as FAILED → back off + retry (cap ~2), then escalate to the user; do not
+mark [x]. On a mid-run cutoff (nonzero tool-uses but 0 tokens) verify partial
+state before any re-run (double-apply risk) and re-run only the remainder. Only
+the full conjunction signals failure — a small nonzero result is a real step.
 
 **Equip the worker IN ITS PROMPT — don't expect a subagent to invoke skills.**
 A dispatched subagent does NOT hot-reload skills and is scoped to one task, so
@@ -105,6 +122,13 @@ vertical procedure, the `SKILL.md` path (or its content) for the worker to
 reliable (no hot-reload, scoped context); injecting the skill's substance into
 the prompt is the supported mechanism. This is the same "Equip (same session)"
 rule as the panel experts' authored skills in `phase-0-team-assembly.md`.
+
+**Inject recalled lessons too (v5.7.3).** Alongside the discipline injection,
+carry the **recalled lessons** (top 1-3, one-liners, domain/tool-tagged) into
+the worker prompt — the worker cannot query the KB itself. Default recall is the
+cheap local path (read `MEMORY.md` + grep `tasks/lessons-*.md` by tag); cloud
+`/prism-recall --no-rerank` only on NOVEL / high-stakes work. Single source of
+truth for the full reuse-first + recall gate: SKILL.md DISPATCH CONTRACT step 1.
 
 **MANDATORY: superpowers discipline-match (v5.5).** `using-superpowers` carries a
 `<SUBAGENT-STOP>` that makes dispatched agents SKIP superpowers auto-activation —

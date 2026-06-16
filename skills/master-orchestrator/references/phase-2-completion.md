@@ -30,6 +30,8 @@ Write the updated roster.json back.
 - Log decisions to experience/decisions.md (include scope: "this project" or "all X projects")
 - Flag lessons: tactical → tasks/lessons-tactical.md, strategic → tasks/lessons-strategic.md
 - If corrections > 0: log to agent's lessons/improvements.md
+- **capture-on-abandon (v5.7.3):** if a dispatch STALLED or CRASHED and was abandoned (the user killed it, or a near-zero/throttled spawn was given up on), write a one-line **tagged** lesson to `tasks/lessons-tactical.md` BEFORE closing — so the next cheap grep-recall (SKILL.md DISPATCH CONTRACT step 1b) hits it. This is the capture trigger that closes the memory loop on FAILURE, not just success.
+- **Tagging convention:** lead every lesson with bracketed tags so recall-by-grep finds it by domain/tool/env — e.g. `[stall][playwright][onedrive] monolithic browser script hung on SMB; use discrete MCP calls instead.` Tag with the tool, the failure mode, and the environment so a future dispatch in the same context can match it.
 
 ## 2d. Upgrade Check
 If any agent has pending_upgrade: true, inform user:
