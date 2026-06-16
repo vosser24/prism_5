@@ -154,6 +154,16 @@
     "stdout": "",
     "stderr": ""
   },
+  "parent/nested-deny": {
+    "exit": 2,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM NESTED-DISPATCH GUARD: Agent() denied — you are a dispatched subagent, and PRISM dispatch is MAIN-LOOP-ONLY. A worker that spawns its own sub-agents stalls the tree (throttled / near-zero spawns; live-repro 98-minute hang).\\nDo the work INLINE here (Read / Grep / Edit / Bash directly). If you genuinely need parallel help, return your findings or a dispatch plan to the main loop and let IT fan out — teammates coordinate via SendMessage, they do not spawn.\\nOverride: set PRISM_NESTED_DISPATCH_GUARD=off (or PRISM_DISPATCH_GUARD=off).\"}}",
+    "stderr": ""
+  },
+  "parent/nested-off": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
   "tier/opus-hard": {
     "exit": 0,
     "stdout": "PRISM TIER task \"redesign architecture\": opus (source=plan-annotation; plan annotation [opus])",

@@ -106,6 +106,9 @@ const CASES = [
   ['parent/read-allow',    'prism-parent-dispatch-guard.mjs',{tool_name: 'Read', session_id: 'gm', tool_input: {file_path: 'a.ts'}}, {sentinel: SENT_HAIKU}],
   ['parent/subagent',      'prism-parent-dispatch-guard.mjs',{tool_name: 'Bash', session_id: 'gm', parent_tool_use_id: 'p1', tool_input: {command: 'npm run build'}}, {sentinel: SENT_HAIKU}],
   ['parent/off',           'prism-parent-dispatch-guard.mjs',{tool_name: 'Bash', session_id: 'gm', tool_input: {command: 'npm run build'}}, {env: {PRISM_DISPATCH_GUARD: 'off'}, sentinel: SENT_HAIKU}],
+  // v5.7.6 — nested-dispatch guard: Agent() from subagent context (hard deny) + off switch.
+  ['parent/nested-deny',   'prism-parent-dispatch-guard.mjs',{tool_name: 'Agent', session_id: 'gm', parent_tool_use_id: 'p1', tool_input: {subagent_type: 'general-purpose', prompt: 'x'}}, {env: {CLAUDE_CODE_ENTRYPOINT: ''}, sentinel: SENT_DISPATCHED}],
+  ['parent/nested-off',    'prism-parent-dispatch-guard.mjs',{tool_name: 'Agent', session_id: 'gm', parent_tool_use_id: 'p1', tool_input: {subagent_type: 'general-purpose', prompt: 'x'}}, {env: {CLAUDE_CODE_ENTRYPOINT: '', PRISM_NESTED_DISPATCH_GUARD: 'off'}, sentinel: SENT_DISPATCHED}],
 
   // ── prism-task-tier-advisor (TaskCreate; soft nudge / hard deny) ──
   ['tier/opus-hard',       'prism-task-tier-advisor.mjs',{tool_name: 'TaskCreate', session_id: 'gm', tool_input: {subject: 'redesign architecture', description: '[opus] big'}}, {env: {PRISM_TASK_TIER: 'hard'}, sentinel: {tier: 'opus', rationale: 'gm', source: 'gm'}}],

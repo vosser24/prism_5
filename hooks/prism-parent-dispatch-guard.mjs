@@ -53,6 +53,9 @@ import {join, dirname} from 'node:path';
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = String(process.env.PRISM_DISPATCH_GUARD ?? 'hard').toLowerCase();
+// v5.7.6 — nested-dispatch guard mode (hard|soft|off). Independent kill switch;
+// the master PRISM_DISPATCH_GUARD=off disables this too (early-return below).
+const NESTED_MODE = String(process.env.PRISM_NESTED_DISPATCH_GUARD ?? 'hard').toLowerCase();
 
 const ALWAYS_ALLOW = new Set([
   'Agent', 'TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop',
@@ -216,6 +219,51 @@ export function run(input) {
   // v5.3.3 — read-only fast exit (see RO_TOOLS): these are always allowed; skip
   // all work (sentinel read, logging) so a stray spawn is microseconds of JS.
   if (RO_TOOLS.has(toolName)) return done(0);
+
+  // --- v5.7.6: NESTED-DISPATCH GUARD (must run BEFORE the subagent bypass) ---
+  // Root cause (live-repro 2026-06-16): the runtime PRISM was built against
+  // (a) stripped the Agent tool from subagents and (b) did NOT fire hooks inside
+  // subagents — so "dispatch is main-loop-only" held for free. The updated
+  // runtime no longer does either: a dispatched worker CAN spawn a sub-subagent,
+  // and that nested Agent() call now REACHES this hook. An unsanctioned nested
+  // spawn stalls the tree (98-min throttled/near-zero hang). Doctrine is
+  // unchanged — NO subagent dispatches (even @master-orchestrator-as-subagent
+  // only role-plays; see the panel deny below) — so denying Agent() from
+  // subagent context breaks nothing sanctioned. Detection reuses the SAME two
+  // signals the bypass trusts. Only `Agent` (the spawn tool) is gated; subagents
+  // keep full use of Edit/Bash/TaskCreate/etc. (they fall through to the bypass).
+  const inSubagentCtx = isSubagent
+    || String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent';
+  if (inSubagentCtx && toolName === 'Agent' && NESTED_MODE !== 'off') {
+    appendLog({
+      event: 'nested_dispatch_guard',
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      tool: toolName,
+      target: String(input.tool_input?.subagent_type || input.tool_input?.agent_type || ''),
+      signal: isSubagent ? 'parent_tool_use_id' : 'entrypoint_env',
+      blocked: NESTED_MODE === 'hard',
+      mode: NESTED_MODE,
+    });
+    const nestedNotice = [
+      `PRISM NESTED-DISPATCH GUARD: Agent() denied — you are a dispatched subagent, and PRISM dispatch is MAIN-LOOP-ONLY. A worker that spawns its own sub-agents stalls the tree (throttled / near-zero spawns; live-repro 98-minute hang).`,
+      `Do the work INLINE here (Read / Grep / Edit / Bash directly). If you genuinely need parallel help, return your findings or a dispatch plan to the main loop and let IT fan out — teammates coordinate via SendMessage, they do not spawn.`,
+      `Override: set PRISM_NESTED_DISPATCH_GUARD=off (or PRISM_DISPATCH_GUARD=off).`,
+    ].join('\n');
+    if (NESTED_MODE === 'hard') {
+      write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: nestedNotice,
+        },
+      }));
+      return done(2);
+    }
+    write(nestedNotice);
+    return done(0);
+  }
+  // ----------------------------------------------------------------
 
   // --- v2.2.1: subagent bypass paths (any one passes cleanly) ---
   if (isSubagent) return done(0);
