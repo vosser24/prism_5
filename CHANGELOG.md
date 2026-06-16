@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.5] - 2026-06-16
+
+Task-tracking parity for the standalone `@master-orchestrator` wrapper — completes the 5.7.1 `TodoWrite`→`Task*` cross-build migration for the last uncovered agent. 5.7.1 gave the generated `master-<slug>` project agents the `Task*` family (via `PROJECT_MASTER_TOOLS`) and updated the plan-first nudge, but the standalone `agents/master-orchestrator.md` wrapper still declared `tools: Read, Write, Bash, Grep, Glob, Agent` — **no task tool at all**. So a session driven by the standalone orchestrator (rather than a generated project master) fired the "Multi-step work detected" nudge yet had no tool to render the list — the exact "I never see a task list" symptom, diagnosed live.
+
+- **`agents/master-orchestrator.md`** — `tools:` gains `TaskCreate, TaskList, TaskUpdate` (additive). The wrapper now has task-tracking parity with the generated project masters and with the main loop. Harness-name-safe per the 5.7.1 design decision: unknown tool names in an allowlist are ignored, so this is inert on builds that don't expose `Task*` and active on builds that do. `TodoWrite` was never present on this wrapper, so only the `Task*` family is added.
+- **No hook, dispatcher, or golden-master change** — this is a single agent-frontmatter addition; the consolidated PreToolUse dispatcher and all byte-identical golden cases are untouched.
+- **`install.ps1` fallback un-stale.** The defensive `$PrismVersion` literal (only used if the manifest read fails) was still `5.7.1`; bumped to `5.7.5` alongside `.claude-plugin/plugin.json` and `tools/install-manifest.json`.
+
 ## [5.7.4] - 2026-06-16
 
 Factory-hire routing for PHASE-1 workers — closes the gap that let durable, citation-grounded DOMAIN work (e.g. an executive-CV design system) be executed ad-hoc with a throwaway `general-purpose` WebSearch fan-out instead of being routed through `@agent-factory` to manufacture a reusable, NotebookLM-grounded specialist (vast token spend, no reusable asset). PRISM already enforced factory-first — but **only for PHASE 0d panel seats** (`prism-panel-guard.mjs`); PHASE-1 execution workers were uncovered. Same YAGNI discipline as 5.7.3: additive always-read prose + piggyback the ONE existing parallel-guard trace; no new PreToolUse hooks, heuristic enforcement is SOFT-only.

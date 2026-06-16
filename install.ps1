@@ -35,7 +35,7 @@ $ManifestPath = Join-Path $ScriptDir 'tools\install-manifest.json'
 $InstallDest  = Join-Path $env:USERPROFILE '.claude'
 
 # Read the canonical version from the manifest so the banner never drifts.
-$PrismVersion = '5.7.1'
+$PrismVersion = '5.7.5'
 if (Test-Path $ManifestPath) {
     try { $PrismVersion = (Get-Content $ManifestPath -Raw | ConvertFrom-Json).prism_version } catch {}
 }
