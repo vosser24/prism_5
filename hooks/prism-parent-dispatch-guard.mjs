@@ -96,6 +96,11 @@ const RO_FASTPATH = String(process.env.PRISM_RO_BASH_FASTPATH ?? 'on').toLowerCa
 const RO_LEADING = new Set([
   // POSIX / Git Bash
   'ls','cat','head','tail','wc','grep','egrep','fgrep','rg','file','stat','du','df',
+  // v5.7.8: `cd <path>` is read-only by construction (it mutates no files; `cd $(…)`
+  // is already blocked by INJECT_RE). Including it lets the ubiquitous
+  // `cd dir && git status` verification pattern run in-parent instead of being
+  // force-dispatched just because segment 1 led with `cd`.
+  'cd',
   'pwd','echo','printf','cut','basename','dirname','realpath','readlink',
   'date','whoami','hostname','uname','which','tree','column','nl','tac','comm','diff','jq',
   // NOTE: `sort` (-o FILE) and `uniq` (positional OUTPUT file) are deliberately

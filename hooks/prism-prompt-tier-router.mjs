@@ -127,15 +127,15 @@ function gitSnapshot(cwd) {
 function buildOverrideDirective(tier, summonPanel, sessionId) {
   // v3.2.0 self-override protocol: emitted only when keyword-floor produced
   // the classification (the bluntest path). The conversation model gets a
-  // chance to correct an obviously-wrong tier by writing a corrected
-  // sentinel as its FIRST action, before any work tools fire.
+  // chance to correct an obviously-wrong tier by READING then writing a
+  // corrected sentinel as its FIRST action, before any work tools fire.
   // Skipped on allowlist/force-opus where intent is explicit.
   const sid = String(sessionId || 'anon');
   const sentinelName = `~/.claude/.prism-turn-tier-${sid}.json`;
   return [
     '',
     'PRISM TIER OVERRIDE PROTOCOL (v3.2.0):',
-    `keyword-floor classified this prompt as ${tier}. If you (the conversation model) believe this is wrong for the actual task complexity, your FIRST action of this turn should be a Write to \`${sentinelName}\` with corrected fields {"tier":"<correct>","summon_panel":<bool>,"source":"conversation-model-override","rationale":"<why>"}. Otherwise, proceed normally and the keyword-floor classification stands.`,
+    `keyword-floor classified this prompt as ${tier}. If you (the conversation model) believe this is wrong for the actual task complexity, correct it as your FIRST action of this turn: Read \`${sentinelName}\` first (it already exists — the router rewrites it every turn, so the Write tool refuses without a prior Read), THEN Write or Edit it with corrected fields {"tier":"<correct>","summon_panel":<bool>,"source":"conversation-model-override","rationale":"<why>"}. Otherwise, proceed normally and the keyword-floor classification stands.`,
   ].join('\n');
 }
 

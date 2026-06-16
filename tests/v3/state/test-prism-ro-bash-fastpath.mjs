@@ -44,6 +44,9 @@ for (const c of [
   'ls -la', 'cat file.txt', 'head -50 log.txt', 'tail -n 50 app.log', 'wc -l x.js',
   'grep -rn TODO src', 'rg pattern .',
   'git log | grep fix | head -5',
+  // v5.7.8 — a leading `cd <path>` no longer defeats the read-only fast path
+  'cd /c/foo && git status', 'cd /c/foo && git status --short && git diff --stat',
+  'cd repo && git ls-files --others --exclude-standard', 'cd a && cd b && git log --oneline -5',
 ]) check(`EXEMPT: ${c}`, exempt(c));
 check('EXEMPT (PowerShell): Get-Content .\\x.log', exempt('Get-Content .\\x.log', 'PowerShell'));
 check('EXEMPT (PowerShell pipe): Get-Process | Select-Object Name', exempt('Get-Process | Select-Object Name', 'PowerShell'));
@@ -55,6 +58,7 @@ for (const c of [
   'cat x > out.txt', 'ls >> log.txt', 'git log | tee out.txt',                       // redirect / tee
   'npm install', 'pip install foo',                                                   // mutators
   'ls; rm -rf build', 'git status && python evil.py',                                // compound w/ bad segment
+  'cd build && rm -rf .', 'cd x && npm install', 'cd x && git commit -m y',           // v5.7.8: cd does NOT whitelist a bad trailing segment
   'cat $(python -c x)', 'echo `whoami`',                                              // command substitution
   'git branch --list', 'git tag -l', 'git config --get x',  // conservative: branch/tag/remote/config can write → not fast-pathed
   'sort -o out.txt in.txt', 'uniq in.txt out.txt',           // write-via-flag / positional output holes

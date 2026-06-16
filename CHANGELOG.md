@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.8] - 2026-06-16
+
+Two dispatch-guard papercuts — the kind that make people disable hooks (which is how this whole arc started). Both surfaced when a project-master correctly tried to run read-only verification on a mis-classified turn and got boxed in: the simple read-only path was blocked, and the sanctioned override escape was itself broken.
+
+- **Read-only fast-path no longer defeated by a leading `cd`.** `hooks/prism-parent-dispatch-guard.mjs` — `cd` is now a recognized read-only leading token. The guard already let provably-read-only Bash (`git status`/`diff`, `ls`, `grep`…) run in the parent without a forced dispatch, but the ubiquitous `cd dir && git status` failed because segment 1 led with `cd` (not in the allowlist) → the whole command was treated as non-read-only and denied. `cd` mutates nothing and `cd $(…)` is already blocked by `INJECT_RE`, so this is safe; a bad trailing segment (`cd x && rm -rf .`) is still denied (each segment is validated independently).
+- **The tier-override escape is no longer broken-by-default.** `hooks/prism-prompt-tier-router.mjs` — the override directive said "your FIRST action should be a **Write** to the tier file," but the router rewrites that file every turn, so the Write tool refused with "File has not been read yet" — the documented escape could not be executed as documented (live-repro on a project-master). The message now instructs **Read the file first, then Write or Edit it** (the guard's FIX-A2 already permits Read on the tier file even when work tools are denied).
+- Tests: `test-prism-ro-bash-fastpath.mjs` +7 cases (cd-led read-only EXEMPT; cd + bad-segment still denied) → 51/51. Golden-master `36 match, 0 differ` (no wire change). dispatcher + nested-dispatch suites green.
+
 ## [5.7.7] - 2026-06-16
 
 Doctrine accuracy — aligns the always-read dispatch prose with the post-5.7.6 runtime. No behavior change; prose only. 5.7.6 added the nested-dispatch guard after discovering the runtime no longer (a) strips the `Agent` tool from subagents nor (b) skips hooks inside subagents. The orchestrator doctrine still asserted both as facts — true when written (2026-06-02), false now — and they were the stale rationale for why hook enforcement supposedly "couldn't" exist.
