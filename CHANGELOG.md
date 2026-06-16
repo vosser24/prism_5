@@ -4,6 +4,14 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.7.9] - 2026-06-16
+
+Read-only fast-path now tolerates sink/merge redirects — the last of the "read-only probe gets force-dispatched" papercuts (after 5.7.8's `cd`). A diagnostic like `git status 2>/dev/null` or `… 2>&1 | head` is read-only, but `INJECT_RE` flagged the `>` in the stderr redirect and denied it. Surfaced by a real project-master verification command (`cd … && git rev-parse && git status --short 2>&1 | head`).
+
+- **`hooks/prism-parent-dispatch-guard.mjs`** — `isReadOnlyBash` now neutralizes harmless redirects before the inject/redirect check: a redirect whose target is another fd (`2>&1`, `1>&2`) or the null device (`/dev/null`, `NUL`) is stripped, then the remainder is validated exactly as before. **Real file writes stay blocked** — `> out.txt`, `2> err.log`, `>> app.log` are not matched (their target isn't a null/fd sink), so they still trip `INJECT_RE` and are denied. With this plus 5.7.8's `cd`, the live-repro command traces all the way to EXEMPT.
+- Scope is deliberately narrow: this only frees genuinely read-only probes (git read subcommands, ls/grep/etc.) that happen to carry a sink redirect. Non-read-only commands (`curl`, `netstat`, `npm`) are still force-dispatched regardless of redirects — `curl` can POST / `-o` a file, so it is not provably side-effect-free.
+- Tests: `test-prism-ro-bash-fastpath.mjs` +8 (sink-redirect EXEMPT; stderr/stdout-to-FILE still DENIED) → 59/59. Golden-master `36 match, 0 differ`. nested-dispatch green.
+
 ## [5.7.8] - 2026-06-16
 
 Two dispatch-guard papercuts — the kind that make people disable hooks (which is how this whole arc started). Both surfaced when a project-master correctly tried to run read-only verification on a mis-classified turn and got boxed in: the simple read-only path was blocked, and the sanctioned override escape was itself broken.

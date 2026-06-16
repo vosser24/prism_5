@@ -47,6 +47,9 @@ for (const c of [
   // v5.7.8 — a leading `cd <path>` no longer defeats the read-only fast path
   'cd /c/foo && git status', 'cd /c/foo && git status --short && git diff --stat',
   'cd repo && git ls-files --others --exclude-standard', 'cd a && cd b && git log --oneline -5',
+  // v5.7.9 — harmless sink/merge redirects (2>/dev/null, 2>&1, >/dev/null, NUL) don't block
+  'git status 2>/dev/null', 'git status --short 2>&1 | head -20', 'ls -la 2>/dev/null', 'git diff >/dev/null',
+  'cd /c/foo && git rev-parse --short HEAD && git status --short 2>&1 | head -20',
 ]) check(`EXEMPT: ${c}`, exempt(c));
 check('EXEMPT (PowerShell): Get-Content .\\x.log', exempt('Get-Content .\\x.log', 'PowerShell'));
 check('EXEMPT (PowerShell pipe): Get-Process | Select-Object Name', exempt('Get-Process | Select-Object Name', 'PowerShell'));
@@ -59,6 +62,7 @@ for (const c of [
   'npm install', 'pip install foo',                                                   // mutators
   'ls; rm -rf build', 'git status && python evil.py',                                // compound w/ bad segment
   'cd build && rm -rf .', 'cd x && npm install', 'cd x && git commit -m y',           // v5.7.8: cd does NOT whitelist a bad trailing segment
+  'git status 2> err.log', 'git diff > out.txt', 'echo x 2>>app.log',                  // v5.7.9: stderr/stdout to a FILE is still a write → denied
   'cat $(python -c x)', 'echo `whoami`',                                              // command substitution
   'git branch --list', 'git tag -l', 'git config --get x',  // conservative: branch/tag/remote/config can write → not fast-pathed
   'sort -o out.txt in.txt', 'uniq in.txt out.txt',           // write-via-flag / positional output holes

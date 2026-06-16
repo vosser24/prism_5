@@ -129,7 +129,15 @@ const INJECT_RE = /(>>?|\|\s*tee\b|tee-object|`|\$\(|\$\{|<\(|\{|--output\b|-out
 function isReadOnlyBash(cmd) {
   if (!RO_FASTPATH) return false;
   if (typeof cmd !== 'string') return false;
-  const c = cmd.trim();
+  let c = cmd.trim();
+  if (!c) return false;
+  // v5.7.9: neutralize harmless sink/merge redirects (they write NO file) before
+  // the redirect/inject check, so read-only probes like `git status 2>/dev/null`
+  // and `... 2>&1 | head` run in-parent instead of being force-dispatched. Only
+  // redirects whose target is another fd (`2>&1`) or the null device
+  // (`/dev/null`, `NUL`) are matched; real file redirects (`> f`, `2> err.log`)
+  // are NOT matched and remain blocked by INJECT_RE below.
+  c = c.replace(/(?:[0-9]*>&\s*[0-9]+)|(?:(?:[0-9]*|&)>{1,2}\s*(?:\/dev\/null|nul)\b)/gi, ' ').replace(/\s+/g, ' ').trim();
   if (!c) return false;
   if (INJECT_RE.test(c)) return false;
   // env mutation (bash `export X=` / cmd `set X=` / PowerShell `$env:X =`)
