@@ -60,6 +60,26 @@ const MAX_TRACE_ENTRIES = 8;
 //   [pgroup:foo]   pgroup=foo   <pgroup foo>   "pgroup: foo"
 const PGROUP_RE = /(?:\[pgroup[:=]\s*|pgroup[:=]\s*|<pgroup\s+)([a-z0-9_\-]+)/i;
 
+// WS-B (v5.7.4): soft factory-hire hint. A dispatch is "domain-research on a
+// throwaway agent" when the subagent_type is GENERIC (not a named rostered
+// specialist) AND the prompt reads like durable domain research/design. Counting
+// these per-turn lets the guard nudge toward @agent-factory before a flood of
+// throwaway workers burns tokens with no reusable asset. Heuristic → SOFT only.
+const GENERIC_SUBAGENT_TYPES = new Set(['general-purpose', 'claude', 'unknown', '']);
+const DOMAIN_RESEARCH_RE = /\b(research|deep[- ]?dive|best practices?|state[- ]of[- ]the[- ]art|conventions?|typography|design system|landscape|survey|guidelines?|standards?)\b/i;
+
+function resolveFactoryHint(env = process.env) {
+  const raw = env.PRISM_FACTORY_HINT;
+  const enabled = !(typeof raw === 'string' && raw.toLowerCase() === 'off');
+  let threshold = 3;
+  const t = env.PRISM_FACTORY_HINT_THRESHOLD;
+  if (t != null && /^\d+$/.test(String(t).trim())) {
+    const n = parseInt(String(t).trim(), 10);
+    if (n >= 1 && n <= 16) threshold = n;
+  }
+  return {enabled, threshold};
+}
+
 function tracePath(sessionId) {
   return join(H, '.claude', `.prism-parallel-trace-${sessionId || 'anon'}.json`);
 }
@@ -222,6 +242,22 @@ export function run(input) {
   const cap = resolveParallelCap();
   const overCap = recentSameTurn.length >= cap;
 
+  // WS-B (v5.7.4): factory-hire hint. Classify THIS dispatch as domain-research
+  // on a generic/throwaway agent, persist the `dr` flag on the trace entry, and
+  // count the same-turn running total. When it reaches the threshold, append a
+  // SOFT advisory (below) — never a deny. Reuses the SAME trace already read.
+  const currentIsDr = GENERIC_SUBAGENT_TYPES.has(subagentType) &&
+    DOMAIN_RESEARCH_RE.test(`${description} ${prompt}`);
+  const {enabled: hintEnabled, threshold: hintThreshold} = resolveFactoryHint();
+  const priorDr = recentSameTurn.filter(e => e && e.dr === true).length;
+  const totalDr = priorDr + (currentIsDr ? 1 : 0);
+  const factoryHint = hintEnabled && currentIsDr && totalDr >= hintThreshold;
+  const factoryHintText = factoryHint ? [
+    `PRISM FACTORY-HINT: ${totalDr} domain-research dispatch(es) on throwaway generic agents this turn (threshold ${hintThreshold}).`,
+    `Durable domain work like this should be a SPECIALIST — consider @agent-factory (NotebookLM-grounded) so the expertise persists and isn't re-derived per task. See SKILL.md DISPATCH CONTRACT step 1 (factory-hire fork).`,
+    `Advisory only (never blocks). Disable: PRISM_FACTORY_HINT=off. Tune: PRISM_FACTORY_HINT_THRESHOLD.`,
+  ].join('\n') : '';
+
   // Default action: append this call to the trace and exit cleanly.
   // Trim to MAX_TRACE_ENTRIES so the file stays small.
   const newEntry = {
@@ -229,6 +265,7 @@ export function run(input) {
     pgroup,
     subagent_type: subagentType,
     turn_id: turnId,
+    dr: currentIsDr,
   };
   const updated = {
     entries: [...(trace.entries || []), newEntry].slice(-MAX_TRACE_ENTRIES),
@@ -256,10 +293,15 @@ export function run(input) {
       session_id: sessionId,
       subagent_type: subagentType,
       pgroup,
-      action: 'passthrough',
+      action: factoryHint ? 'passthrough+factory-hint' : 'passthrough',
+      factory_hint: factoryHint || undefined,
+      dr_count: totalDr || undefined,
       mode: MODE,
       prompt_hash: sha256short(prompt),
     });
+    // The factory hint is a SOFT advisory — appended additively on the clean
+    // passthrough path; it never changes the exit code.
+    if (factoryHintText) write(factoryHintText);
     return done(0);
   }
 
@@ -304,7 +346,9 @@ export function run(input) {
     return done(2);
   }
 
-  write(notice);
+  // Soft mode: emit the cap/pgroup notice + (additively) the factory hint if it
+  // fired. The hard-deny path above returns first, so the deny JSON stays clean.
+  write(factoryHintText ? `${notice}\n${factoryHintText}` : notice);
   return done(0);
 }
 

@@ -26,6 +26,7 @@ function check(name, hay, needle) {
 const SKILL = read('skills/master-orchestrator/SKILL.md');
 const P1 = read('skills/master-orchestrator/references/phase-1-execution.md');
 const P2 = read('skills/master-orchestrator/references/phase-2-completion.md');
+const P0 = read('skills/master-orchestrator/references/phase-0-team-assembly.md');
 
 // ── WS1: decomposition ──
 check('SKILL: DISPATCH CONTRACT header', SKILL, 'DISPATCH CONTRACT');
@@ -49,6 +50,14 @@ check('SKILL: near-zero result signal', SKILL, 'near-zero result');
 check('SKILL: back off + retry', SKILL, 'back off');
 check('SKILL: verify partial state before re-run', SKILL, 'verify partial state');
 check('P1: validate gate names the failed-spawn signal', P1, 'near-zero');
+
+// ── WS-A (v5.7.4): factory-hire doctrine fork for PHASE-1 workers ──
+check('SKILL: factory-hire fork named', SKILL, 'Factory-hire fork');
+check('SKILL: recurring-surface test question', SKILL, 'recurring surface');
+check('SKILL: routes to @agent-factory', SKILL, '@agent-factory');
+check('SKILL: ad-hoc carve-out for one-offs', SKILL, 'ad-hoc is fine');
+check('P0: factory-hire test extends to PHASE-1 workers', P0, 'factory-hire test');
+check('P0: names PHASE-1 execution workers', P0, 'PHASE-1');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

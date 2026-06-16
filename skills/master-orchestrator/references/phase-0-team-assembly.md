@@ -156,6 +156,16 @@ cannot prompt the human), this offer MUST happen here in the parent turn:
 - If PRESENT → proceed directly.
 (Skip this pre-check for `--from-notebook` wiring, which already implies NotebookLM.)
 
+**Factory-hire test also governs PHASE-1 workers (v5.7.4).** The factory-first
+principle below — and the panel-seat enforcement above — is NOT limited to PHASE
+0d panel seats. It also applies to **PHASE-1 execution workers**: before
+dispatching `general-purpose` workers to *do* durable DOMAIN research/design,
+apply the 3-question **factory-hire test** (recurring surface? durable output?
+citation-grounded knowledge? → ≥2 yes = manufacture a specialist via
+`@agent-factory`, don't burn tokens ad-hoc). Single source of truth: SKILL.md
+DISPATCH CONTRACT step 1. The panel-guard only enforces panel.json seats; PHASE-1
+worker dispatch is reinforced by the soft `PRISM_FACTORY_HINT` nudge instead.
+
 **Agent hiring flow:**
 - Agent missing → spawn @agent-factory for creation, wait, hire.
   Once @agent-factory is invoked, the factory's own "Decision tree:
