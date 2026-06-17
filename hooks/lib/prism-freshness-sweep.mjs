@@ -94,6 +94,7 @@ const KB_REBUILD_LOCK_REL = ['.claude', '.prism-kb-rebuild.lock'];
 const KNOWLEDGE_REBUILD_LOCK_REL = ['.claude', '.prism-kb-knowledge-rebuild.lock'];
 const REBUILD_TIMEOUT_MS = 60000;        // hard ceiling on a single rebuild
 const REBUILD_LOCK_STALE_MS = 10 * 60 * 1000;  // a lock older than this is abandoned
+const KB_MTIME_TOLERANCE_SEC = 2;  // absorb same-second rebuild/write quantization
 
 function atomicWrite(path, content) {
   try {
@@ -371,7 +372,11 @@ function checkKbIndexStale(home, rebuild = defaultRebuildKb) {
     const m = walkMdMaxMtimeSec(root, budget);
     if (m > newest) newest = m;
   }
-  if (newest <= index.source_mtime_max) return null;
+  if (newest <= index.source_mtime_max + KB_MTIME_TOLERANCE_SEC) return null;
+  // A rebuild is already pending/in-flight → stay silent, let it finish.
+  const lock = join(home, ...KB_REBUILD_LOCK_REL);
+  const lm = safeMtime(lock);
+  if (lm !== null && (Date.now() - lm) < REBUILD_LOCK_STALE_MS) return null;
   // A5: stale → rebuild inline (≤1×/24h via the sweep throttle + lockfile).
   const res = rebuild(home);
   if (res && res.ok) {
