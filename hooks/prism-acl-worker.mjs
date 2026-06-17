@@ -16,8 +16,7 @@
 
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { tmpdir } from 'node:os';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const TOOL_ROOT = join(HOME, '.claude', 'tools');
@@ -26,22 +25,29 @@ const workerStart = Date.now();
 
 // ── Dynamic imports with fallback to repo paths ──────────────────────────────
 
-// Resolve tools path: prefer installed (~/.claude/tools/), fall back to repo
+// Resolve tools path: prefer installed (~/.claude/tools/), fall back to repo.
+// IMPORTANT: On Windows, URL.pathname gives '/Y:/...' which is invalid for
+// fs operations.  Use fileURLToPath() to convert to a proper Windows path.
+
 function resolveTool(name) {
   // Installed path
   const installed = join(TOOL_ROOT, name);
   if (existsSync(installed)) return installed;
   // Repo path (worker lives in hooks/, tools/ is sibling of hooks/)
-  const repoRoot = new URL('../tools/' + name, import.meta.url).pathname;
-  if (existsSync(repoRoot)) return repoRoot;
+  try {
+    const repoPath = fileURLToPath(new URL('../tools/' + name, import.meta.url));
+    if (existsSync(repoPath)) return repoPath;
+  } catch {}
   return null;
 }
 
 function resolveLib(name) {
   const installed = join(TOOL_ROOT, 'lib', name);
   if (existsSync(installed)) return installed;
-  const repoRoot = new URL('../tools/lib/' + name, import.meta.url).pathname;
-  if (existsSync(repoRoot)) return repoRoot;
+  try {
+    const repoPath = fileURLToPath(new URL('../tools/lib/' + name, import.meta.url));
+    if (existsSync(repoPath)) return repoPath;
+  } catch {}
   return null;
 }
 

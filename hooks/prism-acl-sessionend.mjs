@@ -17,7 +17,8 @@
 
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const CLAUDE_DIR = join(HOME, '.claude');
@@ -25,8 +26,9 @@ const DEBOUNCE_FILE = join(CLAUDE_DIR, '.prism-acl-debounce');
 const SPAWN_MARKER = join(CLAUDE_DIR, '.prism-acl-spawn-marker');
 const DEBOUNCE_MS = parseInt(process.env.PRISM_ACL_DEBOUNCE_MS || '60000', 10);
 
-// The worker script — lives next to this hook
-const WORKER = new URL('./prism-acl-worker.mjs', import.meta.url).pathname;
+// The worker script — lives next to this hook.
+// IMPORTANT: On Windows, URL.pathname gives '/Y:/...' — must use fileURLToPath.
+const WORKER = fileURLToPath(new URL('./prism-acl-worker.mjs', import.meta.url));
 
 // ── Load config (inline sync — avoid dynamic import latency) ──────────────────
 
