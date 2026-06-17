@@ -268,11 +268,15 @@ function restoreEnv(key, prev) {
     check('(1i) argv: --output-dir is ABSENT (fake flag removed)',
       Array.isArray(spawnedArgv) && !spawnedArgv.includes('--output-dir'),
       `argv: ${JSON.stringify(spawnedArgv)}`);
-    check('(1j) argv: --bare present',
-      Array.isArray(spawnedArgv) && spawnedArgv.includes('--bare'),
+    check('(1j) argv: --bare is ABSENT (it strips OAuth → "Not logged in"; removed v5.9.4)',
+      Array.isArray(spawnedArgv) && !spawnedArgv.includes('--bare'),
       `argv: ${JSON.stringify(spawnedArgv)}`);
     check('(1k) argv: --dangerously-skip-permissions present',
       Array.isArray(spawnedArgv) && spawnedArgv.includes('--dangerously-skip-permissions'),
+      `argv: ${JSON.stringify(spawnedArgv)}`);
+    check('(1l) argv: --settings {"disableAllHooks":true} present (replaces --bare; sandboxes factory from PRISM guards without killing auth)',
+      Array.isArray(spawnedArgv) && spawnedArgv.includes('--settings') &&
+        /disableAllHooks/.test(spawnedArgv[spawnedArgv.indexOf('--settings') + 1] || ''),
       `argv: ${JSON.stringify(spawnedArgv)}`);
   } finally {
     restoreEnv('PRISM_ACL_CLAUDE_BIN', prevBin);

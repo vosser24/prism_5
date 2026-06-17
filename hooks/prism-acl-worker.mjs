@@ -71,7 +71,7 @@ export const FACTORY_TIMEOUT_MS = 120000;
 //
 //   <claudeBin> \
 //     --agent agent-factory \
-//     --bare \
+//     --settings '{"disableAllHooks":true}' \
 //     --dangerously-skip-permissions \
 //     --max-turns 5 \
 //     --output-format json \
@@ -81,6 +81,10 @@ export const FACTORY_TIMEOUT_MS = 120000;
 //   • `--agent agent-factory` runs the session AS the agent-factory agent (correct).
 //     Subagents cannot be invoked via `claude -p` directly; there is no `--subagent`
 //     flag. `--agent` is the proper way to load and run a named agent headlessly.
+//   • `--settings '{"disableAllHooks":true}'` replaces the earlier `--bare`, which
+//     was found (live, 2026-06-17) to strip OAuth → "Not logged in". disableAllHooks
+//     sandboxes the factory from PRISM's own blocking PreToolUse guards while
+//     preserving credentials.
 //   • `--name` and `--output-dir` are NOT real Claude CLI flags and were removed.
 //     They were silently ignored by the real CLI, doing nothing.
 //   • Output location is controlled via the PROMPT TEXT and the STAGING_DIR /
@@ -96,12 +100,17 @@ export const FACTORY_TIMEOUT_MS = 120000;
 //   If found at either default location, the file is MOVED into stagingDir.
 //   If still no file → return null (graceful skip).
 //
-// PRODUCTION CORRECTNESS NOTE:
-//   The correctness of `--agent agent-factory` in a detached Node process is
-//   UNVERIFIED at authoring time. A production smoke-test should run:
-//     claude --agent agent-factory --bare --init-only
-//   to confirm the agent loads, then a real create with the expected prompt.
-//   Do NOT trust this invocation in production until that smoke-test passes.
+// PRODUCTION CORRECTNESS NOTE (VERIFIED 2026-06-17 via live CLI smoke-test):
+//   `--agent agent-factory` loads and runs the agent headlessly. The original
+//   `--bare` flag broke this in two ways, both reproduced live:
+//     1. `claude --bare ...` returns "Not logged in · Please run /login" (cost 0)
+//        — --bare skips OAuth/credential loading.
+//     2. Even without --bare, the headless session inherits ~/.claude/settings.json,
+//        so PRISM's own PreToolUse guards block agent-factory's Write/Bash
+//        ("environment deadlock — Write and Bash writes are blocked").
+//   The fix (this file): drop --bare, add `--settings '{"disableAllHooks":true}'`.
+//   Validated end-to-end: agent-factory authenticated, ran, and wrote a capability
+//   .md with valid frontmatter to the staging dir. ($0.03, 2 turns.)
 //
 // PRISM_ACL_CLAUDE_BIN supports a space-separated value such as
 //   "node /absolute/path/to/stub.mjs"
@@ -149,12 +158,22 @@ export async function productionFactory(spec, stagingDir) {
     `Members of this cluster: ${(spec.members || []).slice(0, 5).join(', ')}.`,
   ].join(' ');
 
-  // Corrected argv: --agent agent-factory instead of -p with @agent-factory prefix.
-  // --name and --output-dir are removed (they are NOT real Claude CLI flags).
+  // Corrected argv (v5.9.4 — LIVE-VALIDATED 2026-06-17, see CORRECTNESS NOTE below):
+  //   • --agent agent-factory: run the headless session AS the agent-factory agent.
+  //   • --bare was REMOVED. `--bare` strips OAuth credential loading, so every
+  //     real headless dispatch failed with "Not logged in · Please run /login"
+  //     and produced no file. (`--bare`'s intent was to skip hooks so PRISM's own
+  //     guards don't block the factory — but it ALSO killed auth.)
+  //   • --settings '{"disableAllHooks":true}' REPLACES --bare: it disables ALL
+  //     hooks for the factory subprocess WITHOUT touching auth, so PRISM's own
+  //     PreToolUse guards (parent-dispatch + mutation) cannot block agent-factory's
+  //     Write/Bash file creation. This is exactly what --bare was reaching for,
+  //     minus the credential breakage.
+  //   • --name and --output-dir are NOT real Claude CLI flags (removed earlier).
   const args = [
     ...claudePrefixArgs,
     '--agent', 'agent-factory',
-    '--bare',
+    '--settings', '{"disableAllHooks":true}',
     '--dangerously-skip-permissions',
     '--max-turns', '5',
     '--output-format', 'json',

@@ -449,6 +449,21 @@ try {
     }
   } catch {}
 
+  // ── ACL SessionStart digest (F-WS-F): surface "PRISM learned: ..." once ──────
+  // The Autonomous Capability Loop writes created/upgraded capability names to
+  // .prism-acl-digest.json; fold that one line into this SessionStart's notices.
+  // (v5.9.4: wired here — prism-acl-notify.mjs was deployed but previously
+  //  UNWIRED, so the digest never surfaced.) Off-switch: PRISM_DISABLE_ACL_NOTIFY=1.
+  try {
+    if (process.env.PRISM_DISABLE_ACL_NOTIFY !== '1') {
+      const aclNotify = await import(pathToFileURL(join(H, '.claude', 'hooks', 'prism-acl-notify.mjs')).href).catch(() => null);
+      if (aclNotify && typeof aclNotify.getNotice === 'function') {
+        const learned = aclNotify.getNotice(H);
+        if (learned) notices.push(learned);
+      }
+    }
+  } catch {}
+
   if (notices.length) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
