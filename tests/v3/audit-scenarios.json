@@ -610,6 +610,88 @@
       "expected_stdout_pattern": "",
       "max_duration_ms": 500,
       "notes": "Turn counter; nudge emerges only at turn 15+"
+    },
+    {
+      "id": "ACL-NTF-001",
+      "name": "ACL notify — digest with created skill emits PRISM learned notice",
+      "category": "acl",
+      "capability": "acl_notify_created_skill",
+      "target_hook": "hooks/prism-acl-audit-notify-stub.mjs",
+      "input_event": "SessionStart",
+      "input_payload": {
+        "session_id": "audit-ACL-NTF-001"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "PRISM learned",
+      "max_duration_ms": 5000,
+      "notes": "ACL Phase-1/3: notify hook reads seeded digest (created:['watchdog-monitor-builder']) and emits the PRISM learned notice. Stub wrapper sets up isolated temp HOME — no real ~/.claude mutation, no LLM dispatch."
+    },
+    {
+      "id": "ACL-NTF-002",
+      "name": "ACL notify — empty digest emits nothing",
+      "category": "acl",
+      "capability": "acl_notify_empty_digest",
+      "target_hook": "hooks/prism-acl-notify.mjs",
+      "input_event": "SessionStart",
+      "input_payload": {
+        "session_id": "audit-ACL-NTF-002"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-1: notify hook with no digest file (real HOME, no digest present at audit time) → exits 0, emits nothing. Safe read-only: hook only reads, never writes when digest is absent."
+    },
+    {
+      "id": "ACL-RBK-001",
+      "name": "ACL rollback guard — correction on upgraded cap triggers rollback",
+      "category": "acl",
+      "capability": "acl_rollback_on_correction",
+      "target_hook": "hooks/prism-acl-audit-rollback-stub.mjs",
+      "input_event": "correction",
+      "input_payload": {
+        "event": "correction",
+        "session_id": "audit-ACL-RBK-001",
+        "cap_name": "watchdog-monitor-builder",
+        "type": "correction",
+        "content": "Bad upgrade output"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 5000,
+      "notes": "ACL Phase-3: rollback guard with seeded v2 capability + correction payload → atomically reverts to v1 snapshot. Stub wrapper sets up isolated temp HOME — no real ~/.claude mutation, no LLM dispatch."
+    },
+    {
+      "id": "ACL-RBK-002",
+      "name": "ACL rollback guard — non-correction passthrough",
+      "category": "acl",
+      "capability": "acl_rollback_guard_passthrough",
+      "target_hook": "hooks/prism-acl-rollback-guard.mjs",
+      "input_event": "dispatch",
+      "input_payload": {
+        "event": "dispatch",
+        "session_id": "audit-ACL-RBK-002",
+        "cap_name": "watchdog-monitor-builder"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-3: rollback guard with non-correction event → passthrough (exit 0, no mutation). Safe read-only path: guard checks payload.type and exits immediately for non-correction events."
+    },
+    {
+      "id": "ACL-DET-001",
+      "name": "ACL detect — no routing log present (graceful no-op)",
+      "category": "acl",
+      "capability": "acl_detect_no_routing_log",
+      "target_hook": "hooks/prism-acl-sessionend.mjs",
+      "input_event": "SessionEnd",
+      "input_payload": {
+        "event": "SessionEnd",
+        "session_id": "audit-ACL-DET-001"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-1: session-end hook with no routing log in real HOME → fires-and-forgets worker (or exits early if no routing log). Foreground must exit 0 immediately. Covered: graceful no-routing-log path. Deferred: full detect+promote loop (requires detached worker + polling, covered by acl-phase1-e2e.mjs)."
     }
   ]
 }
