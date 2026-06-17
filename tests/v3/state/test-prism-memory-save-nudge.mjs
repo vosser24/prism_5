@@ -6,7 +6,7 @@
 // Run: node tests/v3/state/test-prism-memory-save-nudge.mjs
 
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -42,12 +42,17 @@ test('fires at turn 15 and points at /prism-clean (claude-mem absent → Mode B)
   } finally { rmSync(h, {recursive: true, force: true}); }
 });
 
-test('stands down entirely when claude-mem is installed (no double UserPromptSubmit)', () => {
+test('stands down entirely when claude-mem is installed AND healthy (no double UserPromptSubmit)', () => {
   const h = home('standdown');
   try {
-    mkdirSync(join(h, '.claude-mem'), {recursive: true});  // claude-mem marker
+    mkdirSync(join(h, '.claude-mem', 'state'), {recursive: true});  // claude-mem marker
+    // F7 fix: add hook-failures.json with consecutiveFailures:0 so the health check
+    // sees a HEALTHY worker and the standdown fires. Without this file the new gate
+    // treats the worker as unhealthy (fail-open) and the nudge would fire instead.
+    writeFileSync(join(h, '.claude-mem', 'state', 'hook-failures.json'),
+      JSON.stringify({consecutiveFailures: 0}));
     const out = runNudge(h, 15);
-    assert(out.trim() === '', 'must produce NO output when claude-mem present: ' + JSON.stringify(out));
+    assert(out.trim() === '', 'must produce NO output when claude-mem installed+healthy: ' + JSON.stringify(out));
   } finally { rmSync(h, {recursive: true, force: true}); }
 });
 

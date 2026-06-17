@@ -29,3 +29,17 @@ export function claudeMemInstalled(home = process.env.HOME || process.env.USERPR
   } catch { /* no settings.json — fall through */ }
   return false;
 }
+
+// Health probe (sync, side-effect-free): claude-mem's worker writes a
+// consecutive-failure counter to ~/.claude-mem/state/hook-failures.json.
+// Healthy <=> file exists AND consecutiveFailures === 0. A missing/parse-error
+// file is treated as UNHEALTHY (fail toward re-enabling PRISM's native nudge),
+// so a never-started or crashed worker never silently disables auto-recall.
+export function claudeMemHealthy(home) {
+  try {
+    const p = join(home, '.claude-mem', 'state', 'hook-failures.json');
+    if (!existsSync(p)) return false;
+    const j = JSON.parse(readFileSync(p, 'utf-8'));
+    return Number(j.consecutiveFailures || 0) === 0;
+  } catch { return false; }
+}
