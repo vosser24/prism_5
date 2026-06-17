@@ -137,7 +137,9 @@ function checkPass(result, sc) {
   }
   if (sc.expected_stdout_pattern) {
     const haystack = (result.stdout || '') + '\n' + (result.stderr || '');
-    if (!haystack.includes(sc.expected_stdout_pattern)) {
+    // Support regex alternation (e.g. "sonnet|opus") in addition to literal substrings.
+    const matched = (() => { try { return new RegExp(sc.expected_stdout_pattern).test(haystack); } catch { return haystack.includes(sc.expected_stdout_pattern); } })();
+    if (!matched) {
       return {pass: false, reason: `stdout/stderr did not contain pattern: ${sc.expected_stdout_pattern.slice(0, 60)}`};
     }
   }

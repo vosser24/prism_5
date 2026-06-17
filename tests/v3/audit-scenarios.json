@@ -81,6 +81,58 @@
       "notes": "Re-classification of same prompt; second call should be cache-source"
     },
     {
+      "id": "CLF-010",
+      "name": "Multi-region rate limiter → opus",
+      "category": "classifier",
+      "capability": "tier_opus_distributed_systems",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {"session_id": "audit-CLF-010", "prompt": "design a multi-region rate limiter with per-tenant fairness and phased migration"},
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "opus",
+      "max_duration_ms": 500,
+      "notes": "A1: distributed-systems/scaling vocab now scores opus (was score=0/haiku)"
+    },
+    {
+      "id": "CLF-011",
+      "name": "Plan expense tracker (backend+frontend) → sonnet+",
+      "category": "classifier",
+      "capability": "tier_sonnet_fullstack",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {"session_id": "audit-CLF-011", "prompt": "plan an expense tracker with Node backend + React frontend"},
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "sonnet|opus",
+      "max_duration_ms": 500,
+      "notes": "A1: full-stack (backend+frontend) co-presence scores at least sonnet (was haiku)"
+    },
+    {
+      "id": "CLF-012",
+      "name": "Implement secure auth (password hashing + JWT) → sonnet+",
+      "category": "classifier",
+      "capability": "tier_sonnet_security_verb_floor",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {"session_id": "audit-CLF-012", "prompt": "implement secure user authentication with password hashing and JWT"},
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "sonnet|opus",
+      "max_duration_ms": 500,
+      "notes": "A2: security-verb floor prevents haiku routing for security-feature build work"
+    },
+    {
+      "id": "CLF-013",
+      "name": "Guard: trivial SIGTERM question → haiku (no over-trigger)",
+      "category": "classifier",
+      "capability": "tier_haiku_trivial_guard",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {"session_id": "audit-CLF-013", "prompt": "what does SIGTERM mean"},
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "haiku",
+      "max_duration_ms": 500,
+      "notes": "Guard: A1+A2 changes must not over-trigger on trivial informational prompts"
+    },
+    {
       "id": "MUT-001",
       "name": "Parent Edit → mutation-guard passes (v5.4.0 re-scope)",
       "category": "mutation-guard",
