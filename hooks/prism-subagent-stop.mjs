@@ -21,25 +21,32 @@ const tokens=(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creat
 // ── Roster update (existing behavior, wrapped so its failure can't block ledger) ──
 const rp=j(H,'.claude','skills','prism-plan','references','roster.json');
 if(e(rp)&&agentName&&!['master-orchestrator','agent-factory','prism-updater'].includes(agentName)){
-  try{
-    // Locked read-modify-write: under the SubagentStop dispatcher's Promise.all
-    // this races phase-1-5-oob's locked roster write. withRosterLock serialises
-    // them so neither increment is lost.
-    await withRosterLock(rp, async () => {
-      const roster=JSON.parse(r(rp,'utf-8'));
-      if(roster.agents&&roster.agents[agentName]){
-        const a=roster.agents[agentName];
-        a.total_tasks_completed=(a.total_tasks_completed||0)+1;
-        a.last_used=new Date().toISOString();
-        a.projects_worked=a.projects_worked||[];
-        const p=a.projects_worked.find(x=>x.name===project);
-        if(p){p.tasks_completed++;p.date=a.last_used}
-        else a.projects_worked.push({name:project,date:a.last_used,tasks_completed:1});
-        roster.last_updated=new Date().toISOString();
-        w(rp,JSON.stringify(roster,null,2));
-      }
-    });
-  }catch{}
+  // E-P5: cheap lock-free pre-read to check if agentName is registered.
+  // Avoids acquiring the lock + parsing + writing for every unregistered subagent
+  // (Explore, Plan, Haiku mappers, etc.) that would no-op the inner write guard.
+  let agentKnown=false;
+  try{const preread=JSON.parse(r(rp,'utf-8'));agentKnown=!!(preread.agents&&preread.agents[agentName]);}catch{}
+  if(agentKnown){
+    try{
+      // Locked read-modify-write: under the SubagentStop dispatcher's Promise.all
+      // this races phase-1-5-oob's locked roster write. withRosterLock serialises
+      // them so neither increment is lost.
+      await withRosterLock(rp, async () => {
+        const roster=JSON.parse(r(rp,'utf-8'));
+        if(roster.agents&&roster.agents[agentName]){
+          const a=roster.agents[agentName];
+          a.total_tasks_completed=(a.total_tasks_completed||0)+1;
+          a.last_used=new Date().toISOString();
+          a.projects_worked=a.projects_worked||[];
+          const p=a.projects_worked.find(x=>x.name===project);
+          if(p){p.tasks_completed++;p.date=a.last_used}
+          else a.projects_worked.push({name:project,date:a.last_used,tasks_completed:1});
+          roster.last_updated=new Date().toISOString();
+          w(rp,JSON.stringify(roster,null,2));
+        }
+      });
+    }catch{}
+  }
 }
 
 // ── Spend ledger append (Gap 6) ──

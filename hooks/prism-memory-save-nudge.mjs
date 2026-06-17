@@ -23,7 +23,7 @@
 
 import {readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {claudeMemInstalled} from './lib/prism-claude-mem-detect.mjs';
+import {claudeMemInstalled, claudeMemHealthy} from './lib/prism-claude-mem-detect.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG = join(H, '.claude', '.prism-routing.jsonl');
@@ -75,13 +75,18 @@ export async function run(payload) {
   try {
     if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
 
-    // v5.1: stand down when claude-mem is installed — it captures continuously and
-    // registers its own UserPromptSubmit hook, so PRISM's nudge would double up
-    // (duplicate injector + redundant "save before /clear"). claude-mem owns the
-    // ambient-memory tier in that mode; PRISM-native capture is the fallback only.
-    if (claudeMemInstalled(H)) {
-      appendLog({event: 'memory_save_nudge', action: 'standdown-claude-mem'});
+    // v5.x (F7): only stand down when claude-mem is installed AND its worker is
+    // HEALTHY. If installed-but-unhealthy (worker down / consecutiveFailures>0 /
+    // no heartbeat), claude-mem captures nothing — re-enable PRISM's native nudge
+    // so the fallback fires. (Standdown still prevents the double-injector when
+    // claude-mem is actually serving.)
+    if (claudeMemInstalled(H) && claudeMemHealthy(H)) {
+      appendLog({event: 'memory_save_nudge', action: 'standdown-claude-mem-healthy'});
       return {exit: 0, stdout: '', stderr: ''};
+    }
+    if (claudeMemInstalled(H)) {
+      appendLog({event: 'memory_save_nudge', action: 'fallback-claude-mem-unhealthy'});
+      // fall through — native nudge proceeds
     }
 
     const input = payload || {};

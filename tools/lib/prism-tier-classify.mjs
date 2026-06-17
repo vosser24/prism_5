@@ -64,6 +64,15 @@ export const OPUS_SIGNALS = [
   // FIX-D's dead-sonnet bug).
   /\b(design|architect|plan)\s+(a|an|the)\s+(?:[\w-]+\s+){0,3}(workflow|pipeline|routing|orchestration|skill-?system|agent-?system|framework)\b/,
   /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
+  // A1 — distributed-systems & scaling vocabulary
+  /\b(multi-?region|multi-?tenant|per-?tenant|sharding|shard(ed)?|fan-?out|N\s+tenants?|phased\s+migration|fairness\s+(policy|algorithm|constraint))\b/i,
+  // A1 — rate-limiting and quota systems
+  /\b(rate[\s-]?limit(er|ing)?|quota\s+(system|enforcement|manager)|throttl(e|ing)\s+(policy|strategy|system))\b/i,
+  // A1 — build/plan/scaffold/design verbs in cross-concern (full-stack) context:
+  //      app/service noun followed (within 200 chars) by a backend/data concern
+  /\b(plan|scaffold|design|build)\s+(an?\s+)?(app|application|service|system|platform|tracker|dashboard)\b(?=[\s\S]{0,200}\b(backend|api|database|db|server)\b)/i,
+  // A1 — full-stack signal: backend + frontend co-present in same prompt
+  /\b(backend|server[\s-]?side|api\s+layer)\b(?=[\s\S]{0,300}\b(frontend|client[\s-]?side|react|vue|angular|svelte|ui\s+layer)\b)/i,
 ];
 
 // v2.7.0 additions — novel-architecture signals that bump summon_panel on
@@ -75,6 +84,10 @@ export const PANEL_SIGNALS = [
   /\b(multi-?phase|multi-?quarter)\s+(plan|migration|rollout|redesign)/,
   /\b(expert panel|architect panel|panel of)/,
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
+  // A1 — multi-region / multi-tenant system design implies panel-level novelty
+  /\b(multi-?region|multi-?tenant|global\s+distribution)\s+(?:[\w-]+\s+){0,3}(system|service|platform|architecture|deployment|infrastructure|limiter|gateway|cache|queue|proxy|mesh)\b/i,
+  // A1 — phased migration with scale context
+  /\b(phased|staged)\s+migration\b(?=[\s\S]{0,200}\b(tenant|region|shard|scale|traffic|prod|database)\b)/i,
 ];
 
 // UAT-3/5 (2026-06-02): EXPLICIT user requests for a panel. Honoring explicit
@@ -113,6 +126,33 @@ const STAKES_SIGNALS = [
   // Production / sensitive data
   /\b(production\s+(deploy\w*|release|rollout|incident|outage)|deploy\w*\s+to\s+prod\w*|prod(uction)?\s+(db|database|data)|customer\s+data|\bPII\b|data\s?loss)\b/i,
 ];
+
+// A2 — SECURITY-VERB FLOOR. Prompts that describe BUILDING security-sensitive
+// features (auth, crypto, sessions, payments, PII) must not route to haiku.
+// Distinct from STAKES_SIGNALS (incident/audit/rotation context). Sets a
+// minimum tier of sonnet regardless of keyword score. Each pattern anchors a
+// BUILD verb near the sensitive noun so passive mentions ("parse the JWT",
+// "what is JWT") do NOT fire.
+const SECURITY_VERB_SIGNALS = [
+  // Authentication, login, SSO, session management
+  /\b(implement|add|build|create|set\s?up|integrate|write)\b[\s\S]{0,60}\b(auth(?:entication|oriz(?:ation|e))?|login|sign[\s-]?in|sso|oauth|saml|openid)\b/i,
+  /\b(implement|add|build|create|set\s?up|integrate|write)\b[\s\S]{0,60}\b(session\s+management|session\s+token|cookie\s+(?:auth|session))\b/i,
+  // Password & credential handling
+  /\b(password\s+hash(?:ing)?|bcrypt|argon2|pbkdf2|scrypt|credential\s+stor(?:age|ing))\b/i,
+  /\b(implement|add|build|create)\b[\s\S]{0,60}\b(password\s+(?:reset|recovery|change)|forgot\s+password)\b/i,
+  // JWT / tokens as a feature being built (NOT merely parsed)
+  /\b(implement|add|issue|sign|verify|validate)\b[\s\S]{0,60}\b(jwt|json\s+web\s+token|access\s+token|refresh\s+token)\b/i,
+  // Cryptography as a feature
+  /\b(implement|add|build|create)\b[\s\S]{0,60}\b(encrypt(?:ion)?|decrypt(?:ion)?|hashing|digital\s+signature|hmac|aes|rsa)\b/i,
+  // PII / payment handling as a feature
+  /\b(implement|add|build|create|store|collect)\b[\s\S]{0,60}\b(pii|personal\s+(?:data|information)|payment\s+(?:form|flow|processing)|credit\s+card|checkout)\b/i,
+];
+
+export function detectSecurityVerb(prompt, description) {
+  const hay = `${prompt || ''} ${description || ''}`;
+  return SECURITY_VERB_SIGNALS.some(r => r.test(hay));
+}
+
 export function detectStakes(prompt, description) {
   const hay = `${prompt || ''} ${description || ''}`;
   return STAKES_SIGNALS.some(r => r.test(hay));
@@ -327,11 +367,14 @@ export function classifyWithScore(prompt, description) {
   let tier = scoreToTier(score);
   const stakes = detectStakes(prompt, description);
   if (stakes) tier = 'opus';
+  const securityVerb = detectSecurityVerb(prompt, description);
+  // A2: security-verb floor — never route security-feature build work below sonnet.
+  if (securityVerb && tier === 'haiku') tier = 'sonnet';
   const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
   // v5.0.x A2: a summoned design panel implies opus-tier work. Without this a
   // panel signal (e.g. "multi-phase migration") could leave tier at haiku/
   // sonnet — the router only honors the panel on opus, so the flag was
   // silently dropped AND the work routed cheap. Panel ⇒ opus, like stakes.
   if (summon_panel) tier = 'opus';
-  return {...c, score, compound, stakes, tier_by_score: tier, summon_panel};
+  return {...c, score, compound, stakes, securityVerb, tier_by_score: tier, summon_panel};
 }

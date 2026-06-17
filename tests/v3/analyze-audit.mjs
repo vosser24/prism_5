@@ -93,6 +93,14 @@ for (const s of scenarios) {
     if (!hookTimings.has(h.hook)) hookTimings.set(h.hook, []);
     hookTimings.get(h.hook).push(h.duration_ms);
   }
+  // B1 fallback: if no hooks_fired, contribute top-level duration_ms as a timing sample
+  if ((!Array.isArray(s.hooks_fired) || s.hooks_fired.length === 0)
+      && typeof s.duration_ms === 'number') {
+    const name = (s.target_hook || s.capability || 'unknown')
+      .replace(/^.*[\/]/, '').replace(/.mjs$/, '');
+    if (!hookTimings.has(name)) hookTimings.set(name, []);
+    hookTimings.get(name).push(s.duration_ms);
+  }
 }
 
 function pct(arr, p) {
@@ -155,7 +163,9 @@ if (routingPath && existsSync(routingPath)) {
     let total = 0;
     const realKeys = new Set();
     for (const e of real) {
-      if (e.tier && e.source) realKeys.add(`${e.tier}|${e.source}`);
+      const tier = e.tier || e.decided_tier || e.routed_tier;
+      const source = e.source || e.route_source || e.decision_source;
+      if (tier && source) realKeys.add(`${tier}|${source}`);
     }
     for (const s of scenarios) {
       const exp = s.expected || {};

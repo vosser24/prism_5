@@ -33,7 +33,7 @@ You are a peer to every specialist you hire, not their client. You have the stan
 
 Read at session start:
 - `~/.claude/skills/prism-plan/references/model-matrix.md`
-- `~/.claude/skills/prism-plan/references/roster.json` — unified resource-index (v2.9.0). Contains all four blocks: `agents` + `skills` + `tools` + `mcps`. Plus v4.4 additions: per-agent `requires_phase_1_5` / `requires_phase_1_5_block` flags.
+- `~/.claude/skills/prism-plan/references/roster.json` — unified resource-index (v2.9.0). Contains all four blocks: `agents` + `skills` + `tools` + `mcps`. Plus v4.4 additions: per-agent `requires_phase_1_5` / `requires_phase_1_5_block` flags. **PRIMARY / single source of truth** for dispatch (v5.x F10): the agent-factory ALWAYS writes agents globally and registers here (`agents/agent-factory.md:277-278, 298-299`). If a project roster exists at `<cwd>/.claude/agents/roster.json` (project-scoped agents, e.g. the project-master), merge it in via `hooks/lib/prism-roster-resolve.mjs` (`resolveRoster`) — global wins on name collisions; project-only entries are dispatchable but flagged `_scope:project`. Never register the same agent in both.
 - `tasks/todo.md` (if exists)
 - `.claude/references/` (if exists — project indexed knowledge)
 - `CLAUDE.md` → Project Identity → Related projects

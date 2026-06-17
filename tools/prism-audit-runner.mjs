@@ -137,7 +137,9 @@ function checkPass(result, sc) {
   }
   if (sc.expected_stdout_pattern) {
     const haystack = (result.stdout || '') + '\n' + (result.stderr || '');
-    if (!haystack.includes(sc.expected_stdout_pattern)) {
+    // Support regex alternation (e.g. "sonnet|opus") in addition to literal substrings.
+    const matched = (() => { try { return new RegExp(sc.expected_stdout_pattern).test(haystack); } catch { return haystack.includes(sc.expected_stdout_pattern); } })();
+    if (!matched) {
       return {pass: false, reason: `stdout/stderr did not contain pattern: ${sc.expected_stdout_pattern.slice(0, 60)}`};
     }
   }
@@ -158,6 +160,10 @@ function checkPass(result, sc) {
         pass: false,
         errors: ['target hook missing on disk'],
         duration_ms: 0,
+        hooks_fired: [{
+          hook: (sc.target_hook || '').replace(/^.*[\/]/, '').replace(/.mjs$/, ''),
+          duration_ms: 0,
+        }],
       });
       fail++;
       continue;
@@ -182,6 +188,13 @@ function checkPass(result, sc) {
       reason: verdict.reason,
       exit_code: result.exit_code,
       duration_ms,
+      hooks_fired: [{
+        hook: (sc.target_hook || '').replace(/^.*[\/]/, '').replace(/.mjs$/, ''),
+        duration_ms,
+      }],
+      expected: (sc.expected_tier && sc.expected_source)
+        ? {tier: sc.expected_tier, source: sc.expected_source}
+        : null,
       stdout: (result.stdout || '').slice(0, 500),
       stderr: (result.stderr || '').slice(0, 500),
       expected_exit_code: sc.expected_exit_code,

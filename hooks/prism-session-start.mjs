@@ -37,7 +37,7 @@
 // Output is throttled to once per 24h so it doesn't itself become noise.
 import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync, appendFileSync} from 'fs';
 import {join} from 'path';
-import {spawnSync} from 'child_process';
+// child_process imported dynamically in the audit block (detached spawn)
 import {pathToFileURL} from 'url';
 
 const H = process.env.HOME || process.env.USERPROFILE;
@@ -166,17 +166,26 @@ try {
   let audit = null;
 
   if (dueForFreshAudit && existsSync(AUDIT_TOOL)) {
-    // spawnSync with 5s timeout. Audit is pure filesystem scanning —
-    // should complete in <1s for a normal plugin cache.
-    const res = spawnSync('node', [AUDIT_TOOL, '--json', '--cache'], {
-      encoding: 'utf-8',
-      timeout: 5000,
-      windowsHide: true,
-    });
-    if (res.status === 0 && res.stdout) {
-      try { audit = JSON.parse(res.stdout); } catch {}
-    }
+    // Fire-and-forget: launch the audit as a detached child so the hook
+    // exits immediately without blocking on the ~350ms–5s audit run.
+    // The fresh result lands in CACHE_FILE for the NEXT session to read.
+    // All three flags are required on Windows: detached+stdio:'ignore'+unref()
+    // so the parent process can exit before the child finishes.
+    try {
+      const {spawn} = await import('node:child_process');
+      const child = spawn(process.execPath, [AUDIT_TOOL, '--json', '--cache'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.unref();
+    } catch {}
     atomicWrite(LAST_FILE, String(now));
+    // Read the PREVIOUS cached result this session for the notice (may be
+    // null on first-ever run — acceptable; fresh result lands next session).
+    if (existsSync(CACHE_FILE)) {
+      try { audit = JSON.parse(readFileSync(CACHE_FILE, 'utf-8')); } catch {}
+    }
   } else if (existsSync(CACHE_FILE)) {
     // Not due — reuse last measurement if present (we won't emit a notice
     // from stale data; just keeps the variable reachable for future code).

@@ -30,8 +30,15 @@ const COVERED = [
 // Intentionally NOT self-shipped: prism-installer.mjs is the bootstrap — it runs
 // from the plugin/repo root (`node tools/prism-installer.mjs`) and is the thing
 // that copies files INTO ~/.claude, so it does not install a copy of itself.
+//
+// ACL audit stubs: test-only fixtures used by audit-scenarios.json (ACL-NTF /
+// ACL-RBK scenarios). They live in hooks/ so the audit runner can resolve them
+// via repo-relative paths, but they are NOT shipped capabilities — they must not
+// be deployed to ~/.claude.
 const SHIP_EXEMPT = new Set([
   'tools/prism-installer.mjs',
+  'hooks/prism-acl-audit-notify-stub.mjs',
+  'hooks/prism-acl-audit-rollback-stub.mjs',
 ]);
 
 test('every shipped file on disk is in manifest.files[]', () => {
