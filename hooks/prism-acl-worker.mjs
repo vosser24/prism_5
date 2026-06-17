@@ -118,6 +118,11 @@ async function main() {
     if (!promotePath) throw new Error('prism-capability-promote.mjs not found');
     const { promote } = await import(pathToFileURL(promotePath).href);
 
+    // Load learner
+    const learnPath = resolveTool('prism-capability-learn.mjs');
+    if (!learnPath) throw new Error('prism-capability-learn.mjs not found');
+    const { attribute, learn } = await import(pathToFileURL(learnPath).href);
+
     const factory = await loadFactory();
 
     // Routing log path
@@ -158,7 +163,34 @@ async function main() {
       }
     }
 
-    // Advance watermark
+    // ── Learn phase: attribute corrections → upgrade if threshold reached ────
+    const lessonsPath = join(HOME, '.claude', '.prism-lessons.jsonl');
+    if (Date.now() - workerStart < TIME_BUDGET_MS) {
+      try {
+        await attribute({
+          home: HOME,
+          lessonsPath,
+          routingPath,
+          rosterPath: existsSync(rosterPath) ? rosterPath : null,
+        });
+      } catch (e) {
+        process.stderr.write(`[acl-worker] attribute failed: ${e.message}\n`);
+      }
+    }
+
+    if (Date.now() - workerStart < TIME_BUDGET_MS) {
+      try {
+        await learn({
+          home: HOME,
+          factory,
+          rosterPath: existsSync(rosterPath) ? rosterPath : null,
+        });
+      } catch (e) {
+        process.stderr.write(`[acl-worker] learn failed: ${e.message}\n`);
+      }
+    }
+
+    // Advance watermark (once, at end of pass)
     writeWatermark(HOME, newWatermark);
 
     process.stderr.write(`[acl-worker] done: ${promoted} promoted, watermark ${sinceLine}→${newWatermark}\n`);
