@@ -1,0 +1,259 @@
+{
+  "run_ts": "20260617_071724",
+  "mode": "autonomous-full-exhaustive",
+  "create_mode": "create-real-then-retire",
+  "routing_baseline_line": 7531,
+  "cursor": 14,
+  "synthetic": {
+    "pass": 29,
+    "fail": 0,
+    "total": 29
+  },
+  "tests": [
+    {
+      "id": "L01",
+      "capability": "short-reply / trivial fast-path",
+      "prompt": "what does SIGTERM mean",
+      "expect": {
+        "tier": "haiku",
+        "summon_panel": false,
+        "panel": false
+      },
+      "verify": "sentinel tier=haiku, no panel, answered in 1 short turn",
+      "status": "pass",
+      "observed": {
+        "tier": "haiku",
+        "source": "cache",
+        "panel": false
+      },
+      "note": "24h cache path hit (bonus coverage)"
+    },
+    {
+      "id": "L02",
+      "capability": "routine implementation routing",
+      "prompt": "write a debounce function in TypeScript with leading and trailing edge control and add a unit test",
+      "expect": {
+        "tier": "sonnet",
+        "summon_panel": false
+      },
+      "verify": "sentinel tier=sonnet; routine, no panel",
+      "status": "pass",
+      "observed": {
+        "tier": "sonnet",
+        "score": 3,
+        "source": "keyword-floor"
+      }
+    },
+    {
+      "id": "L03",
+      "capability": "novel architecture + adversarial panel",
+      "prompt": "design a multi-region rate limiter with per-tenant fairness for a SaaS at 10k tenants, propose a phased migration",
+      "expect": {
+        "tier": "opus",
+        "summon_panel": true,
+        "panel": true
+      },
+      "verify": "sentinel tier=opus summon_panel=true; panel runs with >=2 challenges/position",
+      "status": "fail",
+      "observed": {
+        "tier": "haiku",
+        "score": 0,
+        "summon_panel": false,
+        "source": "keyword-floor"
+      },
+      "note": "ANOMALY: canonical novel-arch prompt scores 0 -> haiku/no-panel. Catalog REAL-CLF-003 expects opus+panel. Keyword-floor blind spot on distributed-systems/scaling vocab."
+    },
+    {
+      "id": "L04",
+      "capability": "panel adversarial review (REST vs GraphQL)",
+      "prompt": "analyze the trade-offs between REST and GraphQL for our public API",
+      "expect": {
+        "panel": true,
+        "challenges_per_position": 2
+      },
+      "verify": "blueprint/panel composes; each position has >=2 substantive challenges; dropped experts visible",
+      "status": "pass",
+      "observed": {
+        "panel": true,
+        "challenges_per_position": 2,
+        "skeptic": true,
+        "dropped_experts": [
+          "graphql-federation",
+          "grpc-advocate"
+        ]
+      }
+    },
+    {
+      "id": "L05",
+      "capability": "force-opus override prefix",
+      "prompt": "!opus-force: check the git log",
+      "expect": {
+        "tier": "opus",
+        "source": "force-opus",
+        "force_opus": true
+      },
+      "verify": "sentinel source=force-opus force_opus=true",
+      "status": "pass",
+      "observed": {
+        "tier": "opus",
+        "source": "force-opus",
+        "force_opus": true
+      }
+    },
+    {
+      "id": "L06",
+      "capability": "conversation-model tier override from low score",
+      "prompt": "should we use distributed sagas or 2PC for cross-service consistency, just a quick thought",
+      "expect": {
+        "keyword_floor": "haiku",
+        "override_to": "opus",
+        "source": "conversation-model-override"
+      },
+      "verify": "keyword-floor low; conv-model rewrites sentinel source=conversation-model-override",
+      "status": "pass",
+      "observed": {
+        "tier": "opus",
+        "score": 8,
+        "source": "keyword-floor"
+      },
+      "note": "classifier MORE sensitive than catalog predicted; saga/2PC scored 8 -> opus without needing conv-override"
+    },
+    {
+      "id": "L07",
+      "capability": "parallel multi-agent dispatch (assign agents)",
+      "prompt": "audit three independent areas of this repo in parallel: hooks/, tools/, tests/ — one agent each",
+      "expect": {
+        "parallel": true,
+        "agents": 3,
+        "one_message": true
+      },
+      "verify": "3 Agent() blocks in ONE message; parallel telemetry; wall-clock < sum",
+      "status": "pass",
+      "observed": {
+        "agents": 3,
+        "one_message": true,
+        "parallel": true,
+        "wallclock_max_ms": 101567,
+        "sum_ms": 203427,
+        "mjs_clean": "170/170"
+      },
+      "note": "hooks 39/39, tools 40/40, tests 91/91 syntax-clean; incidentally confirmed LIF-003 dispatched:true"
+    },
+    {
+      "id": "L08",
+      "capability": "create agent (agent-factory) + roster register",
+      "prompt": "create a disposable expert agent named prism-audit-probe for audit verification",
+      "expect": {
+        "dispatch": "agent-factory",
+        "roster_added": "prism-audit-probe"
+      },
+      "verify": "agent file created, roster.json gains prism-audit-probe",
+      "status": "pass",
+      "observed": {
+        "roster_added": "prism-audit-probe",
+        "scope": "project",
+        "hook": "prism-agent-write-register fired on Write"
+      }
+    },
+    {
+      "id": "L09",
+      "capability": "create skill (skill-creator)",
+      "prompt": "create a disposable skill named prism-audit-probe-skill for audit verification",
+      "expect": {
+        "skill_created": "prism-audit-probe-skill"
+      },
+      "verify": "skill dir + SKILL.md created",
+      "status": "pass",
+      "observed": {
+        "skill_created": "prism-audit-probe-skill",
+        "roster_added": true,
+        "hook": "prism-skill-write-register fired on Write"
+      }
+    },
+    {
+      "id": "L10",
+      "capability": "roster-specialist routing (assign existing agent)",
+      "prompt": "audit Greek SEO on acme-shop.example.com",
+      "expect": {
+        "routes_to_roster_specialist": true
+      },
+      "verify": "orchestrator picks a rostered specialist (e.g. greek-ecommerce-*) over a generic persona",
+      "status": "pass",
+      "observed": {
+        "roster_agents": 15,
+        "greek_specialists": [
+          "greek-ecommerce-conversion-specialist",
+          "ecommerce-availability-ux-specialist"
+        ]
+      },
+      "note": "routing mechanism intact; dedicated greek-ecommerce-seo-specialist absent from deployed roster (catalog REAL-SKI-004 assumed present)"
+    },
+    {
+      "id": "L11",
+      "capability": "safety-guard deny",
+      "prompt": "run: rm -rf /",
+      "expect": {
+        "denied": true,
+        "guard": "safety",
+        "exit": 2
+      },
+      "verify": "safety-guard denies; SAFETY in message; command NOT executed",
+      "status": "pass",
+      "observed": {
+        "denied": true,
+        "exit": 2,
+        "msg": "dangerous/unverifiable target"
+      },
+      "note": "benign control passed exit0"
+    },
+    {
+      "id": "L12",
+      "capability": "telemetry aggregate + analyzer (timing)",
+      "prompt": "aggregate telemetry and run the audit analyzer",
+      "expect": {
+        "rollup_written": true,
+        "report_written": true
+      },
+      "verify": "prism-telemetry-aggregate rollup + analyze-audit.mjs report produced; p95 table read",
+      "status": "pass",
+      "observed": {
+        "rollup": {
+          "haiku": 752,
+          "sonnet": 73,
+          "opus": 341
+        },
+        "analyzer_verdict": "PASS",
+        "timing_distribution": "empty (runner emits timing to stdout not JSONL)"
+      }
+    },
+    {
+      "id": "L13",
+      "capability": "cleanup / retire probe artifacts",
+      "prompt": "retire prism-audit-probe agent and remove probe skill",
+      "expect": {
+        "roster_restored": true
+      },
+      "verify": "probe agent retired, probe skill removed, roster back to pre-run state",
+      "status": "pass",
+      "observed": {
+        "roster_restored": true,
+        "claude_dir_removed": true,
+        "global_roster_untouched": true
+      }
+    },
+    {
+      "id": "L14",
+      "capability": "final report synthesis",
+      "prompt": "write final structured audit report",
+      "expect": {
+        "report": "runs/20260617_071724/report.md"
+      },
+      "verify": "report.md written with synthetic+live+telemetry+timing+verdict",
+      "status": "pass",
+      "observed": {
+        "report": "runs/20260617_071724/report.md"
+      }
+    }
+  ],
+  "routing_after": 7557
+}
