@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.9.2",
+  "prism_version": "5.9.3",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},

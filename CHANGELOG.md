@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.9.3] - 2026-06-17
+
+**fix(mutation-guard):** the `echo`/`printf`/`cat` redirect pattern (and `awk`) no longer read `->` arrows as `> file` redirects — a sibling of the v5.9.1 heredoc over-fire, found when a `echo "... 5.9.1 -> 5.9.2 ..."` status line was wrongly blocked in parent context. Now arrows are allowed while real redirects (`echo x > f`, `printf y >> log`) still deny. Lookbehind extended `(?<![0-9&])`→`(?<![0-9&-])`; `(?<!-)` added before `awk`'s `>`. `test-mutation-guard-usage.mjs` now 31 cases. This closes the redirect-`->` over-fire class across heredoc + echo/cat/printf + awk.
+
 ## [5.9.2] - 2026-06-17
 
 **test(install):** harden the manifest-coverage tests so non-`.mjs` shipped files can't silently go unmanifested again (the class that dropped `nlm-call.sh` + the two `capability-*` commands from 5.9.0). `test-manifest-coverage.mjs` / `test-installer-coverage.mjs` now also require every `commands/*.md`, `hooks/**/*.{sh,cmd}`, and `tools/**/*.{sh,cmd}` to be manifested, exempting the repo-only `tools/prism-monitor/` Python dashboard. The pre-existing finding that `tools/prism-monitor/refresh-statusline-cache.sh` is unmanifested is resolved as **intentional** (the whole dashboard is repo-only, never deployed). No runtime/deployed files changed (test-only); version bumped to keep plugin/manifest/deployed-marker coherent.
