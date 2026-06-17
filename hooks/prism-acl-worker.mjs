@@ -67,23 +67,46 @@ export const FACTORY_TIMEOUT_MS = 120000;
 
 // ── Default production factory (real agent-factory dispatch) ─────────────────
 //
-// Invocation shape (ASSUMPTION — documented here):
-//   <claudeBin> -p "@agent-factory Create a <type> capability named <name>.
-//     Description: <description>.
-//     Write the capability markdown file to the directory: <stagingDir>.
-//     Output the file as <stagingDir>/<name>.md with valid YAML frontmatter
-//     (name, description, type, version: 1)." \
-//     --name <name> --output-dir <stagingDir>
+// Invocation shape (CORRECTED — see audit findings):
 //
-//   • `-p` / `--print` is the Claude CLI headless/non-interactive flag.
-//   • The prompt text tells @agent-factory what to create and WHERE to write it.
-//   • `--name` and `--output-dir` are also passed as separate structured args
-//     so that test stubs can parse them cheaply without interpreting the prompt.
+//   <claudeBin> \
+//     --agent agent-factory \
+//     --bare \
+//     --dangerously-skip-permissions \
+//     --max-turns 5 \
+//     --output-format json \
+//     --no-session-persistence \
+//     -p "<prompt>"
+//
+//   • `--agent agent-factory` runs the session AS the agent-factory agent (correct).
+//     Subagents cannot be invoked via `claude -p` directly; there is no `--subagent`
+//     flag. `--agent` is the proper way to load and run a named agent headlessly.
+//   • `--name` and `--output-dir` are NOT real Claude CLI flags and were removed.
+//     They were silently ignored by the real CLI, doing nothing.
+//   • Output location is controlled via the PROMPT TEXT and the STAGING_DIR /
+//     PRISM_ACL_STAGING_DIR environment variables set on the child process.
+//   • The prompt explicitly instructs agent-factory to write to
+//     <stagingDir>/<name>.md and NOT to the default ~/.claude/agents/ location.
+//
+// POST-RUN FALLBACK (robustness):
+//   After a 0-exit, if <stagingDir>/<name>.md is absent, agent-factory may have
+//   written to its default CREATE PROTOCOL path instead:
+//     ~/.claude/agents/<name>/<name>.md   (directory form — DUAL FILE REQUIREMENT)
+//     ~/.claude/agents/<name>.md          (flat file — Claude Code loads this)
+//   If found at either default location, the file is MOVED into stagingDir.
+//   If still no file → return null (graceful skip).
+//
+// PRODUCTION CORRECTNESS NOTE:
+//   The correctness of `--agent agent-factory` in a detached Node process is
+//   UNVERIFIED at authoring time. A production smoke-test should run:
+//     claude --agent agent-factory --bare --init-only
+//   to confirm the agent loads, then a real create with the expected prompt.
+//   Do NOT trust this invocation in production until that smoke-test passes.
 //
 // PRISM_ACL_CLAUDE_BIN supports a space-separated value such as
 //   "node /absolute/path/to/stub.mjs"
 // in which case the string is split on spaces: first token = executable,
-// remaining tokens are prepended to argv before the -p flag.
+// remaining tokens are prepended to argv before the flags.
 //
 // Graceful failure contract:
 //   Returns null (never throws) on: timeout, non-zero exit, no file produced.
@@ -106,23 +129,46 @@ export async function productionFactory(spec, stagingDir) {
   const { name, description, type } = spec;
   const expectedFile = join(stagingDir, name + '.md');
 
-  // Build the prompt for agent-factory
+  // Agent-factory's default CREATE PROTOCOL output path (DUAL FILE REQUIREMENT):
+  //   ~/.claude/agents/<name>/<name>.md  (directory form — for PRISM)
+  //   ~/.claude/agents/<name>.md         (flat form — for Claude Code @agent loading)
+  // Re-read HOME each call so tests can override it at runtime.
+  const homeDir = process.env.HOME || process.env.USERPROFILE;
+  const defaultAgentsDir = join(homeDir, '.claude', 'agents');
+  const defaultFlatFile = join(defaultAgentsDir, name + '.md');
+  const defaultDirFile  = join(defaultAgentsDir, name, name + '.md');
+
+  // Build the prompt: explicitly instruct agent-factory to write to stagingDir,
+  // NOT to the default ~/.claude/agents/ location.
   const prompt = [
     `@agent-factory Create a ${type} capability named ${name}.`,
     `Description: ${description}.`,
-    `Write the capability markdown file to the directory: ${stagingDir}.`,
-    `The file MUST be written as: ${expectedFile}`,
+    `Write the capability markdown to the absolute path ${expectedFile}`,
+    `(read STAGING_DIR env). Do NOT use ~/.claude/agents or any default location.`,
     `Include valid YAML frontmatter with these fields: name, description, type, version: 1.`,
     `Members of this cluster: ${(spec.members || []).slice(0, 5).join(', ')}.`,
   ].join(' ');
 
-  // argv: [<prefixArgs...>, '-p', <prompt>, '--name', <name>, '--output-dir', <stagingDir>]
+  // Corrected argv: --agent agent-factory instead of -p with @agent-factory prefix.
+  // --name and --output-dir are removed (they are NOT real Claude CLI flags).
   const args = [
     ...claudePrefixArgs,
+    '--agent', 'agent-factory',
+    '--bare',
+    '--dangerously-skip-permissions',
+    '--max-turns', '5',
+    '--output-format', 'json',
+    '--no-session-persistence',
     '-p', prompt,
-    '--name', name,
-    '--output-dir', stagingDir,
   ];
+
+  // Child env: inherit process.env plus staging dir overrides so agent-factory
+  // (or test stubs) can locate the target directory without parsing the prompt.
+  const childEnv = {
+    ...process.env,
+    STAGING_DIR: stagingDir,
+    PRISM_ACL_STAGING_DIR: stagingDir,
+  };
 
   return new Promise((resolve) => {
     let settled = false;
@@ -138,9 +184,7 @@ export async function productionFactory(spec, stagingDir) {
     try {
       child = spawn(claudeExe, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
-        // Inherit env so the subprocess gets PATH etc., but don't pass factory-specific
-        // env vars that could confuse a real Claude invocation
-        env: process.env,
+        env: childEnv,
       });
     } catch (spawnErr) {
       process.stderr.write(`[acl-worker] productionFactory spawn error: ${spawnErr.message}\n`);
@@ -191,16 +235,51 @@ export async function productionFactory(spec, stagingDir) {
         return;
       }
 
-      // Non-zero or missing file → null
-      if (!existsSync(expectedFile)) {
-        process.stderr.write(
-          `[acl-worker] productionFactory: no file produced at ${expectedFile} for ${name}\n`,
-        );
-        finish(null);
+      // Success path: check staging file first
+      if (existsSync(expectedFile)) {
+        finish(expectedFile);
         return;
       }
 
-      finish(expectedFile);
+      // Post-run fallback: agent-factory may have written to its default location.
+      // Check flat file first (Claude Code loads from flat .md), then directory form.
+      let fallbackSrc = null;
+      if (existsSync(defaultFlatFile)) {
+        fallbackSrc = defaultFlatFile;
+      } else if (existsSync(defaultDirFile)) {
+        fallbackSrc = defaultDirFile;
+      }
+
+      if (fallbackSrc) {
+        try {
+          // Ensure staging dir exists (it should already)
+          mkdirSync(stagingDir, { recursive: true });
+          // Read + write to staging (cross-device safe — renameSync fails across volumes)
+          const content = readFileSync(fallbackSrc, 'utf-8');
+          writeFileSync(expectedFile, content, 'utf-8');
+          // Remove source files to avoid leaving stale agents in the default location
+          try { unlinkSync(fallbackSrc); } catch {}
+          // Also remove the other form if it exists
+          const otherSrc = fallbackSrc === defaultFlatFile ? defaultDirFile : defaultFlatFile;
+          try { if (existsSync(otherSrc)) unlinkSync(otherSrc); } catch {}
+          process.stderr.write(
+            `[acl-worker] productionFactory: fallback-move ${fallbackSrc} → ${expectedFile}\n`,
+          );
+          finish(expectedFile);
+        } catch (moveErr) {
+          process.stderr.write(
+            `[acl-worker] productionFactory: fallback-move failed: ${moveErr.message}\n`,
+          );
+          finish(null);
+        }
+        return;
+      }
+
+      // No file found anywhere → graceful skip
+      process.stderr.write(
+        `[acl-worker] productionFactory: no file produced at ${expectedFile} for ${name}\n`,
+      );
+      finish(null);
     });
   });
 }
