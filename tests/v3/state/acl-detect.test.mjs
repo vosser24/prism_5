@@ -81,6 +81,13 @@ try {
   // F1.3 wired into detect: check suggestedType on the watchdog candidate
   assert.ok(['skill', 'agent'].includes(cand.suggestedType), `suggestedType must be 'skill' or 'agent', got '${cand.suggestedType}'`);
 
+  // F1.3 edge cases
+  // Empty members → 'skill' (tie-break from 0==0)
+  assert.strictEqual(classifyCapabilityType([]), 'skill', 'Empty members must tie-break to skill');
+
+  // watchdog cluster: 'set up process supervisor' has 'set' (skill verb) — check suggestedType is 'skill'
+  assert.strictEqual(cand.suggestedType, 'skill', `Watchdog cluster should be 'skill' (procedure-shaped), got '${cand.suggestedType}'`);
+
   console.log('ok');
 } finally {
   rmSync(tmpDir, { recursive: true, force: true });
