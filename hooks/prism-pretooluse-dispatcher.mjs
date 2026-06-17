@@ -80,15 +80,28 @@ async function main() {
   const route = ROUTES[payload && payload.tool_name];
   if (!route || !route.length) process.exit(0);
 
-  // Run every matching guard IN ORDER (preserves side-effects + log order).
-  // A guard that fails to load or throws is treated as allow (fail-open).
+  // E-P2: parallel import + parallel run for all routes except TaskCreate
+  // (TaskCreate must stay sequential: parent-dispatch writes sentinel.dispatched
+  //  before task-tier-advisor reads it — see test-pretooluse-dispatcher.mjs).
+  const SEQUENTIAL_ROUTES = new Set(['TaskCreate']);
   const decisions = [];
-  for (const file of route) {
-    const m = await imp(file);
-    if (!m || typeof m.run !== 'function') continue;
-    let res;
-    try { res = await m.run(payload); } catch { res = null; }
-    decisions.push(normalize(res));
+  if (SEQUENTIAL_ROUTES.has(payload.tool_name)) {
+    for (const file of route) {
+      const m = await imp(file);
+      if (!m || typeof m.run !== 'function') continue;
+      let res;
+      try { res = await m.run(payload); } catch { res = null; }
+      decisions.push(normalize(res));
+    }
+  } else {
+    const modules = await Promise.all(route.map(f => imp(f)));
+    const results = await Promise.all(
+      modules.map(async (m) => {
+        if (!m || typeof m.run !== 'function') return normalize(null);
+        try { return normalize(await m.run(payload)); } catch { return normalize(null); }
+      })
+    );
+    decisions.push(...results);
   }
 
   const denies = decisions.filter(d => d.kind === 'deny');
