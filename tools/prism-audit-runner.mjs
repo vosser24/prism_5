@@ -160,6 +160,10 @@ function checkPass(result, sc) {
         pass: false,
         errors: ['target hook missing on disk'],
         duration_ms: 0,
+        hooks_fired: [{
+          hook: (sc.target_hook || '').replace(/^.*[\/]/, '').replace(/.mjs$/, ''),
+          duration_ms: 0,
+        }],
       });
       fail++;
       continue;
@@ -184,6 +188,13 @@ function checkPass(result, sc) {
       reason: verdict.reason,
       exit_code: result.exit_code,
       duration_ms,
+      hooks_fired: [{
+        hook: (sc.target_hook || '').replace(/^.*[\/]/, '').replace(/.mjs$/, ''),
+        duration_ms,
+      }],
+      expected: (sc.expected_tier && sc.expected_source)
+        ? {tier: sc.expected_tier, source: sc.expected_source}
+        : null,
       stdout: (result.stdout || '').slice(0, 500),
       stderr: (result.stderr || '').slice(0, 500),
       expected_exit_code: sc.expected_exit_code,
