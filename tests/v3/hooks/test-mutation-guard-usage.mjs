@@ -169,6 +169,36 @@ try {
     assert(r.exit === 2, `Expected deny (exit 2) for heredoc-to-file; got ${r.exit}. ` +
       'cat <<EOF > out.json must still be detected as a file write.');
   });
+
+  // ── FIXED: echo/printf/cat `->` arrow is NOT a redirect (sibling of heredoc bug) ──
+  // The old lookbehind `(?<![0-9&])` let `-` through, so the `>` in `->` was
+  // misread as a stdout redirect. Fixed by adding `-` to the negative lookbehind:
+  // `(?<![0-9&-])`. A `>` immediately preceded by `-` is a flow-arrow, not a file
+  // redirect target — the token after it (e.g. `5.9.2`) is not a filename.
+  test('ALLOW: echo with -> arrows is not a redirect', () => {
+    const r = runGuard(bash('echo "deploy 5.9.1 -> 5.9.2 done"'));
+    assert(r.exit === 0, `Expected allow (exit 0) for echo with arrow; got ${r.exit}. ` +
+      'echo "... -> ..." must NOT be treated as a file redirect.');
+  });
+  test('ALLOW: echo multi-arrow chain is not a redirect', () => {
+    const r = runGuard(bash('echo "a -> b -> c"'));
+    assert(r.exit === 0, `Expected allow (exit 0) for echo multi-arrow; got ${r.exit}.`);
+  });
+  test('ALLOW: printf with -> arrow is not a redirect', () => {
+    const r = runGuard(bash('printf "step: x -> y\\n"'));
+    assert(r.exit === 0, `Expected allow (exit 0) for printf with arrow; got ${r.exit}.`);
+  });
+  test('ALLOW: git+echo with -> arrows is not a redirect', () => {
+    const r = runGuard(bash('git status; echo "detect -> promote -> notify"'));
+    assert(r.exit === 0, `Expected allow (exit 0) for git+echo arrow chain; got ${r.exit}.`);
+  });
+
+  // TRUE-POSITIVE: real echo/printf redirects must still be caught.
+  test('DENY: printf append redirect to .log still caught', () => {
+    const r = runGuard(bash('printf "x\\n" >> app.log'));
+    assert(r.exit === 2, `Expected deny (exit 2) for printf append; got ${r.exit}. ` +
+      'printf "x\\n" >> app.log must still be detected as a file write.');
+  });
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

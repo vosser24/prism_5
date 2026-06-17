@@ -98,11 +98,11 @@ const BASH_WRITE_PATTERNS = [
   // echo / printf / cat redirect to a file  (POSIX + PowerShell)
   // - `[^|&;<>]*?` so the lazy run can't swallow a `>` and re-anchor on a later
   //   one (which let `2>>err.log` slip through).
-  // - `(?<![0-9&])` rejects fd redirects: `2>`, `2>>`, `&>` are stderr/dup, not
-  //   a stdout-to-file write. This is what fixes the `cat <file> 2>/dev/null`
-  //   false-positive that blocked read-only state inspection.
+  // - `(?<![0-9&-])` rejects fd redirects (`2>`, `2>>`, `&>`) AND arrow tokens
+  //   (`->`): a `>` immediately preceded by `-` is a flow-arrow, not a redirect.
+  //   This is what fixes the `echo "deploy 5.9.1 -> 5.9.2 done"` false-positive.
   // - `(?!&|/dev/null\b)` rejects `>&fd` and the `/dev/null` sink.
-  /\b(echo|printf|cat)\b[^|&;<>]*?(?<![0-9&])>>?\s*(?!&|\/dev\/null\b)["']?[^|&;<>\s"']+/,
+  /\b(echo|printf|cat)\b[^|&;<>]*?(?<![0-9&-])>>?\s*(?!&|\/dev\/null\b)["']?[^|&;<>\s"']+/,
 
   // Here-doc to file — `cmd <<EOF > file` form.
   // Uses [ \t] (horizontal-only) instead of \s so a `>` in a subsequent body
@@ -113,7 +113,7 @@ const BASH_WRITE_PATTERNS = [
 
   // In-place edits / writers
   /\bsed\s+-[a-zA-Z]*i\b/,
-  /\bawk\b[^|&;]*?>\s*[^\s|&;]+/,
+  /\bawk\b[^|&;]*?(?<!-)>\s*[^\s|&;]+/,
   /\bperl\s+-[a-zA-Z]*i\b/,
 
   // Python / Node / Ruby file-write one-liners
