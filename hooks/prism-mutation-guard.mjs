@@ -104,8 +104,12 @@ const BASH_WRITE_PATTERNS = [
   // - `(?!&|/dev/null\b)` rejects `>&fd` and the `/dev/null` sink.
   /\b(echo|printf|cat)\b[^|&;<>]*?(?<![0-9&])>>?\s*(?!&|\/dev\/null\b)["']?[^|&;<>\s"']+/,
 
-  // Here-doc to file
-  /<<[-\s]*['"]?[A-Z]+['"]?[^|&;]*?>\s*[^\s]+/,
+  // Here-doc to file — `cmd <<EOF > file` form.
+  // Uses [ \t] (horizontal-only) instead of \s so a `>` in a subsequent body
+  // line (e.g. `->` arrows in a git commit message) can't satisfy the match.
+  // \w+ allows lowercase and underscore delimiters (<<eof, <<END_OF_MSG, …).
+  // Excludes >&fd and /dev/null sink like the sibling patterns do.
+  /<<[ \t-]*['"]?\w+['"]?[ \t]*>>?[ \t]*(?!&|\/dev\/null\b)["']?[^\s|&;<>]+/,
 
   // In-place edits / writers
   /\bsed\s+-[a-zA-Z]*i\b/,
