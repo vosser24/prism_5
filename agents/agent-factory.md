@@ -172,14 +172,20 @@ Check by EXECUTION, not PATH: run `notebooklm --version`; if it fails, try
 let `command -v notebooklm` RESOLVE while denying the `.exe` — a PATH check is a
 false positive there.) Use whichever actually runs as the canonical invocation
 `$NLM` for every `notebooklm …` call below (bare `notebooklm` OR `python -m notebooklm`).
+
+**TIER-1 MANDATE (F13): EVERY `notebooklm` / `$NLM` call in this tier MUST be
+invoked through `~/.claude/hooks/lib/nlm-call.sh` (sets a hard `NLM_TIMEOUT=90s`
+wall clock + `--kill-after` so a wedged backend can NEVER hang the factory). Do
+NOT call the `notebooklm` binary directly.**
+
 If available:
-  a) Create notebook: $NLM create "{agent-name} Research"
+  a) Create notebook: ~/.claude/hooks/lib/nlm-call.sh create "{agent-name} Research"
      Store notebook ID in roster.json entry.
   
   b) Import sources — try TWO methods in order:
   
      METHOD 1 — Deep Research (fastest, fully automatic):
-       notebooklm source add-research "{domain-specific research query}"
+       ~/.claude/hooks/lib/nlm-call.sh source add-research "{domain-specific research query}"
        
        This triggers NotebookLM's Deep Research which auto-finds 20+ sources.
        Run 2-3 queries to cover different angles. Each MUST be a multi-term,
@@ -223,7 +229,7 @@ If available:
   c) Ask precision questions from prompt templates (FREE):
      Select template from ~/.claude/skills/prism-plan/references/prompt-templates.md
      Adapt Q1-Q5 with project context. For each:
-       notebooklm ask "{adapted question}" --save-as-note --note-title "{{agent-name}}: {{topic}}"
+       ~/.claude/hooks/lib/nlm-call.sh ask "{adapted question}" --save-as-note --note-title "{{agent-name}}: {{topic}}"
      Gemini synthesizes across ALL imported sources — 10-50 sources, zero cost.
   
   d) Quality check (cheap — Sonnet reads answers):
@@ -239,7 +245,7 @@ If available:
   Also: notebooklm source add "{gap-filling URL}" to enrich the notebook.
   Cost: ~$0.30-$0.50 (only gap-filling, not full research)
 
-### TIER 3: Fallback (NotebookLM not installed)
+### TIER 3: Fallback (NotebookLM not installed or unreachable)
   Opus does full research via web search. Most expensive path.
   Cost: ~$1-3 per agent (NOT free — Tier 1 NotebookLM is the $0 path).
   ⚠ NON-SILENT (v5.x): do NOT merely log this. INCLUDE a prominent recommendation
@@ -248,6 +254,11 @@ If available:
      not the free NotebookLM path. Install the $0 research engine:
        pip install notebooklm-py[browser]   &&   notebooklm login
      (or run /prism-deps), then recreate this agent for $0 research."
+  Timeout/token-fetch variant (F11): if the wrapper exits 3 (hard timeout reached)
+  on both Method 1 and Method 2, surface this instead:
+    "⚠ NotebookLM unreachable (token-fetch/timeout) → researched with Opus (~$1-3).
+     Re-auth: `notebooklm login` (token failed despite cookies present), then
+     recreate for $0."
   Silently degrading to the paid path without surfacing this is a defect.
 
 ### TIER SELECTION RULES
@@ -257,7 +268,9 @@ If available:
    v5.x finding on a PRAKGR domain box. Use the form that runs as `$NLM`; if NEITHER
    runs, NotebookLM is unavailable → Tier 3 (and surface the install/blocked notice).
 2. If available: Tier 1 ALWAYS. Try Deep Research (Method 1) first.
-   If Deep Research fails (502/error on Windows): use URL import (Method 2).
+   If Deep Research fails (502) OR the wrapper reports a timeout (exit 3): fall
+   through to Method 2 immediately; do NOT retry. If Method 2 also times out,
+   go to Tier 3 and surface the notice.
    Both methods produce a queryable notebook — same end result.
 3. If Tier 1 answers score <5 on critical questions: Tier 2 fills gaps.
 4. If notebooklm not installed: Tier 3 — and you MUST surface the install
@@ -323,6 +336,12 @@ If available:
        by the freshness sweep once their home project is gone or dormant ([[D008]]).
      The commissioning master makes this call: "reusable specialist → broad;
      one-app expert → project". Omitting scope ⇒ treated as broad (safe).
+
+**CLEAN EXIT (F13): the factory MUST return its result and exit even if research
+degraded. Never leave a NotebookLM call un-timed-out. A nested factory spawned
+for research inherits `NLM_TIMEOUT`; it MUST exit on Tier-3 fallback rather than
+wait — no orphaned process.**
+
 5. Report to orchestrator
 6. EVOLVE TEMPLATES:
    - If a new domain template was created (custom Q1-Q5):
