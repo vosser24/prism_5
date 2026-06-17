@@ -13,10 +13,18 @@
 //
 // Token/time budget: PRISM_ACL_TOKEN_BUDGET (default from config) and
 //   PRISM_ACL_TIME_BUDGET_MS (default 60000ms wall-clock).
+//
+// Production factory binary:
+//   PRISM_ACL_CLAUDE_BIN — overrides the 'claude' CLI binary.
+//     May be a space-separated string like "node /path/to/stub.mjs" for testing.
+//     Default: 'claude'
+//   PRISM_ACL_FACTORY_TIMEOUT_MS — per-invocation hard timeout (default: 120000ms).
+//     Kills the child process if it exceeds this wall-clock limit.
 
-import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { existsSync, writeFileSync, readFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const TOOL_ROOT = join(HOME, '.claude', 'tools');
@@ -51,29 +59,150 @@ function resolveLib(name) {
   return null;
 }
 
-// ── Default production factory (real agent-factory dispatch) ─────────────────
+// ── Per-factory hard timeout ──────────────────────────────────────────────────
+// Derived from PRISM_ACL_FACTORY_TIMEOUT_MS env (re-read each call so tests can
+// override it at runtime without re-importing the module).
+// Default: 120 000 ms (2 minutes).  Exported so tests can introspect the default.
+export const FACTORY_TIMEOUT_MS = 120000;
 
-async function productionFactory(spec, stagingDir) {
-  // In production, dispatches agent-factory to author the capability.
-  // Simplified here: write a minimal skeleton; the real impl would spawn
-  // `claude -p @agent-factory create --name <name> --output <stagingDir>`.
-  // For now emit a placeholder so the worker is wirable end-to-end without
-  // requiring a live LLM in the test.
-  const dest = join(stagingDir, spec.name + '.md');
-  const content = [
-    '---',
-    `name: ${spec.name}`,
-    `description: ${spec.description}`,
-    `type: ${spec.type}`,
-    'version: 1',
-    '---',
-    '',
-    `# ${spec.name}`,
-    '',
-    `Auto-created capability via ACL. Members: ${(spec.members || []).slice(0, 3).join('; ')}.`,
-  ].join('\n');
-  writeFileSync(dest, content, 'utf-8');
-  return dest;
+// ── Default production factory (real agent-factory dispatch) ─────────────────
+//
+// Invocation shape (ASSUMPTION — documented here):
+//   <claudeBin> -p "@agent-factory Create a <type> capability named <name>.
+//     Description: <description>.
+//     Write the capability markdown file to the directory: <stagingDir>.
+//     Output the file as <stagingDir>/<name>.md with valid YAML frontmatter
+//     (name, description, type, version: 1)." \
+//     --name <name> --output-dir <stagingDir>
+//
+//   • `-p` / `--print` is the Claude CLI headless/non-interactive flag.
+//   • The prompt text tells @agent-factory what to create and WHERE to write it.
+//   • `--name` and `--output-dir` are also passed as separate structured args
+//     so that test stubs can parse them cheaply without interpreting the prompt.
+//
+// PRISM_ACL_CLAUDE_BIN supports a space-separated value such as
+//   "node /absolute/path/to/stub.mjs"
+// in which case the string is split on spaces: first token = executable,
+// remaining tokens are prepended to argv before the -p flag.
+//
+// Graceful failure contract:
+//   Returns null (never throws) on: timeout, non-zero exit, no file produced.
+//   Cleans up any partial file written to stagingDir before returning null.
+//   The caller (promote loop) try/catches per-candidate, so null causes a skip.
+//
+export async function productionFactory(spec, stagingDir) {
+  // Read per-factory timeout from env each time (allows test override at runtime)
+  const factoryTimeoutMs = parseInt(
+    process.env.PRISM_ACL_FACTORY_TIMEOUT_MS || String(FACTORY_TIMEOUT_MS),
+    10,
+  );
+
+  // Resolve binary: support "node /path/to/stub.mjs" space-split form for testing
+  const claudeBinRaw = (process.env.PRISM_ACL_CLAUDE_BIN || 'claude').trim();
+  const claudeBinParts = claudeBinRaw.split(/\s+/);
+  const claudeExe = claudeBinParts[0];
+  const claudePrefixArgs = claudeBinParts.slice(1); // may be empty in production
+
+  const { name, description, type } = spec;
+  const expectedFile = join(stagingDir, name + '.md');
+
+  // Build the prompt for agent-factory
+  const prompt = [
+    `@agent-factory Create a ${type} capability named ${name}.`,
+    `Description: ${description}.`,
+    `Write the capability markdown file to the directory: ${stagingDir}.`,
+    `The file MUST be written as: ${expectedFile}`,
+    `Include valid YAML frontmatter with these fields: name, description, type, version: 1.`,
+    `Members of this cluster: ${(spec.members || []).slice(0, 5).join(', ')}.`,
+  ].join(' ');
+
+  // argv: [<prefixArgs...>, '-p', <prompt>, '--name', <name>, '--output-dir', <stagingDir>]
+  const args = [
+    ...claudePrefixArgs,
+    '-p', prompt,
+    '--name', name,
+    '--output-dir', stagingDir,
+  ];
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timedOut = false;
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    }
+
+    let child;
+    try {
+      child = spawn(claudeExe, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // Inherit env so the subprocess gets PATH etc., but don't pass factory-specific
+        // env vars that could confuse a real Claude invocation
+        env: process.env,
+      });
+    } catch (spawnErr) {
+      process.stderr.write(`[acl-worker] productionFactory spawn error: ${spawnErr.message}\n`);
+      finish(null);
+      return;
+    }
+
+    // Hard timeout: kill child if it exceeds budget
+    const timer = setTimeout(() => {
+      timedOut = true;
+      process.stderr.write(
+        `[acl-worker] productionFactory timeout (${factoryTimeoutMs}ms) for ${name}; killing child\n`,
+      );
+      try { child.kill('SIGTERM'); } catch {}
+      // Give the process 2s to die gracefully before SIGKILL
+      setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch {}
+      }, 2000);
+      // Clean up any partial file
+      try { if (existsSync(expectedFile)) unlinkSync(expectedFile); } catch {}
+      finish(null);
+    }, factoryTimeoutMs);
+
+    // Collect stderr for diagnostics (stdout is the capability content if any)
+    const stderrChunks = [];
+    child.stderr.on('data', (chunk) => stderrChunks.push(chunk));
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      process.stderr.write(`[acl-worker] productionFactory child error: ${err.message}\n`);
+      try { if (existsSync(expectedFile)) unlinkSync(expectedFile); } catch {}
+      finish(null);
+    });
+
+    child.on('close', (code) => {
+      if (timedOut) return; // timeout already settled
+      clearTimeout(timer);
+
+      if (code !== 0) {
+        const errText = Buffer.concat(stderrChunks).toString('utf-8').trim();
+        process.stderr.write(
+          `[acl-worker] productionFactory exited ${code} for ${name}` +
+          (errText ? `: ${errText.slice(0, 200)}` : '') + '\n',
+        );
+        // Clean up any partial file
+        try { if (existsSync(expectedFile)) unlinkSync(expectedFile); } catch {}
+        finish(null);
+        return;
+      }
+
+      // Non-zero or missing file → null
+      if (!existsSync(expectedFile)) {
+        process.stderr.write(
+          `[acl-worker] productionFactory: no file produced at ${expectedFile} for ${name}\n`,
+        );
+        finish(null);
+        return;
+      }
+
+      finish(expectedFile);
+    });
+  });
 }
 
 // ── Load factory (env-injectable) ────────────────────────────────────────────
@@ -199,4 +328,9 @@ async function main() {
   }
 }
 
-main();
+// Only run main() when this file is executed directly (not imported as a module).
+// This allows test files to import productionFactory without triggering the worker loop.
+// Both fileURLToPath(import.meta.url) and process.argv[1] return OS-native paths.
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
+  main();
+}
