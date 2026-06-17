@@ -28,8 +28,15 @@ function check(label, cond) {
 // (`node tools/prism-installer.mjs update`), never installed into ~/.claude —
 // so it is deliberately absent from files[]. Documented here so the gate stays
 // honest about what it is NOT checking.
+//
+// ACL audit stubs: test-only fixtures used by audit-scenarios.json (ACL-NTF /
+// ACL-RBK scenarios). They live in hooks/ so the audit runner can resolve them
+// via repo-relative paths, but they are NOT shipped capabilities — they must not
+// be deployed to ~/.claude.
 const FILES_EXEMPT = new Set([
   'tools/prism-installer.mjs',
+  'hooks/prism-acl-audit-notify-stub.mjs',
+  'hooks/prism-acl-audit-rollback-stub.mjs',
 ]);
 
 const manifest = JSON.parse(readFileSync(join(REPO, 'tools', 'install-manifest.json'), 'utf-8'));
