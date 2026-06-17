@@ -126,6 +126,33 @@ const STAKES_SIGNALS = [
   // Production / sensitive data
   /\b(production\s+(deploy\w*|release|rollout|incident|outage)|deploy\w*\s+to\s+prod\w*|prod(uction)?\s+(db|database|data)|customer\s+data|\bPII\b|data\s?loss)\b/i,
 ];
+
+// A2 — SECURITY-VERB FLOOR. Prompts that describe BUILDING security-sensitive
+// features (auth, crypto, sessions, payments, PII) must not route to haiku.
+// Distinct from STAKES_SIGNALS (incident/audit/rotation context). Sets a
+// minimum tier of sonnet regardless of keyword score. Each pattern anchors a
+// BUILD verb near the sensitive noun so passive mentions ("parse the JWT",
+// "what is JWT") do NOT fire.
+const SECURITY_VERB_SIGNALS = [
+  // Authentication, login, SSO, session management
+  /\b(implement|add|build|create|set\s?up|integrate|write)\b[\s\S]{0,60}\b(auth(?:entication|oriz(?:ation|e))?|login|sign[\s-]?in|sso|oauth|saml|openid)\b/i,
+  /\b(implement|add|build|create|set\s?up|integrate|write)\b[\s\S]{0,60}\b(session\s+management|session\s+token|cookie\s+(?:auth|session))\b/i,
+  // Password & credential handling
+  /\b(password\s+hash(?:ing)?|bcrypt|argon2|pbkdf2|scrypt|credential\s+stor(?:age|ing))\b/i,
+  /\b(implement|add|build|create)\b[\s\S]{0,60}\b(password\s+(?:reset|recovery|change)|forgot\s+password)\b/i,
+  // JWT / tokens as a feature being built (NOT merely parsed)
+  /\b(implement|add|issue|sign|verify|validate)\b[\s\S]{0,60}\b(jwt|json\s+web\s+token|access\s+token|refresh\s+token)\b/i,
+  // Cryptography as a feature
+  /\b(implement|add|build|create)\b[\s\S]{0,60}\b(encrypt(?:ion)?|decrypt(?:ion)?|hashing|digital\s+signature|hmac|aes|rsa)\b/i,
+  // PII / payment handling as a feature
+  /\b(implement|add|build|create|store|collect)\b[\s\S]{0,60}\b(pii|personal\s+(?:data|information)|payment\s+(?:form|flow|processing)|credit\s+card|checkout)\b/i,
+];
+
+export function detectSecurityVerb(prompt, description) {
+  const hay = `${prompt || ''} ${description || ''}`;
+  return SECURITY_VERB_SIGNALS.some(r => r.test(hay));
+}
+
 export function detectStakes(prompt, description) {
   const hay = `${prompt || ''} ${description || ''}`;
   return STAKES_SIGNALS.some(r => r.test(hay));
@@ -340,11 +367,14 @@ export function classifyWithScore(prompt, description) {
   let tier = scoreToTier(score);
   const stakes = detectStakes(prompt, description);
   if (stakes) tier = 'opus';
+  const securityVerb = detectSecurityVerb(prompt, description);
+  // A2: security-verb floor — never route security-feature build work below sonnet.
+  if (securityVerb && tier === 'haiku') tier = 'sonnet';
   const summon_panel = detectSummonPanel(prompt, description, {h: c.h, s: c.s, o: c.o, compound});
   // v5.0.x A2: a summoned design panel implies opus-tier work. Without this a
   // panel signal (e.g. "multi-phase migration") could leave tier at haiku/
   // sonnet — the router only honors the panel on opus, so the flag was
   // silently dropped AND the work routed cheap. Panel ⇒ opus, like stakes.
   if (summon_panel) tier = 'opus';
-  return {...c, score, compound, stakes, tier_by_score: tier, summon_panel};
+  return {...c, score, compound, stakes, securityVerb, tier_by_score: tier, summon_panel};
 }
