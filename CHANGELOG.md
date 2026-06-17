@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.9.2] - 2026-06-17
+
+**test(install):** harden the manifest-coverage tests so non-`.mjs` shipped files can't silently go unmanifested again (the class that dropped `nlm-call.sh` + the two `capability-*` commands from 5.9.0). `test-manifest-coverage.mjs` / `test-installer-coverage.mjs` now also require every `commands/*.md`, `hooks/**/*.{sh,cmd}`, and `tools/**/*.{sh,cmd}` to be manifested, exempting the repo-only `tools/prism-monitor/` Python dashboard. The pre-existing finding that `tools/prism-monitor/refresh-statusline-cache.sh` is unmanifested is resolved as **intentional** (the whole dashboard is repo-only, never deployed). No runtime/deployed files changed (test-only); version bumped to keep plugin/manifest/deployed-marker coherent.
+
 ## [5.9.1] - 2026-06-17
 
 **fix(install):** ship three files the 5.9.0 manifest omitted, caught by a live-install verification audit — `hooks/lib/nlm-call.sh` (WS-C NotebookLM timeout wrapper, referenced by the agent-factory doctrine) and `commands/capability-log.md` + `commands/capability-rollback.md` (WS-F observability slash commands). Root cause: the manifest-coverage test only scans `prism-*.mjs`, so non-`.mjs` shipped files (`.sh`, command `.md`) can be missing from the manifest with no test catching it. **Follow-ups (not in this patch):** strengthen the coverage test to also assert `commands/*.md` + `hooks/lib/*.sh` are manifested; and `tools/prism-monitor/refresh-statusline-cache.sh` is a *pre-existing* unmanifested shipped `.sh` (flagged, not yet shipped).
