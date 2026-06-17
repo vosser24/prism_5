@@ -4,6 +4,10 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.9.1] - 2026-06-17
+
+**fix(install):** ship three files the 5.9.0 manifest omitted, caught by a live-install verification audit — `hooks/lib/nlm-call.sh` (WS-C NotebookLM timeout wrapper, referenced by the agent-factory doctrine) and `commands/capability-log.md` + `commands/capability-rollback.md` (WS-F observability slash commands). Root cause: the manifest-coverage test only scans `prism-*.mjs`, so non-`.mjs` shipped files (`.sh`, command `.md`) can be missing from the manifest with no test catching it. **Follow-ups (not in this patch):** strengthen the coverage test to also assert `commands/*.md` + `hooks/lib/*.sh` are manifested; and `tools/prism-monitor/refresh-statusline-cache.sh` is a *pre-existing* unmanifested shipped `.sh` (flagged, not yet shipped).
+
 ## [5.9.0] - 2026-06-17
 
 Closes the 2026-06-17 audit findings (P1–P5, F1–F4-guard, F6–F13) and ships the **Autonomous Capability Loop (ACL)** — PRISM's detect→create→notify→learn→upgrade→rollback pipeline. Delivered as six independently-shippable workstreams, each TDD'd with a mechanical test + a CLI-driven E2E. Net: 40 commits, full audit 38/38, 105+ node tests green.

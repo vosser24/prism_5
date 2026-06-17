@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.9.0",
+  "prism_version": "5.9.1",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -48,6 +48,7 @@
     {"src": "hooks/prism-subagentstop-dispatcher.mjs", "dst": "hooks/prism-subagentstop-dispatcher.mjs", "executable": true},
     {"src": "hooks/prism-sessionend-dispatcher.mjs", "dst": "hooks/prism-sessionend-dispatcher.mjs", "executable": true},
     {"src": "hooks/lib/prism-exec.sh", "dst": "hooks/lib/prism-exec.sh", "executable": true},
+    {"src": "hooks/lib/nlm-call.sh", "dst": "hooks/lib/nlm-call.sh", "executable": true},
     {"src": "hooks/lib/prism-exec.cmd", "dst": "hooks/lib/prism-exec.cmd", "executable": false},
     {"src": "hooks/lib/prism-cap.mjs", "dst": "hooks/lib/prism-cap.mjs", "executable": false},
     {"src": "hooks/lib/prism-panel-mode.mjs", "dst": "hooks/lib/prism-panel-mode.mjs", "executable": false},
@@ -113,6 +114,8 @@
     {"src": "commands/prism-app-expert.md", "dst": "commands/prism-app-expert.md", "executable": false},
     {"src": "commands/prism-archive.md", "dst": "commands/prism-archive.md", "executable": false},
     {"src": "commands/prism-audit.md", "dst": "commands/prism-audit.md", "executable": false},
+    {"src": "commands/capability-log.md", "dst": "commands/capability-log.md", "executable": false},
+    {"src": "commands/capability-rollback.md", "dst": "commands/capability-rollback.md", "executable": false},
     {"src": "commands/prism-audit-full.md", "dst": "commands/prism-audit-full.md", "executable": false},
     {"src": "commands/prism-bootstrap.md", "dst": "commands/prism-bootstrap.md", "executable": false},
     {"src": "commands/prism-clean.md", "dst": "commands/prism-clean.md", "executable": false},
