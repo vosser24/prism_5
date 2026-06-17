@@ -64,6 +64,15 @@ export const OPUS_SIGNALS = [
   // FIX-D's dead-sonnet bug).
   /\b(design|architect|plan)\s+(a|an|the)\s+(?:[\w-]+\s+){0,3}(workflow|pipeline|routing|orchestration|skill-?system|agent-?system|framework)\b/,
   /\b(multi-?step|multi-?stage|end-?to-?end)\s+(workflow|plan|implementation|system)\b/,
+  // A1 — distributed-systems & scaling vocabulary
+  /\b(multi-?region|multi-?tenant|per-?tenant|sharding|shard(ed)?|fan-?out|N\s+tenants?|phased\s+migration|fairness\s+(policy|algorithm|constraint))\b/i,
+  // A1 — rate-limiting and quota systems
+  /\b(rate[\s-]?limit(er|ing)?|quota\s+(system|enforcement|manager)|throttl(e|ing)\s+(policy|strategy|system))\b/i,
+  // A1 — build/plan/scaffold/design verbs in cross-concern (full-stack) context:
+  //      app/service noun followed (within 200 chars) by a backend/data concern
+  /\b(plan|scaffold|design|build)\s+(an?\s+)?(app|application|service|system|platform|tracker|dashboard)\b(?=[\s\S]{0,200}\b(backend|api|database|db|server)\b)/i,
+  // A1 — full-stack signal: backend + frontend co-present in same prompt
+  /\b(backend|server[\s-]?side|api\s+layer)\b(?=[\s\S]{0,300}\b(frontend|client[\s-]?side|react|vue|angular|svelte|ui\s+layer)\b)/i,
 ];
 
 // v2.7.0 additions — novel-architecture signals that bump summon_panel on
@@ -75,6 +84,10 @@ export const PANEL_SIGNALS = [
   /\b(multi-?phase|multi-?quarter)\s+(plan|migration|rollout|redesign)/,
   /\b(expert panel|architect panel|panel of)/,
   /\b(redesign|re-architect)\s+(the |my |our )?(app|system|platform|backend|frontend|stack)/,
+  // A1 — multi-region / multi-tenant system design implies panel-level novelty
+  /\b(multi-?region|multi-?tenant|global\s+distribution)\s+(?:[\w-]+\s+){0,3}(system|service|platform|architecture|deployment|infrastructure|limiter|gateway|cache|queue|proxy|mesh)\b/i,
+  // A1 — phased migration with scale context
+  /\b(phased|staged)\s+migration\b(?=[\s\S]{0,200}\b(tenant|region|shard|scale|traffic|prod|database)\b)/i,
 ];
 
 // UAT-3/5 (2026-06-02): EXPLICIT user requests for a panel. Honoring explicit
