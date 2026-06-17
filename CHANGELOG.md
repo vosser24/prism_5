@@ -4,6 +4,19 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.9.0] - 2026-06-17
+
+Closes the 2026-06-17 audit findings (P1–P5, F1–F4-guard, F6–F13) and ships the **Autonomous Capability Loop (ACL)** — PRISM's detect→create→notify→learn→upgrade→rollback pipeline. Delivered as six independently-shippable workstreams, each TDD'd with a mechanical test + a CLI-driven E2E. Net: 40 commits, full audit 38/38, 105+ node tests green.
+
+- **WS-E hook performance (P1–P5).** `prism-hook.mjs` parallel top-level imports (`Promise.all`); `prism-pretooluse-dispatcher.mjs` parallel guard import+run (TaskCreate stays sequential); `prism-agent-model-guard.mjs` lazy classifier imports (fast paths pay zero load); `prism-session-start.mjs` detached fire-and-forget context audit (no 5 s `spawnSync` block); `prism-subagent-stop.mjs` lock-free roster pre-check (skip lock+107 KB write for unregistered agents).
+- **WS-A classifier accuracy (F1, F6).** Extended `OPUS_SIGNALS`/`PANEL_SIGNALS` (distributed-systems / full-stack vocab) + a `SECURITY_VERB` sonnet floor (auth/crypto/JWT/PII build verbs never route to haiku), with over-fire guards.
+- **WS-B audit tooling (F2, F3, F4-guard).** Runner emits `hooks_fired` + analyzer renders the p95 Timing Distribution; runner emits `expected{tier,source}` + analyzer (tier,source) real-session correlation; KB-index freshness false-positive guard (mtime tolerance + in-flight-rebuild check).
+- **WS-C memory/cloud health (F7, F11, F13).** `claudeMemHealthy()` gates the memory-save-nudge standdown on actual worker health (re-enables the native nudge when claude-mem is down); `hooks/lib/nlm-call.sh` hard-timeout wrapper for every NotebookLM call (timeout→Tier-3 fallback, clean exit, no orphan).
+- **WS-D reuse/registration (F9, F10).** Advisory (non-blocking) skill-equip nudge on Agent dispatches; `prism-roster-resolve.mjs` single-source-of-truth resolver (global primary + project-roster merge), with the orchestrator/factory contract documented.
+- **WS-F Autonomous Capability Loop (F8, F12).** New `tools/prism-capability-{detect,promote,learn,cli}.mjs`, `tools/lib/prism-acl-store.mjs`, hooks `prism-acl-{sessionend,worker,notify,rollback-guard}.mjs`, and `commands/capability-{log,rollback}.md`. Detached/budgeted/debounced SessionEnd worker runs detect→promote→learn; staged validate→version→atomic-promote→global-roster register; SessionStart digest; correction-driven auto-rollback (prior version retained); observability CLIs. Production factory dispatches the real agent-factory headlessly (`claude --agent agent-factory`, timeout-guarded, graceful skip, fallback-move) — **headless factory still pending a real-LLM production smoke-test.**
+- **Mutation-guard fix.** The here-doc write-detection regex no longer over-fires on a `>` inside a heredoc body (e.g. `->` arrows in a commit message), which had been wrongly blocking legitimate `git merge -m "$(cat <<EOF …)"`. Added `test-mutation-guard-usage.mjs` characterizing the full deny/allow/bypass/mode matrix.
+- **Install manifest** updated to ship all new hooks/tools/lib + commands.
+
 ## [5.8.1] - 2026-06-17
 
 Closes the **skills** half of the knowledge-loop leak. Agents written mid-session already auto-register into `roster.json` via `prism-agent-write-register.mjs`; SKILLS had no equivalent — an expert-authored `SKILL.md` sat on disk invisible to roster-first matching and the panel-guard until a human ran `/prism-index`. This adds the symmetric registrar.
