@@ -4,6 +4,16 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.8.1] - 2026-06-17
+
+Closes the **skills** half of the knowledge-loop leak. Agents written mid-session already auto-register into `roster.json` via `prism-agent-write-register.mjs`; SKILLS had no equivalent — an expert-authored `SKILL.md` sat on disk invisible to roster-first matching and the panel-guard until a human ran `/prism-index`. This adds the symmetric registrar.
+
+- **`hooks/prism-skill-write-register.mjs` (new) — PostToolUse {Write,Edit,MultiEdit}.** When a `.../.claude/skills/<name>/SKILL.md` is written via the Claude Write/Edit tool, it registers a minimal stub into `roster.skills` (`type` / `source` / `path` / `description` + empty `domains` / `keywords` / `trigger_phrases`, `auto_registered:true`) — making the skill immediately discoverable. `/prism-index` later overwrites with the full enriched entry. Scope mirrors the agent registrar: `~/.claude/skills/…` → global roster; `<root>/.claude/skills/…` → that project's roster. Faithful clone of the agent hook's safety properties: idempotent, atomic tempfile+rename write, roster-lock, **fail-open (never blocks the tool call)**, ~0ms on non-matching paths. Off-switch `PRISM_DISABLE_SKILL_WRITE_HOOK=1`.
+- **Not duplicative:** `prism-kb-autosync.mjs` already fires on skill writes but only flags the SEMANTIC-recall index dirty — a separate pipeline. This hook owns the roster (discovery) index. Installer copies use Node `cpSync` (not the Write tool), so PRISM's own bundled skills don't trigger it — only mid-session authored skills do.
+- Wired into `prism-posttooluse-dispatcher.mjs` (Write/Edit/MultiEdit) and `install-manifest.json`.
+- Tests: new `test-prism-skill-write-register.mjs` (20 cases — global/project scope, idempotency, non-SKILL / non-write / off-switch ignore, 200-char truncation, never-blocks). PostToolUse dispatcher (8/8) + settings-wiring (6/6) unchanged.
+- **Still manual (documented):** the global roster is per-machine and not synced; auto-registered stubs have empty `domains` until `/prism-index` or `/prism-roster --reconcile` enriches them — same degraded-match caveat as auto-registered agents.
+
 ## [5.8.0] - 2026-06-16
 
 Two surgical doctrine gaps closed — the orchestrator now (a) surfaces a task list at execution start and (b) uses superpowers for its OWN planning, not just for workers. Motivated by a live session where the master wrote a good multi-phase plan but executed it **monolithically in Opus with no task list and no skill usage.** **Deliberately minimal:** investigation confirmed the dispatch / decompose / model-tier / worker-injection doctrine already exists and is thorough, and SKILL.md is already near the instruction-following size limit — adding more there would dilute, not help. So both additions land in the on-demand `phase-1-execution.md` reference, NOT the always-loaded SKILL.md.
