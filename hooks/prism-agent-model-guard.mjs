@@ -53,8 +53,6 @@
 import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
 import {createHash} from 'crypto';
-import {classifyPrompt} from './lib/prism-opus-classifier.mjs';
-import {detectCompound, loadCostMultipliers} from '../tools/lib/prism-tier-classify.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
@@ -183,6 +181,7 @@ export async function run(input) {
   } else {
     // Fallback: sentinel missing (classifier failed upstream or session has no
     // prompt-tier-router output). Re-classify locally.
+    const {classifyPrompt} = await import('./lib/prism-opus-classifier.mjs');
     const cls = await classifyPrompt({
       prompt: `${description}\n${prompt}`.trim(),
       cwd: input.cwd || '',
@@ -197,6 +196,7 @@ export async function run(input) {
   }
 
   // Dynamic cost multipliers from model-matrix.md (fallback: hardcoded).
+  const {detectCompound, loadCostMultipliers} = await import('../tools/lib/prism-tier-classify.mjs');
   const COST = loadCostMultipliers();
   const parentCost = COST.opus;
   const subCost = COST[tier] || 1;
