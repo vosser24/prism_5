@@ -289,6 +289,7 @@ If available:
 2. Research via three-tier engine
 3. ALWAYS write agent to GLOBAL path: ~/.claude/agents/{name}/
    NEVER write to project-local .claude/agents/ — agents must be reusable across projects.
+   SINGLE SOURCE OF TRUTH (F10): global agent path + global roster is what the orchestrator reads (`master-orchestrator/SKILL.md:36`). Do NOT write a project-local agent + project roster for a reusable agent — that roster is invisible to the orchestrator's primary read and causes duplicate manual registration. Project-local registration is reserved for the project-master only, which the orchestrator picks up via the `resolveRoster` merge (`hooks/lib/prism-roster-resolve.mjs`).
    ├── agent.md (frontmatter + researched expertise + operating protocol)
    ├── references/ (core-expertise.md, methodologies.md, tools-libraries.md)
    ├── experience/ (project-log.md, decisions.md, context-adapters/)
@@ -309,7 +310,7 @@ If available:
    The user must restart Claude Code (/exit + claude) for new agents to appear
    in the @agent registry. /clear is not enough — agent scan happens at process start.
 4. ALWAYS update GLOBAL roster: ~/.claude/skills/prism-plan/references/roster.json
-   NOT a project-local roster. One roster, one source of truth.
+   NOT a project-local roster. One roster, one source of truth. SINGLE SOURCE OF TRUTH (F10): this is the roster the orchestrator reads at session start (`master-orchestrator/SKILL.md:36`). Project-local agents (project-master only) are discoverable via `resolveRoster` merge but must NOT be registered here AND in the project roster simultaneously.
    Each agent entry must include:
    - name, version, domains, model, created_date, last_used
    - total_tasks_completed, total_corrections_received
