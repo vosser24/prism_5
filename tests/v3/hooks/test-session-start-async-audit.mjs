@@ -106,27 +106,46 @@ await test('source contains .unref() call for the audit child', () => {
 // Fire-and-forget path (new) → hook returns in ~node-startup-floor ms.
 // Generous threshold: < 600ms. Node startup floor on this machine: ~82-100ms.
 
-await test('hook returns FAST (< 600ms) when dueForFreshAudit with an 800ms stub audit tool', () => {
+await test('hook does NOT block on the audit (fire-and-forget; machine-relative timing)', () => {
+  // Absolute-ms bounds are unreliable on slow/SMB dev boxes — node-startup floor
+  // here can be ~700-800ms, so a fixed "< 600ms" is unwinnable even for a correct
+  // fire-and-forget hook (the structural guards above are the PRIMARY proof). So
+  // measure THIS machine's floor in-run (a not-due run spawns nothing), then assert
+  // the due+800ms-stub run did NOT wait the stub: fire-and-forget adds << stub,
+  // a blocking regression adds the FULL stub. Speed-independent; still catches it.
+  const stubMs = 800;
+
+  // (a) floor: not-due run — reads cache, spawns no audit child → pure node floor.
+  const floorHome = makeHome('floor');
+  let floor;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    writeFileSync(join(floorHome, '.claude', '.prism-context-audit.last'), String(now));
+    writeFileSync(join(floorHome, '.claude', '.prism-context-audit.json'),
+      JSON.stringify({total_tokens_est: 0, total_cost_opus_usd: '0.00', top_suggestion: null}));
+    floor = runHook(floorHome).elapsed;
+  } finally {
+    rmSync(floorHome, {recursive: true, force: true});
+  }
+
+  // (b) due + 800ms stub audit tool.
   const home = makeHome('timing');
   try {
-    // Write an 800ms stub audit tool
-    const stubAudit = join(home, '.claude', 'tools', 'prism-context-audit.mjs');
-    writeFileSync(stubAudit, `
+    writeFileSync(join(home, '.claude', 'tools', 'prism-context-audit.mjs'), `
 import {setTimeout as delay} from 'node:timers/promises';
-await delay(800);
+await delay(${stubMs});
 process.stdout.write(JSON.stringify({total_tokens_est:0,total_cost_opus_usd:'0.00',top_suggestion:null}));
 process.exit(0);
 `);
     // Do NOT write LAST_FILE → dueForFreshAudit=true (last=0, diff > 24h)
-
     const r = runHook(home);
-    console.log(`    [timing] elapsed=${r.elapsed}ms (threshold: 600ms, stub: 800ms, node-floor: ~82-100ms)`);
+    const budget = floor + stubMs / 2; // fire-forget adds << stub; blocking adds the full stub
+    console.log(`    [timing] floor=${floor}ms due+stub=${r.elapsed}ms budget=${budget}ms (stub ${stubMs}ms)`);
     if (r.status !== 0) console.log(`    [timing] stderr: ${r.stderr}`);
     assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
-    assert(r.elapsed < 600,
-      `Hook took ${r.elapsed}ms — exceeds 600ms threshold. ` +
-      `Blocking path with 800ms stub should take ≥800ms; fire-and-forget should be ≤300ms. ` +
-      `This suggests spawnSync is still blocking.`);
+    assert(r.elapsed < budget,
+      `Hook took ${r.elapsed}ms vs budget ${budget}ms (floor ${floor}ms + half the ${stubMs}ms stub). ` +
+      `A blocking spawnSync would be ~floor+${stubMs}ms; this suggests the audit is still blocking.`);
   } finally {
     rmSync(home, {recursive: true, force: true});
   }

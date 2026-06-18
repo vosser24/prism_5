@@ -62,9 +62,15 @@ try {
   // ── TIMING (hook returns quickly, far faster than a blocking path) ────────
 
   const r1 = runHook(tmpHome);
-  console.log(`  [timing] first run elapsed=${r1.elapsed}ms (threshold: 700ms, node-floor: ~350ms)`);
+  console.log(`  [timing] first run elapsed=${r1.elapsed}ms (threshold: 2000ms, node-floor: ~350-800ms on SMB)`);
   assert.strictEqual(r1.status, 0, `hook must exit 0, got ${r1.status}; stderr: ${r1.stderr}`);
-  assert.ok(r1.elapsed < 700, `hook must return in <700ms (fire-and-forget), took ${r1.elapsed}ms`);
+  // 2000ms (was 700ms): node-spawn floor on the SMB dev share is ~700-800ms, so a
+  // 700ms bound flakes even though the worker IS detached. The BLOCKING regression
+  // this guards against runs the full detection+factory inline — multiple seconds —
+  // so a 2s bound still catches it cleanly while tolerating slow node startup.
+  // Structural guards (S1-S4 above: detached/stdio-ignore/unref/no-spawnSync) are
+  // the primary fire-and-forget proof.
+  assert.ok(r1.elapsed < 2000, `hook must return in <2000ms (fire-and-forget; blocking would be multi-second), took ${r1.elapsed}ms`);
 
   // ── BEHAVIORAL: debounce stamp was written ────────────────────────────────
 

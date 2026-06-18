@@ -199,6 +199,38 @@ try {
     assert(r.exit === 2, `Expected deny (exit 2) for printf append; got ${r.exit}. ` +
       'printf "x\\n" >> app.log must still be detected as a file write.');
   });
+
+  // ── v5.10.1: scratch/TEMP-DIR redirect targets are benign output capture ──
+  // The guard protects SOURCE/CONFIG files from BOM corruption + the orchestrator
+  // bypass. Redirecting stdout to a TEMP-DIRECTORY sink (test-output capture, a
+  // completion marker) is neither — it's discarded scratch. So a redirect whose
+  // TARGET is under a temp dir (/tmp, /c/tmp, $TMPDIR, %TEMP%, …) or a null sink
+  // must ALLOW. The scratch signal is the TEMP DIR, NOT the extension — a `.log`/
+  // `.out` in the CWD may be a tracked artifact and still DENIES (above).
+  test('ALLOW: pytest output captured to /c/tmp/*.out', () => {
+    assert(runGuard(bash('python -m pytest -q > /c/tmp/phaseb.out 2>&1')).exit === 0);
+  });
+  test('ALLOW: completion-marker append to /c/tmp/*.out (grabber repro)', () => {
+    assert(runGuard(bash('echo "DONE exit=$?" >> /c/tmp/phaseb_reverify.out')).exit === 0);
+  });
+  test('ALLOW: redirect to /tmp/ scratch file', () => {
+    assert(runGuard(bash('echo hi > /tmp/scratch.txt')).exit === 0);
+  });
+  test('ALLOW: append to $TMPDIR scratch log', () => {
+    assert(runGuard(bash('printf "x\\n" >> $TMPDIR/run.log')).exit === 0);
+  });
+  test('ALLOW: full grabber compound (psql+pytest capture to /c/tmp + /dev/null)', () => {
+    const cmd = 'psql -tAc "SELECT 1" > /dev/null 2>&1; python -m pytest > /c/tmp/x.out 2>&1; echo "DONE exit=$?" >> /c/tmp/x.out';
+    assert(runGuard(bash(cmd)).exit === 0, 'temp-capture compound must allow');
+  });
+  // ROBUSTNESS: a REAL writer is NOT excused by an accompanying scratch redirect.
+  test('DENY: node writeFileSync still caught even alongside a /tmp redirect', () => {
+    assert(runGuard(bash('node -e "require(\'fs\').writeFileSync(\'x.json\',\'{}\')" > /tmp/log.txt')).exit === 2);
+  });
+  // REGRESSION: a CWD .out/.log is NOT scratch (no temp dir) — still DENIES.
+  test('DENY (unchanged): redirect to cwd out.out is still caught (not a temp dir)', () => {
+    assert(runGuard(bash('echo x > out.out')).exit === 2);
+  });
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

@@ -4,6 +4,15 @@ All notable changes to PRISM are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), the versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [5.10.1] - 2026-06-18
+
+**fix(mutation-guard):** redirects to a **scratch/temp-dir sink** no longer over-fire the parent-write guard. Capturing command output to a temp file — `pytest … > /c/tmp/x.out 2>&1`, `echo "DONE exit=$?" >> /c/tmp/run.out` — is benign output capture, not the source/config BOM-corruption the guard exists to prevent, yet the `echo/printf/cat` redirect pattern blocked it (forcing an unnecessary subagent dispatch for a scratch write). The guard now strips redirects whose **target is under a temp directory** (`/tmp`, `/c/tmp`, `%TEMP%`, `$TMPDIR`, `AppData/Local/Temp`) or a null sink *before* write-pattern matching. The scratch signal is the **temp dir, not the extension** — a `.log`/`.out` in the project cwd may be a tracked artifact and still DENIES; a real writer (`Set-Content`, `sed -i`, `node … writeFileSync`) that *also* captures to `/tmp` is still caught on its real-writer pattern. `test-mutation-guard-usage.mjs` now 38 cases (+7: scratch-allow + robustness regressions). No deployed-behavior change beyond the guard; full sweep / golden / audit green.
+
+Also (incidental, test-only): hardened **three** timing-fragile hook tests that false-red on the slow SMB dev share, where node-spawn floor is ~700-800 ms (not the ~100-350 ms the absolute bounds assumed) and module-import I/O contends on the link. Each keeps its STRUCTURAL assertions as the primary proof; the timing checks are now environment-robust:
+- `test-session-start-async-audit.mjs` (`<600ms` → **machine-relative**): measures the box's node floor in-run, asserts the due+800 ms-stub run didn't wait the stub (`elapsed < floor + stub/2`). Speed-independent; a blocking regression (floor+full-stub) still trips it.
+- `test-pretooluse-parallel-dispatch.mjs` (`<700ms` → **machine-relative delta**): measures floor via a no-route dispatch and bounds the delta the Agent route adds (`< 900 ms`); parallel module-import over SMB adds ~500-560 ms, a serial regression ~2×.
+- `acl-sessionend.test.mjs` (`<700ms` → `<2000ms`): the fire-and-forget-vs-blocking gap is huge (sub-second vs multi-second), so a generous absolute bound tolerates slow node startup while still catching an inline-blocking regression.
+
 ## [5.10.0] - 2026-06-18
 
 Four workstreams from issues surfaced 2026-06-17/18. Each ships with a mechanical guard test; full sweep / golden / audit green before deploy. Minor bump (routing-behavior change + new guards).

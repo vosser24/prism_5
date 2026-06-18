@@ -133,6 +133,27 @@ const BASH_WRITE_PATTERNS = [
   /\bgit\s+(restore|checkout)\b[^|&;]*?(--|[^-]\s*)[a-zA-Z_\-./\\]+\.(md|json|ts|tsx|js|jsx|mjs|py|sh|ps1)\b/,
 ];
 
+// v5.10.1: a redirect TARGET that is a SCRATCH / output-capture sink — a temp
+// directory (/tmp, /c/tmp, %TEMP%, $TMPDIR, …) or a null device. Redirecting
+// stdout to one of these is benign output capture (a test-log, a `DONE` marker)
+// — NOT the source/config BOM-corruption the guard exists to prevent, and not a
+// meaningful orchestrator bypass. The scratch signal is the TEMP DIRECTORY, not
+// the extension: a `.log`/`.out` in the project cwd may be a tracked artifact and
+// is deliberately NOT whitelisted (it still fires). Real source/config files
+// never live under a temp dir, so this can't mask a genuine source write.
+const SCRATCH_TARGET_RE = /[/\\]te?mp[/\\]|AppData[/\\]Local[/\\]Temp|\$(?:TMPDIR|TEMP|TMP)\b|%(?:TEMP|TMP)%|\$env:(?:TEMP|TMP)\b|\/dev\/null\b|\bNUL\b/i;
+
+// Drop redirect operations (`> t`, `>> t`, `2> t`) whose target is a scratch
+// sink, BEFORE write-pattern matching — so output capture to a temp file doesn't
+// trip the echo/printf/redirect patterns. Redirects to source/config/cwd files
+// are left intact (and still fire). Non-redirect writers (Set-Content, sed -i,
+// node writeFileSync, …) are untouched by this strip, so a real write that ALSO
+// captures to /tmp is still detected on its real-writer pattern.
+function stripScratchRedirects(cmd) {
+  return String(cmd).replace(/\d*>>?\s*["']?([^\s|&;<>"']+)["']?/g,
+    (m, target) => (SCRATCH_TARGET_RE.test(target) ? ' ' : m));
+}
+
 // PowerShell-specific write patterns that are safe from BOM IF the user
 // provides -Encoding UTF8NoBOM. If this is present in the command AND the
 // write pattern matches, downgrade the "BOM warning" to "acknowledged".
@@ -189,8 +210,12 @@ function getFilePath(toolInput) {
 export function classifyBashCommand(cmd) {
   if (!cmd) return { isWrite: false };
   const s = String(cmd);
+  // v5.10.1: neutralize scratch/temp-dir redirects so benign output capture
+  // (`pytest … > /c/tmp/x.out`, `echo done >> /tmp/run.log`) doesn't fire. Real
+  // writers and redirects to source/config/cwd files survive the strip.
+  const scrubbed = stripScratchRedirects(s);
   for (const re of BASH_WRITE_PATTERNS) {
-    if (re.test(s)) {
+    if (re.test(scrubbed)) {
       return {
         isWrite: true,
         matchedPattern: re.source.slice(0, 60),
