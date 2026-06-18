@@ -4,7 +4,7 @@ description: >
   Creates or upgrades expert agents via research. Uses NotebookLM (free)
   as primary research engine with Claude as quality gate.
   Only spawned by master-orchestrator when a needed agent doesn't exist.
-tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, TaskCreate, TaskUpdate, TaskList, TaskGet
 model: opus
 maxTurns: 40
 memory: true
@@ -389,6 +389,12 @@ Each agent gets a persistent NotebookLM notebook:
 
 Agent.md must include:
 - YAML: name, description (pushy), tools, model, maxTurns, memory: true
+- YAML tools line MUST include the four Task tools — `TaskCreate, TaskUpdate, TaskList, TaskGet`
+  — appended to whatever domain tools the agent needs (e.g.
+  `tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, TaskList, TaskGet`).
+  Tasks are the default live-checklist surface since Claude Code v2.1.142; a multi-step
+  worker without them silently loses the interactive progress checklist. NEVER set
+  `CLAUDE_CODE_ENABLE_TASKS` anywhere (that shim turns Tasks OFF, restoring deprecated TodoWrite).
 - YAML: notebooklm_notebook_id (if Tier 1 was used — for future queries)
 - Model: opus for decisions, sonnet for implementation, haiku for scouts
 - Do NOT set isolation: worktree in YAML by default. It requires a git repo

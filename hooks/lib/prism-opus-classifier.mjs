@@ -191,6 +191,52 @@ function isMetaQuestion(prompt) {
   return META_QUESTION_RE.test(s) && !BUILD_VERB_RE.test(s);
 }
 
+// WS-2 (v5.10.0) — AMBIGUITY FLOOR (D017 deferred option, now adopted).
+// keyword-floor scores terse, context-referencing prompts ("execute it",
+// "fix all", "@docs/x.md run it") at 0 → haiku, forcing ~10 conversation-model
+// overrides per session. Such a prompt is almost always a continuation of real
+// work whose complexity the brief phrasing hides. So a SCORE-0 prompt that would
+// route haiku and is IMPERATIVE (leading ACTION verb) and/or REFERENCES A FILE
+// is promoted to SONNET. Deterministic, zero LLM cost, no network. Read verbs
+// ("list", "show", "print") and interrogatives stay haiku; clear-complexity is
+// already opus by the time we get here. ONLY upgrades haiku→sonnet — never
+// downgrades a stakes/security/panel result.
+const IMPERATIVE_ACTION_VERBS = new Set([
+  'execute', 'run', 'rerun', 'retest', 'redo', 'fix', 'patch', 'apply',
+  'implement', 'build', 'create', 'make', 'refactor', 'rewrite', 'migrate',
+  'port', 'deploy', 'ship', 'release', 'add', 'write', 'update', 'change',
+  'edit', 'rename', 'move', 'remove', 'delete', 'wire', 'integrate', 'generate',
+  'scaffold', 'finish', 'complete', 'do', 'continue', 'proceed', 'resume',
+  'retry', 'revert', 'merge', 'commit', 'install', 'configure', 'enable',
+  'disable', 'bump', 'upgrade', 'downgrade', 'split', 'extract', 'inline',
+  'optimize', 'optimise', 'harden', 'validate', 'verify',
+]);
+// @path mention, a slashed/backslashed path with extension, or a bare filename
+// with a known code/config extension.
+const FILE_REF_RE = /(?:^|\s)@[\w./\\-]+|\b[\w-]+(?:[/\\][\w.-]+)+\.\w{1,6}\b|\b[\w-]+\.(?:md|mjs|cjs|js|jsx|ts|tsx|json|jsonc|py|sh|cmd|bat|ps1|yaml|yml|toml|ini|env|txt|sql|go|rs|rb|java|c|h|cpp)\b/i;
+const INTERROGATIVE_LEAD_RE = /^(what|why|how|when|where|who|which|whose|is|are|am|was|were|does|did|can|could|should|would|will|may|might|shall|have|has|had)\b/i;
+
+function ambiguityFirstWord(prompt) {
+  // Strip leading whitespace/quotes/@/punctuation, then grab the first word.
+  const m = String(prompt || '').trim().replace(/^[^\w@]+/, '').match(/^[a-z][a-z'-]*/i);
+  return m ? m[0].toLowerCase() : '';
+}
+function isImperativeAction(prompt) {
+  return IMPERATIVE_ACTION_VERBS.has(ambiguityFirstWord(prompt));
+}
+function isInterrogative(prompt) {
+  const s = String(prompt || '').trim();
+  return /\?\s*$/.test(s) || INTERROGATIVE_LEAD_RE.test(s);
+}
+function referencesFile(prompt) {
+  return FILE_REF_RE.test(String(prompt || ''));
+}
+function ambiguityFloorApplies(prompt) {
+  // Imperative action OR a (non-interrogative) file reference. Interrogatives —
+  // even file-referencing ones ("what's in config.json?") — stay haiku per spec.
+  return isImperativeAction(prompt) || (referencesFile(prompt) && !isInterrogative(prompt));
+}
+
 function keywordFloor(prompt) {
   // Sole classification path in v3.2.0.
   // Release/meta-work tokens promote to opus TIER — shipping a broken release
@@ -214,13 +260,21 @@ function keywordFloor(prompt) {
       rationale: `keyword-floor release-screen: ${release} (opus; panel=${panel}${meta ? ' meta-question' : ''})`,
     };
   }
-  const tier = c.tier_by_score === 'haiku' && c.score > 0
+  const tier0 = c.tier_by_score === 'haiku' && c.score > 0
     ? 'haiku'
     : (c.tier_by_score || 'sonnet');
+  // WS-2 ambiguity floor: a score-0 haiku prompt that is imperative/file-ref
+  // → sonnet. Only ever upgrades haiku; never touches sonnet/opus results.
+  let tier = tier0;
+  let ambiguityFloor = false;
+  if (tier0 === 'haiku' && c.score === 0 && ambiguityFloorApplies(prompt)) {
+    tier = 'sonnet';
+    ambiguityFloor = true;
+  }
   return {
     tier,
     summon_panel: panel,
-    rationale: `keyword-floor score=${c.score} summon_panel=${panel}${meta ? ' (meta-question screen)' : ''}`,
+    rationale: `keyword-floor score=${c.score} summon_panel=${panel}${meta ? ' (meta-question screen)' : ''}${ambiguityFloor ? ' (ambiguity-floor: score-0 imperative/file-ref → sonnet)' : ''}`,
   };
 }
 

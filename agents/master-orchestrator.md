@@ -5,7 +5,7 @@ description: >
   position before synthesis. Assembles expert agents, validates plans with user,
   manages execution with mandatory checkpoints for high-stakes tasks.
   Only spawned by prism-plan or direct @master-orchestrator mention.
-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskList, TaskUpdate
+tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskList, TaskUpdate, TaskGet
 model: opus
 maxTurns: 80
 memory: true

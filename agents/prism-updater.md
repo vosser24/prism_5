@@ -5,7 +5,7 @@ description: >
   releases, and best practices. Produces migration plan for approval.
   Use when user says "update prism" or "check for updates".
   Never activates automatically.
-tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch
+tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate, TaskList, TaskGet
 model: opus
 maxTurns: 50
 memory: true

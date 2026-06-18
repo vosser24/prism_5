@@ -367,6 +367,17 @@ Every captured file starts with:
 A file with \`Status: Locked\` is referenced in \`CLAUDE.md\` and may not be
 edited in place. Subsequent design changes create a new file referencing
 the locked one.
+
+## Verify ground truth before you capture "it works"
+
+Deployed ≠ wired ≠ works. A green component/unit suite does NOT prove the
+component is wired into its dispatcher or that the end-to-end path works —
+add an integration assertion for each critical path. Before capturing a lesson
+or adjudication that claims something "works", confirm ground truth: the files
+changed (\`git status --porcelain\`), the claimed paths exist, and the relevant
+tests pass. Never trust a subagent's usage counter as a work/completion signal —
+a delegating worker reports \`tool_uses=1\` while the real work lives in its
+child's separate transcript. Measure artifacts, not counters or relayed prose.
 `;
 
 function ensureCaptureConventions() {

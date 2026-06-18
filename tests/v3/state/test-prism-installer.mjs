@@ -43,7 +43,11 @@ function run(args, env = {}) {
   const result = spawnSync(process.execPath, [INSTALLER, ...args], {
     env: {...process.env, ...env},
     encoding: 'utf8',
-    timeout: 30000,
+    // 90s (was 30s): a clean install copies ~100+ manifest files; off the
+    // SMB-mounted dev share that legitimately takes ~34s, marginally exceeding
+    // a 30s cap and false-reddening every install-dependent assertion. The
+    // install itself exits 0 — this is I/O latency, not a correctness bug.
+    timeout: 90000,
   });
   return result;
 }

@@ -121,6 +121,41 @@ mark [x]. On a mid-run cutoff (nonzero tool-uses but 0 tokens) verify partial
 state before any re-run (double-apply risk) and re-run only the remainder. Only
 the full conjunction signals failure — a small nonzero result is a real step.
 
+**Verify ARTIFACTS, not the usage counter (v5.10.0).** A subagent's usage block
+counts only its OWN direct tool calls — so a worker that *delegates* (one nested
+`Agent` dispatch) reports `tool_uses=1` even though it created files, edited code,
+and ran a suite; the real work lives in the child's separate `agent-<childId>.jsonl`.
+The counter therefore UNDER-represents work and must NEVER be a completion signal
+(sibling of the `0 tokens` failure case above, and of the phantom-`written` / zombie
+relayed-report lessons). After an **output-producing** worker returns, measure
+GROUND TRUTH instead of trusting the count or the worker's prose:
+
+```bash
+git status --porcelain && git diff --stat   # what actually changed on disk
+# then: confirm each claimed path exists, and run the relevant tests for green
+test -f <claimed/path> && echo OK || echo MISSING
+node <the relevant test(s)>                  # pass-count is the real signal
+```
+
+Equip the worker to make this cheap: end its prompt with "list every file you
+created/edited by absolute path and run the test suite; report the pass count,"
+so the master only checks paths-exist + tests-pass. True per-worker tool count, if
+ever needed as a diagnostic, is `grep -c '"type":"tool_use"' <transcript>/agent-<id>.jsonl`
+— and remember nested-child calls live in a *separate* `agent-<childId>.jsonl`,
+which is *why* the rollup reads 1.
+
+**PERFORMANCE CONTRACT (keeps PRISM's no-slowdown rule intact):** this runs ONCE
+per dispatch — a rare, already-heavyweight event (seconds-to-minutes) — NOT on the
+per-turn / per-tool-call hot path. A sub-second `git status` after a multi-minute
+worker is ~0.02% overhead. **Scope it to output-producing dispatches only** — skip
+verification after read-only/research workers (nothing to diff). **Do NOT wire it
+as an unconditional `SubagentStop` hook** — that would git-diff on *every*
+completion (incl. read-only) and tax the dispatches that produced nothing. It is
+conditional ORCHESTRATOR DISCIPLINE, not a runtime feature. (Windows/SMB: clear a
+stale `.git/index.lock` if `git status` stalls.) Pairs with WS-3's wiring guard —
+both assert ground truth over green/self-report: *a green component suite does not
+prove the component is wired or that it works end-to-end.*
+
 **Equip the worker IN ITS PROMPT — don't expect a subagent to invoke skills.**
 A dispatched subagent does NOT hot-reload skills and is scoped to one task, so
 the master carries what it needs INTO the dispatch prompt: (a) the relevant

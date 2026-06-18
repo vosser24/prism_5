@@ -45,7 +45,7 @@ description: >
   Cites code.claude.com URLs for every non-trivial claim; flags claims "unverified"
   when not sourced. Windows-FIRST — every recommendation includes a PowerShell +
   Git Bash + WSL variant where relevant.
-tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate, TaskList, TaskGet
 model: opus
 maxTurns: 40
 memory: true
