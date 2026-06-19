@@ -11,7 +11,7 @@
 // ROUTING mirrors the shipped matchers + array order exactly:
 //   Bash        → safety, prepush-review, mutation-guard, parent-dispatch-guard
 //   PowerShell  → parent-dispatch-guard
-//   Agent       → agent-model-guard, parallel-guard, skill-equip-nudge, parent-dispatch-guard
+//   Agent       → agent-model-guard, parallel-guard, skill-equip-nudge, specialist-routing-guard, dispatch-dedup-guard, parent-dispatch-guard
 //   TaskCreate  → parent-dispatch-guard, task-tier-advisor
 //   Edit/Write/MultiEdit/NotebookEdit/WebFetch/WebSearch → parent-dispatch-guard
 // (prepush-review's old `if: Bash(git *)` filter is unnecessary in-process — the
@@ -41,7 +41,7 @@ const PARENT = 'prism-parent-dispatch-guard.mjs';
 const ROUTES = {
   Bash:         ['prism-safety.mjs', 'prism-bash-hang-guard.mjs', 'prism-prepush-review.mjs', 'prism-mutation-guard.mjs', PARENT],
   PowerShell:   [PARENT],
-  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-dispatch-dedup-guard.mjs', PARENT],
+  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-specialist-routing-guard.mjs', 'prism-dispatch-dedup-guard.mjs', PARENT],
   TaskCreate:   [PARENT, 'prism-task-tier-advisor.mjs'],
   Edit:         [PARENT],
   Write:        [PARENT],

@@ -17,6 +17,10 @@
 //     source:        'allowlist' | 'force-opus' | 'cache' | 'keyword-floor'
 //                    (NOTE: 'opus' / 'sonnet-fallback' no longer emitted in v3.2.0)
 //     force_opus:    boolean  — set when prompt contained '!opus-force:'
+//     force_gp:      boolean  — set when prompt contained '!gp-force:' (v5.12.0);
+//                    orthogonal to tier — overrides the specialist-routing-guard
+//                    only, riding the sentinel so the PreToolUse/Agent hook (which
+//                    cannot see the turn prompt) can honor it.
 //     cache_key:     string   — sha256(prompt|branch|head) or '' if N/A
 //
 // Cache (KEPT — speeds up repeated identical prompts within a session)
@@ -294,6 +298,16 @@ export async function classifyPrompt(opts = {}) {
 
   const str = String(prompt || '');
 
+  // v5.12.0: specialist-routing override. `!gp-force:` is an ORTHOGONAL axis to
+  // tier — it does not change the model/tier decision, it tells the
+  // specialist-routing-guard to allow a generic (general-purpose) dispatch for
+  // build-class work this turn. Computed once here and carried on EVERY return
+  // path (incl. cache hits, which never store it) so prism-prompt-tier-router →
+  // toSentinel → the guard can read sentinel.force_gp. (red-team C1: a
+  // PreToolUse/Agent hook cannot see the turn prompt; the flag must ride the
+  // sentinel, exactly as force_opus does.)
+  const forceGp = str.includes('!gp-force:');
+
   // 1. Force-opus override — highest priority.
   const forceOpus = str.includes('!opus-force:');
   if (forceOpus) {
@@ -303,6 +317,7 @@ export async function classifyPrompt(opts = {}) {
       rationale: 'force-opus override',
       source: 'force-opus',
       force_opus: true,
+      force_gp: forceGp,
       cache_key: '',
     };
   }
@@ -316,6 +331,7 @@ export async function classifyPrompt(opts = {}) {
       rationale: `orchestration command ${matched}`,
       source: 'allowlist',
       force_opus: false,
+      force_gp: forceGp,
       cache_key: '',
     };
   }
@@ -331,6 +347,7 @@ export async function classifyPrompt(opts = {}) {
         rationale: hit.rationale || '(cached)',
         source: 'cache',
         force_opus: false,
+        force_gp: forceGp,
         cache_key: key,
       };
     }
@@ -344,6 +361,7 @@ export async function classifyPrompt(opts = {}) {
     rationale: floor.rationale,
     source: 'keyword-floor',
     force_opus: false,
+    force_gp: forceGp,
     cache_key: key,
   };
   if (!skipCache) {
@@ -371,6 +389,7 @@ export function toSentinel(classification, extra = {}) {
     h: 0, s: 0, o: 0,
     compound: false,
     force_opus: !!classification.force_opus,
+    force_gp: !!classification.force_gp,
     dispatched: false,
     summon_panel: !!classification.summon_panel,
     rationale: classification.rationale || '',

@@ -1,0 +1,47 @@
+{
+  "_comment": "PRISM skill-domain map (v5.12.0) — rubric-ONLY registry consumed by the Agent Quality Gate (hooks/prism-agent-quality-gate.mjs) and prism-freshness-sweep capability-staleness. It holds ONLY the quality-bar data that does not already live in roster.json: per-domain recommended top-tier skills, external research sources, recommended tools/MCPs, cross-cutting depth references a best-in-class builder needs, and the minimum research tier for a role:builder agent (1 = external/NotebookLM-grounded best; 3 = codebase-only). The skill<->domain mapping itself is ALSO derivable from roster.skills[].domains + roster.domain_groups; this file is the authoritative source for the rubric bits. Maintained as part of /prism-update. Edit to add domains as the bench grows.",
+  "_schema": {
+    "<domain-key>": {
+      "skills": ["recommended top-tier skill names (matched against the agent skills: frontmatter + body)"],
+      "research_sources": ["external authorities a Tier-1 agent should be grounded in"],
+      "tools": ["recommended installed Tier-1 tools / MCPs for the domain"],
+      "depth_refs": ["cross-cutting reference topics a best-in-class builder must cover (grepped in the agent body)"],
+      "min_research_tier_for_builder": 1
+    }
+  },
+  "frontend": {
+    "skills": ["ui-ux-pro-max", "frontend-design"],
+    "research_sources": ["WCAG 2.2 AA", "NN/g SPA + wizard UX", "Baymard forms", "web.dev Core Web Vitals", "React 18 concurrent", "Tailwind best practices"],
+    "tools": ["@playwright/mcp"],
+    "depth_refs": ["accessibility", "performance", "responsive", "forms"],
+    "min_research_tier_for_builder": 1
+  },
+  "backend": {
+    "skills": ["supabase"],
+    "research_sources": ["Django/DRF docs", "REST/HTTP semantics", "OWASP API Security Top 10", "12-factor"],
+    "tools": [],
+    "depth_refs": ["authentication", "validation", "pagination", "error-handling"],
+    "min_research_tier_for_builder": 1
+  },
+  "database": {
+    "skills": ["supabase-postgres-best-practices"],
+    "research_sources": ["Postgres docs", "use-the-index-luke", "Supabase Postgres best practices"],
+    "tools": [],
+    "depth_refs": ["indexing", "migration", "transaction", "normalization"],
+    "min_research_tier_for_builder": 1
+  },
+  "scraping": {
+    "skills": ["firecrawl-agent", "firecrawl-scrape"],
+    "research_sources": ["robots.txt / crawl ethics", "anti-bot patterns", "structured-extraction schemas"],
+    "tools": ["firecrawl"],
+    "depth_refs": ["selectors", "pagination", "rate-limiting", "extraction-schema"],
+    "min_research_tier_for_builder": 1
+  },
+  "data-pipeline": {
+    "skills": [],
+    "research_sources": ["ELT vs ETL patterns", "idempotent ingestion", "data-quality / contracts"],
+    "tools": [],
+    "depth_refs": ["idempotency", "backfill", "schema-evolution", "observability"],
+    "min_research_tier_for_builder": 1
+  }
+}

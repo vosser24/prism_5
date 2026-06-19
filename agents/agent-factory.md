@@ -76,7 +76,12 @@ re-doing the research.
 ### Constraints
 
 - Additive only — does NOT touch the standard creation flow below.
-- Does NOT modify roster.json schema (all needed fields already exist).
+- Does NOT modify roster.json schema (all needed fields already exist). NOTE
+  (v5.12.0): the Agent Quality Gate added per-agent quality metadata
+  (`role`, `research_tier`, `quality_score`, `skills_wired`, `last_enriched_at`,
+  `last_synced_at`). Populate them on create/upgrade where known; the gate
+  (hooks/prism-agent-quality-gate.mjs) independently scores the written agent and
+  writes a scorecard regardless, so omission is flagged, not silent.
 - MUST set `source: "from-notebook"` so the entry is distinguishable from
   factory-created (`source: "agent-factory"`) and reconcile-created
   (`source: "reconcile"`).
