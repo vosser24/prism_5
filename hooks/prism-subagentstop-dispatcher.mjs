@@ -14,14 +14,19 @@ async function main() {
   let payload = {};
   try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { process.exit(0); }
 
-  const [subStop, panel, oob] = await Promise.all([
+  const [subStop, panel, oob, dedup] = await Promise.all([
     imp('prism-subagent-stop.mjs'), imp('prism-panel-guard.mjs'), imp('prism-phase-1-5-oob.mjs'),
+    imp('prism-dispatch-dedup-guard.mjs'),
   ]);
 
   const calls = [
     subStop && typeof subStop.run === 'function' ? subStop.run(payload) : null,
     panel && typeof panel.runSubagentStop === 'function' ? panel.runSubagentStop(payload) : null,
     oob && typeof oob.run === 'function' ? oob.run(payload) : null,
+    // Dispatch-dedup ledger close — marks the matching in-flight entry done so an
+    // identical re-dispatch is allowed again. Cannot block (always exit 0); the
+    // 12-min TTL backstops a missed close.
+    dedup && typeof dedup.runSubagentStop === 'function' ? dedup.runSubagentStop(payload) : null,
   ].map(p => p ? Promise.resolve(p).catch(() => ({ exit: 0, stdout: '', stderr: '' })) : Promise.resolve({ exit: 0, stdout: '', stderr: '' }));
 
   const results = await Promise.all(calls);

@@ -49,8 +49,8 @@ const WIRING = {
     'prism-hook.mjs', 'prism-prompt-tier-router.mjs', 'prism-memory-save-nudge.mjs', 'prism-skill-trigger-guard.mjs',
   ],
   'prism-pretooluse-dispatcher.mjs': [
-    'prism-safety.mjs', 'prism-prepush-review.mjs', 'prism-mutation-guard.mjs', 'prism-parent-dispatch-guard.mjs',
-    'prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-task-tier-advisor.mjs',
+    'prism-safety.mjs', 'prism-bash-hang-guard.mjs', 'prism-prepush-review.mjs', 'prism-mutation-guard.mjs', 'prism-parent-dispatch-guard.mjs',
+    'prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-dispatch-dedup-guard.mjs', 'prism-task-tier-advisor.mjs',
   ],
   'prism-posttooluse-dispatcher.mjs': [
     'prism-kb-autosync.mjs', 'prism-agent-write-register.mjs', 'prism-skill-write-register.mjs',
@@ -60,7 +60,7 @@ const WIRING = {
     'prism-clean-nudge-flag.mjs', 'prism-git-clean-nudge.mjs', 'prism-acl-sessionend.mjs',
   ],
   'prism-subagentstop-dispatcher.mjs': [
-    'prism-subagent-stop.mjs', 'prism-panel-guard.mjs', 'prism-phase-1-5-oob.mjs',
+    'prism-subagent-stop.mjs', 'prism-panel-guard.mjs', 'prism-phase-1-5-oob.mjs', 'prism-dispatch-dedup-guard.mjs',
   ],
   // session-start is not a fan-out dispatcher but it wires a leaf hook directly.
   'prism-session-start.mjs': ['prism-acl-notify.mjs'],

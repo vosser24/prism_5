@@ -39,9 +39,9 @@ const imp = (f) => import(pathToFileURL(join(HOOKS, f)).href).catch(() => null);
 
 const PARENT = 'prism-parent-dispatch-guard.mjs';
 const ROUTES = {
-  Bash:         ['prism-safety.mjs', 'prism-prepush-review.mjs', 'prism-mutation-guard.mjs', PARENT],
+  Bash:         ['prism-safety.mjs', 'prism-bash-hang-guard.mjs', 'prism-prepush-review.mjs', 'prism-mutation-guard.mjs', PARENT],
   PowerShell:   [PARENT],
-  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', PARENT],
+  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-dispatch-dedup-guard.mjs', PARENT],
   TaskCreate:   [PARENT, 'prism-task-tier-advisor.mjs'],
   Edit:         [PARENT],
   Write:        [PARENT],

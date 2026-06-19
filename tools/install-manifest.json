@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "5.10.1",
+  "prism_version": "5.11.0",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -21,7 +21,9 @@
     {"src": "hooks/prism-skill-equip-nudge.mjs", "dst": "hooks/prism-skill-equip-nudge.mjs", "executable": true},
     {"src": "hooks/prism-clean-nudge-flag.mjs", "dst": "hooks/prism-clean-nudge-flag.mjs", "executable": true},
     {"src": "hooks/prism-config-guard.mjs", "dst": "hooks/prism-config-guard.mjs", "executable": true},
+    {"src": "hooks/prism-bash-hang-guard.mjs", "dst": "hooks/prism-bash-hang-guard.mjs", "executable": true},
     {"src": "hooks/prism-dispatch-cap.mjs", "dst": "hooks/prism-dispatch-cap.mjs", "executable": true},
+    {"src": "hooks/prism-dispatch-dedup-guard.mjs", "dst": "hooks/prism-dispatch-dedup-guard.mjs", "executable": true},
     {"src": "hooks/prism-git-clean-nudge.mjs", "dst": "hooks/prism-git-clean-nudge.mjs", "executable": true},
     {"src": "hooks/prism-hook.mjs", "dst": "hooks/prism-hook.mjs", "executable": true},
     {"src": "hooks/prism-kb-autosync.mjs", "dst": "hooks/prism-kb-autosync.mjs", "executable": true},
