@@ -1,0 +1,182 @@
+{
+  "safety/benign": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "safety/rm-rf-root": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)"
+  },
+  "safety/rm-rf-subdir": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "safety/drop-table": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "DROP statement blocked by PRISM safety gate"
+  },
+  "safety/curl-bash": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "pipe-to-shell (curl|bash) blocked by PRISM safety gate"
+  },
+  "safety/force-push": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "Force push blocked by PRISM safety gate"
+  },
+  "safety/warn-mainpush": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"PRISM WARNING: Pushing to protected branch. Verify this is intentional.\"}",
+    "stderr": ""
+  },
+  "safety/quoted-token": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "prepush/push": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"PRISM: about to push branch 'golden-fixture-branch'. Run /code-review and /security-review first; approve here to proceed.\",\"additionalContext\":\"PRISM pre-push nudge: any push to a shared remote benefits from /code-review + /security-review against the diff. To bypass this nudge in trusted contexts: set PRISM_DISABLE_PREPUSH_NUDGE=1, or write ~/.claude/.prism-flags/review-done__<key>.json with {branch:'golden-fixture-branch'}.\"}}",
+    "stderr": ""
+  },
+  "prepush/dry-run": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "prepush/non-push": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "prepush/disabled": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "mutation/write-hard": {
+    "exit": 2,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM MUTATION-GUARD: Bash/PowerShell file-write detected in parent (Opus) context.\\nPattern: \\\\b(Set-Content|Add-Content|Out-File|Export-Csv|Export-Clixml\\nThis was blocked because parent-context writes via Bash/PowerShell (a) bypass the orchestrator pattern and (b) on Windows introduce UTF-8 BOM corruption with the default PowerShell writers.\\nFixes (pick one):\\n  1. Use the Edit/Write/MultiEdit tool directly — they emit clean UTF-8 and are NOT blocked in the parent (v5.4.0).\\n  2. Dispatch to a subagent: Agent({subagent_type:'general-purpose', model:'sonnet', prompt:'<spec for the edit>'}).\\n  3. Override for this turn: prefix your user prompt with !opus-force:.\\n  4. Disable the guard for the whole session: set PRISM_MUTATION_GUARD=off in settings.local.json env.\\n\\nWINDOWS BOM WARNING: PowerShell `Set-Content`, `Out-File`, and `>` redirection\\ndefault to UTF-8 **with BOM** (EF BB BF prefix). Git diff will show a stray\\ncharacter at file start; many parsers (YAML, JSON schemas, some linters) choke.\\nSafe alternatives:\\n  • Use PRISM's Write/Edit tool directly (no BOM).\\n  • Or append `-Encoding UTF8NoBOM` to Set-Content/Out-File.\\n  • Or: [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))\"}}",
+    "stderr": ""
+  },
+  "mutation/write-soft": {
+    "exit": 0,
+    "stdout": "PRISM MUTATION-GUARD: Bash/PowerShell file-write detected in parent (Opus) context.\nPattern: \\b(Set-Content|Add-Content|Out-File|Export-Csv|Export-Clixml\nThis was blocked because parent-context writes via Bash/PowerShell (a) bypass the orchestrator pattern and (b) on Windows introduce UTF-8 BOM corruption with the default PowerShell writers.\nFixes (pick one):\n  1. Use the Edit/Write/MultiEdit tool directly — they emit clean UTF-8 and are NOT blocked in the parent (v5.4.0).\n  2. Dispatch to a subagent: Agent({subagent_type:'general-purpose', model:'sonnet', prompt:'<spec for the edit>'}).\n  3. Override for this turn: prefix your user prompt with !opus-force:.\n  4. Disable the guard for the whole session: set PRISM_MUTATION_GUARD=off in settings.local.json env.\n\nWINDOWS BOM WARNING: PowerShell `Set-Content`, `Out-File`, and `>` redirection\ndefault to UTF-8 **with BOM** (EF BB BF prefix). Git diff will show a stray\ncharacter at file start; many parsers (YAML, JSON schemas, some linters) choke.\nSafe alternatives:\n  • Use PRISM's Write/Edit tool directly (no BOM).\n  • Or append `-Encoding UTF8NoBOM` to Set-Content/Out-File.\n  • Or: [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))",
+    "stderr": ""
+  },
+  "mutation/nonwrite": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "mutation/off": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "mutation/subagent": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "model/haiku-soft": {
+    "exit": 0,
+    "stdout": "PRISM MODEL GUARD: spawning general-purpose without model override. HAIKU task detected (gm) — add model:'haiku' to save ~15x vs. Opus.",
+    "stderr": ""
+  },
+  "model/explicit": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "model/orchestrator": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "model/strict-deny": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM MODEL GUARD: spawning general-purpose without model override. HAIKU task detected (gm) — add model:'haiku' to save ~15x vs. Opus. Retry with explicit model:'haiku'.\"}}",
+    "stderr": ""
+  },
+  "parallel/first": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parallel/off": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/agent-mark": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/bash-deny": {
+    "exit": 2,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM DISPATCH-GUARD: Bash denied in parent context — this turn routed to haiku-tier. Reason: gm\\nIf you are the PARENT (main loop): dispatch the work first via Agent({subagent_type:'general-purpose', model:'haiku', prompt:'<task>'}) or TaskCreate/plan. After one dispatch, subsequent parent tools are allowed.\\nIf you are a DISPATCHED SUBAGENT: you cannot call Agent (dispatch is main-loop-only — it is denied / not exposed to you). Read-only tools (Read/Grep/Glob/WebFetch/WebSearch) are already allowed for you — use them, or a provably read-only Bash probe, and return findings to the main loop for any mutation.\\nOverride: prefix the user prompt with !opus-force: (or set PRISM_DISPATCH_GUARD=off).\"}}",
+    "stderr": ""
+  },
+  "parent/bash-ro": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/dispatched": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/panel-deny": {
+    "exit": 2,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM DISPATCH-GUARD: Write denied — this is a PANEL-SUMMONING turn (opus tier, summon_panel=true). Reason: gm\\nIf you are the PARENT (main loop): spawn @master-orchestrator as your next action — Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'}). It assembles the expert panel, chairs adversarial review, and returns a synthesized plan for you to relay. Direct Write/Edit/Bash in parent context stays blocked on panel turns until the orchestrator has been invoked.\\nIf you are a DISPATCHED SUBAGENT: you cannot call Agent (dispatch is main-loop-only — it is denied / not exposed to you), so do NOT try to spawn the orchestrator. Read-only tools (Read/Grep/Glob/WebFetch/WebSearch) are already allowed for you — use them, or a provably read-only Bash probe, and return your findings or a dispatch plan to the main loop for any mutation.\\nOverride: prefix the user prompt with !opus-force: (skips panel, uses direct Opus) or set PRISM_DISPATCH_GUARD=off.\"}}",
+    "stderr": ""
+  },
+  "parent/read-allow": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/subagent": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/off": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "parent/nested-deny": {
+    "exit": 2,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM NESTED-DISPATCH GUARD: Agent() denied — you are a dispatched subagent, and PRISM dispatch is MAIN-LOOP-ONLY. A worker that spawns its own sub-agents stalls the tree (throttled / near-zero spawns; live-repro 98-minute hang).\\nDo the work INLINE here (Read / Grep / Edit / Bash directly). If you genuinely need parallel help, return your findings or a dispatch plan to the main loop and let IT fan out — teammates coordinate via SendMessage, they do not spawn.\\nOverride: set PRISM_NESTED_DISPATCH_GUARD=off (or PRISM_DISPATCH_GUARD=off).\"}}",
+    "stderr": ""
+  },
+  "parent/nested-off": {
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "tier/opus-hard": {
+    "exit": 0,
+    "stdout": "PRISM TIER task \"redesign architecture\": opus (source=plan-annotation; plan annotation [opus])\nPRISM: task description looks terse — durable recall needs self-contained detail (acceptance criteria, target files, context).",
+    "stderr": ""
+  },
+  "tier/opus-hard-noann": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"PRISM TIER task \\\"redesign\\\": OPUS detected (gm). Hard mode requires either metadata.tier_ack:\\\"opus\\\" OR a \\\"[opus]\\\" plan annotation in the task description. Retry with one of those, or split into smaller sub-tasks.\"}}",
+    "stderr": ""
+  },
+  "tier/haiku-soft": {
+    "exit": 0,
+    "stdout": "PRISM TIER task \"rename var\": haiku — consider Agent({model:'haiku'}) (~15x cheaper than Opus; source=sentinel-gm; gm)\nPRISM: task description looks terse — durable recall needs self-contained detail (acceptance criteria, target files, context).",
+    "stderr": ""
+  }
+}

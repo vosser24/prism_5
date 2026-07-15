@@ -1,0 +1,16 @@
+{"kind":"1-5","sha":"a1b2c3d4e5f6a7b8","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:00:00Z"}
+{"kind":"1-5","sha":"b2c3d4e5f6a7b8c9","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:01:00Z"}
+{"kind":"1-5","sha":"c3d4e5f6a7b8c9d0","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:02:00Z"}
+{"kind":"1-5","sha":"d4e5f6a7b8c9d0e1","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:03:00Z"}
+{"kind":"1-5","sha":"e5f6a7b8c9d0e1f2","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:04:00Z"}
+{"kind":"1-5","sha":"f6a7b8c9d0e1f2a3","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:05:00Z"}
+{"kind":"1-5","sha":"a7b8c9d0e1f2a3b4","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:06:00Z"}
+{"kind":"1-5","sha":"b8c9d0e1f2a3b4c5","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:07:00Z"}
+{"kind":"1-5","sha":"c9d0e1f2a3b4c5d6","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:08:00Z"}
+{"kind":"1-5","sha":"d0e1f2a3b4c5d6e7","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:09:00Z"}
+{"kind":"1-5","sha":"e1f2a3b4c5d6e7f8","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:10:00Z"}
+{"kind":"1-5","sha":"f2a3b4c5d6e7f8a9","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:11:00Z"}
+{"kind":"1-5","sha":"a3b4c5d6e7f8a9b0","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:12:00Z"}
+{"kind":"1-5","sha":"b4c5d6e7f8a9b0c1","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:13:00Z"}
+{"kind":"1-5","sha":"c5d6e7f8a9b0c1d2","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:14:00Z"}
+{"kind":"1-5","sha":"d6e7f8a9b0c1d2e3","specialist_name":"@foo","summary":{"total":5,"un_cited":3,"rejected":0},"completed_at":"2026-05-20T10:15:00Z"}

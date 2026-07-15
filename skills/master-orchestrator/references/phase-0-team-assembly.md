@@ -1,0 +1,246 @@
+---
+name: phase-0-team-assembly
+description: Stakes auto-detection + team assembly + registry consultation + agent hiring flow + staleness checkpoints + quick-refresh protocol + MCP hints + v4.4 workshop tagging (requires_phase_1_5 lookup).
+---
+
+# PHASE 0: Stakes + Team Assembly
+
+## Auto-detect Stakes
+HIGH STAKES (mandatory checkpoints): production, database migration, schema,
+architecture, financial/pricing, contract/legal, security, external APIs,
+data deletion, client-facing, multi-system, new agent creation.
+STANDARD: internal tooling, docs, tests, scaffolding, exploratory.
+User overrides: "checkpoint this" → high | "run free" → standard
+
+## Panel seat sourcing (v5.x — real, reusable, LEARNING experts)
+
+**Panel trigger contract (D034, 2026-06-25):** The panel fires ONLY on explicit
+user request (`/panel`, "run the panel", EXPLICIT_PANEL_RE). It does NOT auto-fire
+on NOVEL/opus tier or on stakes patterns. On high-stakes decisions you MAY offer
+the panel in one line (plain chat, no mechanism). See SKILL.md § PANEL TRIGGER
+CONTRACT for the full soft-offer guidance.
+
+PANEL seats (PHASE 0d) are sourced differently from ordinary step-agents: each
+seat MUST be a real, rostered expert — not a persona and not a bare
+general-purpose subagent (those belong only to the role-play fast mode). For
+each seat (3–5, with distinct opposed biases):
+
+1. **Match the roster first — but a STRONG fit, not adjacency.** A roster
+   specialist may fill a seat only when it is a STRONG fit: it declares the
+   seat's SPECIFIC sub-domain in `core_domains` (not merely an adjacent parent
+   domain), is fresh (staleness rules below), and is not weak-fit-flagged.
+   **Adjacency is NOT fitness** — an SEO specialist is not a conversion/microcopy
+   specialist; a broad "ecommerce" agent is not a "Greek-market demand-forecasting"
+   specialist. STRONG fit → REUSE it (reuse amortises cost and, because experts
+   LEARN, each reuse starts sharper). Merely adjacent → treat it as a MISS (go to
+   step 2); do NOT bend it to fit.
+2. **Else create/upgrade + PERSIST — factory-first.** When no STRONG-fit
+   specialist exists, spawn `@agent-factory` to research and CREATE the vertical
+   specialist (or `--upgrade` an adjacent agent so it genuinely covers the
+   sub-domain). It registers in the roster (auto via
+   `prism-agent-write-register.mjs`) and is reusable on the next panel — never
+   ephemeral. A generic general-purpose subagent role-scoped as a persona is
+   NEVER an acceptable fill for a vertical-expertise seat in dispatch mode — that
+   is the adjacency / generic-fill defect the FACTORY-FIRST guard blocks (see
+   "Seat metadata" below).
+3. **Experts persist AND learn.** Each panel expert carries a per-project domain
+   memory: roster fields `learns: true` + `domain_memory_file` point at its
+   accumulated notes. On reuse, RECALL that memory and inject it into the seat's
+   dispatch prompt; after the task, persist the expert's "what I learned" delta
+   back to `domain_memory_file` — master-brokered (the dispatched expert cannot
+   self-persist reliably, so YOU write it).
+4. **Experts own an evolving skill toolkit.** Roster field `owned_skills` lists
+   the vertical domain skills the expert authored. Equip a worker by INJECTING
+   the named skill file into the worker's dispatch prompt (mid-session skills do
+   not hot-reload). Across sessions those skills become first-class registered
+   skills the expert keeps refining.
+
+These four points are what make the panel "real, independent, reusable experts
+by default" rather than one model role-playing several voices.
+
+**Seat metadata (so the FACTORY-FIRST guard can enforce — v5.x):** when you write
+`panel.json` for a dispatched panel (`dispatch_mode:"dispatch"`), tag each
+VERTICAL/domain-expertise seat `vertical: true` and set `specialist` to the
+rostered agent's roster key (for a just-created one also set
+`seat_source: "factory-created"`). Leave generic cross-cutting archetype seats
+(Architect, Skeptic, Security, Performance, …) untagged. `hooks/prism-panel-guard.mjs`
+then blocks (hard) or warns (soft) any `vertical: true` seat that resolves to no
+rostered specialist or to a `general-purpose` subagent — the adjacency/generic-fill
+defect. Roleplay fast mode is exempt (it is the sanctioned low-stakes escape).
+The guard enforces only the FLOOR (a durable specialist exists); the STRONG-vs-adjacent
+fit judgment is yours, per step 1 above.
+
+### Expert learning write-back (v5.x — reuse the context-adapters convention)
+
+Do NOT create a new memory tree. An expert's `domain_memory_file` IS its existing
+per-project accumulated-knowledge file:
+`~/.claude/agents/<expert>/experience/context-adapters/<project-slug>.md` — the
+path already read at that expert's STARTUP.
+
+- **Recall (on reuse):** before dispatching a returning expert, read that file and
+  inject it into the seat's prompt (belt-and-suspenders with the expert's own
+  STARTUP read).
+- **Write-back (after the task):** APPEND a dated "what I learned about
+  <project>" delta to that file via Edit/Write — master-brokered (the dispatched
+  expert cannot self-persist). On the first write, set the roster entry's
+  `learns: true` and `domain_memory_file` to that path.
+- **Across sessions:** because the file lives in the expert's own dir and is read
+  at STARTUP, the NEXT session's dispatch of that expert automatically carries the
+  accumulated knowledge — this is the "experts learn" loop, with zero new tooling.
+
+### Expert domain skills — author, evolve, equip (v5.x)
+
+Beyond memory, each expert owns a toolkit of vertical, task-specific SKILLS it
+authors and refines (roster `owned_skills`). Mechanics:
+
+- **Author:** during its dispatch an expert may invoke `skill-creator` (or hand-
+  author a `SKILL.md`) to capture a reusable, vertical procedure for its domain.
+  Authored skills live in the PROJECT skills root
+  `<project>/.claude/skills/<expert>-<skill>/SKILL.md` (namespaced by owning
+  expert). Record the skill name in the expert's roster `owned_skills`.
+- **Evolve:** on later sessions the expert refines its skills via skill-creator's
+  modify/improve path — the toolkit compounds, like its memory.
+- **Equip (same session):** mid-session skills do NOT hot-reload (STEP 0c), so to
+  equip a worker now the master INJECTS the authored `SKILL.md` path/content into
+  the worker's dispatch prompt; the worker Reads + follows it.
+- **Equip (next session):** after a reload the authored skill is a first-class
+  REGISTERED, discoverable skill — the worker can invoke it by name normally.
+
+This is the "reusable & evolving skills, assigned to the workers" loop: the expert
+creates the vertical knowledge, the master equips the worker that executes it.
+
+## Team Assembly
+For each step: identify domain → search PHASE 0a inventory → assess fitness
+
+**Registry consultation (NEW in v2.1.23 — do this FIRST):**
+
+Before evaluating whether to hire an agent, check the tools-registry:
+
+Read ~/.claude/skills/prism-plan/references/tools-registry.md
+
+For the current step's domain, check:
+1. Tier 1 tool (auto-installed by /prism-bootstrap) handles this?
+   → Route step to that tool directly. No agent needed.
+   → Example: "write tests with TDD" → use superpowers
+   → Example: "design landing page" → use ui-ux-pro-max
+
+2. Tier 2 tool handles this but isn't installed?
+   → Examples: "review Python code" → ECC @python-reviewer (if installed)
+               "automate a browser flow" → browser-use (if installed)
+   → If the user has the tool installed: route step there.
+   → If not: present "Install {tool} for this step?" via /prism-recommend.
+   → If decline: for a WORKFLOW/TOOLING need, fall through to the agent hiring
+     flow with a cheap subagent (Sonnet with explicit review criteria — don't
+     default to Opus). For a VERTICAL/domain-expertise need, a generic cheap
+     subagent is NOT an acceptable substitute — go factory-first (create the
+     durable specialist) per the panel-seat sourcing rule above.
+
+3. Domain-expertise need (not workflow/tooling)?
+   → Agent hiring flow is correct. Proceed with existing logic.
+
+4. Workflow/tooling need NOT in registry?
+   → Spawn @agent-factory --skill-research to find external tool
+   → Only create custom agent if research yields no viable option
+
+This prevents creating agents for capabilities better external tools provide
+(compose-only stance: never replicate what external tools do well).
+
+**Free-research pre-check (v5.x) — before ANY @agent-factory dispatch that CREATES a new agent:**
+agent-factory's $0 research engine is NotebookLM; without it the factory silently
+falls back to Opus (~$1-3/agent). Because the factory runs as a subagent (which
+cannot prompt the human), this offer MUST happen here in the parent turn:
+- Detect by EXECUTION, not PATH: run `notebooklm --version` (fall back to
+  `python -m notebooklm --version`). Do NOT use `command -v notebooklm` — on Windows
+  AppLocker/WDAC domain machines PATH resolves even when the `.exe` is blocked, so
+  `command -v` is a FALSE POSITIVE (v5.0 stress-test finding; matches agent-factory's
+  own execution-based check).
+- If ABSENT (neither execution form succeeds) → use `AskUserQuestion`: "NotebookLM (free, $0 agent research) is not
+  installed. Install it now for $0 research (`pip install notebooklm-py[browser]`
+  + `notebooklm login`, or run `/prism-deps`), or proceed with Opus (~$1-3)?"
+  On accept: install (reuse `/prism-deps`'s protocol), confirm `notebooklm list`,
+  then dispatch the factory. On decline: dispatch anyway (Tier 3, user-informed).
+  **HEADLESS MODE guard (graceful-degradation mitigation, D025):** If running
+  headless (`CLAUDE_CODE_HEADLESS=1` or a `-p` invocation), NEVER call
+  `AskUserQuestion` — it is denied in headless mode and wastes a turn (can cause
+  a null result). Instead default to Tier 3 (proceed with Opus), state the choice
+  in visible output, and annotate `(auto-approved, headless)`.
+- If PRESENT → proceed directly.
+(Skip this pre-check for `--from-notebook` wiring, which already implies NotebookLM.)
+
+**Factory-hire test also governs PHASE-1 workers (v5.7.4).** The factory-first
+principle below — and the panel-seat enforcement above — is NOT limited to PHASE
+0d panel seats. It also applies to **PHASE-1 execution workers**: before
+dispatching `general-purpose` workers to *do* durable DOMAIN research/design,
+apply the 3-question **factory-hire test** (recurring surface? durable output?
+citation-grounded knowledge? → ≥2 yes = manufacture a specialist via
+`@agent-factory`, don't burn tokens ad-hoc). Single source of truth: SKILL.md
+DISPATCH CONTRACT step 1. The panel-guard only enforces panel.json seats; PHASE-1
+worker dispatch is reinforced by the soft `PRISM_FACTORY_HINT` nudge instead.
+
+**Agent hiring flow:**
+- Agent missing → spawn @agent-factory for creation, wait, hire.
+  Once @agent-factory is invoked, the factory's own "Decision tree:
+  agent-creation vs skill-research" (see `agents/agent-factory.md`,
+  end of the `--skill-research` section) picks the mode:
+  `--from-notebook <id>` if an orphan notebook exists for the domain,
+  `--skill-research` if the need is workflow/tooling, standard create
+  flow if the need is domain expertise. (D007 locks this two-layer
+  split as the v4.1 architecture — see
+  `docs/prism/adjudications/D007-agent-creator-vs-factory.md`.)
+- Agent exists → CHECK STALENESS before hiring:
+
+  Read agent's roster entry: last_upgraded or created date.
+  Calculate days_since_update.
+
+  If days_since_update < 90:
+    → DIRECT HIRE. Knowledge is fresh enough.
+
+  If days_since_update 90-180:
+    → HIRE but FLAG: "Agent @{name} was last updated {N} days ago.
+      Proceeding with current knowledge. If results seem outdated,
+      say 'upgrade @{name}' and I'll refresh their expertise."
+
+  If days_since_update > 180:
+    → STALENESS CHECKPOINT. Present to user before hiring:
+      "Agent @{name}'s knowledge is {N} months old. The {domain}
+       domain may have evolved significantly. Options:
+       A. Use as-is (risk: outdated methods/tools)
+       B. Quick refresh — factory researches 'what changed in {domain}
+          since {last_date}', APPENDS new findings (fast, keeps history)
+       C. Full rebuild — factory researches from scratch (thorough, expensive)
+       Recommend B for most domains. Recommend C if you suspect fundamental
+       changes (new regulations, paradigm shifts, major tool replacements)."
+
+  If agent exists but is only an ADJACENT fit — it does not declare THIS task's
+  specific sub-domain in core_domains (the STRONG-fit test in panel-seat sourcing),
+  or it needs domains not yet in its core_domains:
+    → spawn @agent-factory for a targeted upgrade (or a new specialist), wait, hire.
+      Adjacency is not fitness — do not hire an adjacent agent for a vertical seat.
+
+**Quick refresh protocol (Option B):**
+  Factory receives: agent name + "what changed since {date}" scope
+  Factory uses three-tier research focused ONLY on updates
+  Factory APPENDS findings to agent's references/ (never overwrites)
+  Agent carries forward all prior knowledge + new updates
+  Cost: ~$0.05 (NotebookLM) or ~$0.30 (Opus)
+
+When delegating to agents, include MCP hints:
+  "MCP tools available: postgresql (query, get_schema). Use these
+   instead of writing bash scripts for database access."
+This makes agents faster — direct MCP access vs writing and running scripts.
+
+## Workshop tagging (v4.4 NEW)
+
+When you hire an agent (after staleness check passes), check the agent's roster entry for these v4.4 fields:
+
+- `requires_phase_1_5: true` — this agent's output is gated by the OOB PHASE 1.5 reviewer. Hook fires automatically at SubagentStop; no master action needed at hire time.
+- `requires_phase_1_5_block: true` — synchronous block-mode. Master MUST pause after this subagent returns until verdict completes. Surface "Pausing ~15s for OOB review" to the user before the irreversible next step. Default: false (async).
+
+If both fields are absent or false: agent runs without OOB review (legacy behavior, no change).
+
+When tagging a NEW agent during agent-factory creation, default to `requires_phase_1_5: false`. Promote to `true` only when:
+- the agent makes load-bearing technical claims (e.g., code-reviewer, security-architect, performance-specialist), OR
+- the agent's output drives an irreversible downstream action (e.g., schema-migrator), OR
+- past corrections suggest evidence-discipline issues.
+
+Block-mode (`requires_phase_1_5_block: true`) is reserved for the irreversible-next-step case only — it adds ~15s latency per dispatch.

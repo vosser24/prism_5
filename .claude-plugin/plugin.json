@@ -1,0 +1,139 @@
+{
+  "name": "prism",
+  "version": "6.3.0",
+  "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 25 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
+  "author": {
+    "name": "vosser24",
+    "url": "https://github.com/vosser24"
+  },
+  "homepage": "https://github.com/vosser24/prism_5",
+  "repository": "https://github.com/vosser24/prism_5",
+  "documentation": "https://github.com/vosser24/prism_5/blob/main/README.md",
+  "license": "MIT",
+  "category": "orchestration",
+  "keywords": [
+    "claude-code",
+    "orchestration",
+    "cost-control",
+    "tier-routing",
+    "haiku",
+    "sonnet",
+    "opus",
+    "hooks",
+    "agents",
+    "skills",
+    "parallel-dispatch",
+    "panel-review"
+  ],
+  "example_prompts": [
+    "plan a multi-step refactor across this codebase",
+    "review the pending changes for correctness and security",
+    "summon the panel for an adversarial review of this approach",
+    "update prism"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-session-start.mjs\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-userpromptsubmit-dispatcher.mjs\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Agent|TaskCreate|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-pretooluse-dispatcher.mjs\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-posttooluse-dispatcher.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-subagent-start.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-subagentstop-dispatcher.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-session-end.mjs\""
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-config-guard.mjs\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-precompact-nudge-flag.mjs\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prism-sessionend-dispatcher.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

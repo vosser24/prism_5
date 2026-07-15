@@ -1,0 +1,68 @@
+# Secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+credentials.json
+*.pfx
+
+# Stray runtime dirs from path-resolution bugs (e.g. undefined/.claude/)
+undefined/
+
+# Local / user overlays (runtime convention)
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/.prism-state.json
+.claude/.prism-turn-state.json
+.claude/scheduled_tasks.lock
+.claude/references/
+
+# Legacy + local-only dev scratch (kept on disk, not distributed)
+legacy/
+/_test_*.sh
+
+# Internal dev/process record — kept on disk locally, NOT distributed
+/docs/
+/tasks/
+/plans/
+
+# Dev cruft
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Stray shell-redirect artifacts — a mis-parsed `2>` / `> 2` drops a 0-byte
+# file named `1` or `2` in the repo root. Ignore them so they never get committed.
+/1
+/2
+
+# Backup directories (install-merge generates these under ~/.claude/
+# but if someone runs the installer with a messed-up HOME they could
+# land in the repo root)
+backups/
+
+# Generated test reports (tests/v3/run-all.sh output — one per run)
+tests/v3/v3-report-*.md
+tests/v3/v3-*.log
+
+# A/B bench harness output (local-only, run artifacts + logs)
+tests/v3/bench/
+
+# Staged/un-wired manual probe (dev-only, personal-path runbook — see its README)
+tests/v3/probe/
+
+# --- PRISM ---
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/.prism-state.json
+.claude/.prism-turn-state.json
+.claude/.prism-telemetry-rollup.json
+.claude/tools-scan.json
+# recall-hardening v6.2.0 (C5): SessionEnd task-carryover pointer, read by
+# SessionStart's TASK-RECALL — project-local runtime state, never committed.
+.claude/.prism-open-tasks.json
+# Catch-all for any other project-local `.prism-*` runtime state file under
+# .claude/ (explicit entries above are kept too, for self-documentation).
+.claude/.prism-*
+# --- end PRISM ---

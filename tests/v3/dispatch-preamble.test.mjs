@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+// Tests for hooks/prism-dispatch-preamble.mjs (Package: dispatch preamble).
+//
+// PRISM already mechanically appends an anti-over-delegation footer to every
+// Agent() worker prompt (prism-anti-nesting-inject.mjs). This hook adds a
+// SECOND clause set (write-to-disk / no-bug-is-valid / reproduce-first /
+// artifacts-not-prose) via the same updatedInput mechanism.
+//
+// Proves:
+//   (a) the clauses land in the rewritten prompt for a fresh Agent() call —
+//       both in isolation (unit-level run()) AND through the REAL dispatcher
+//       subprocess with the sibling anti-nesting hook also registered, which
+//       is the case that actually matters: the dispatcher's updatedInput
+//       merge is first-writer-wins PER KEY on a same-key conflict, and both
+//       hooks target tool_input.prompt — so this also proves the composition
+//       fix (calling the sibling's run() instead of racing it) actually works
+//       end-to-end, not just in a mocked unit test.
+//   (b) idempotency — no double-append when clauses already present (both
+//       re-dispatching an already-augmented prompt, and a hand-pasted prompt
+//       that already carries equivalent doctrine text).
+//   (c) the kill-switch (PRISM_DISPATCH_PREAMBLE=off) disables it, and does
+//       NOT interfere with the sibling anti-nesting hook still firing.
+//
+// Run: node tests/v3/dispatch-preamble.test.mjs
+
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const HOOKS = join(__dirname, '..', '..', 'hooks');
+const DISPATCHER = join(HOOKS, 'prism-pretooluse-dispatcher.mjs');
+const HOOK = join(HOOKS, 'prism-dispatch-preamble.mjs');
+
+let pass = 0, fail = 0;
+function ok(name) { pass++; console.log(`  PASS  ${name}`); }
+function bad(name, msg) { fail++; console.log(`  FAIL  ${name}\n        ${msg}`); }
+function check(name, cond, msg) { if (cond) ok(name); else bad(name, msg || 'assertion failed'); }
+
+// ---------------------------------------------------------------------------
+// Part 1 — hook driven as a FRESH SUBPROCESS (`node hooks/prism-dispatch-
+// preamble.mjs`) for every env-dependent case. Both this hook and its sibling
+// capture their kill-switch as a MODULE-LEVEL constant read once at import
+// time (`const MODE = ...`) — correct for production, where each dispatcher
+// invocation is a fresh subprocess, but it means mutating process.env AFTER
+// this test file's own top-level `await import()` has ALREADY loaded the
+// module has no effect on that already-cached MODE. A fresh `spawnSync`
+// process is the only way to actually exercise the env-dependent branches,
+// and is also the most faithful reproduction of "a fresh Agent() call".
+// ---------------------------------------------------------------------------
+
+function runHook(payload, env = {}) {
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8', timeout: 15000, windowsHide: true,
+    env: {...process.env, ...env},
+  });
+  let parsed = null; try { parsed = JSON.parse(r.stdout); } catch {}
+  const hso = parsed && parsed.hookSpecificOutput;
+  return {
+    exit: r.status,
+    stdout: (r.stdout || '').trim(),
+    prompt: hso && hso.updatedInput && hso.updatedInput.prompt,
+  };
+}
+
+const AGENT_PAYLOAD = {
+  tool_name: 'Agent',
+  tool_input: {prompt: 'Investigate the failing checkout test.', subagent_type: 'general-purpose', description: 'investigate checkout'},
+  session_id: 'unit-test',
+};
+
+// 1a. fresh call, sibling isolated off → all 4 clauses land, exactly once
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  check('1a fresh call → updatedInput.prompt present',
+    typeof prompt === 'string' && prompt.length > 0, `stdout=${r.stdout}`);
+  const clauses = [
+    'WRITE YOUR OUTPUT TO DISK',
+    'is a VALID outcome',
+    'REPRODUCE before you fix',
+    'Report ARTIFACTS, not counters',
+  ];
+  for (const c of clauses) {
+    check(`1a clause present: "${c}"`, typeof prompt === 'string' && prompt.includes(c), `prompt=${prompt}`);
+  }
+  check('1a original prompt text preserved',
+    typeof prompt === 'string' && prompt.startsWith(AGENT_PAYLOAD.tool_input.prompt), `prompt=${prompt}`);
+  check('1a tag present exactly once',
+    typeof prompt === 'string' && (prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1,
+    `prompt=${prompt}`);
+  check('1a sibling isolated off → no anti-nesting tag',
+    typeof prompt === 'string' && !prompt.includes('[PRISM anti-nesting]'), `prompt=${prompt}`);
+}
+
+// 1b. non-Agent tool → no-op
+{
+  const r = runHook({tool_name: 'Bash', tool_input: {command: 'ls'}});
+  check('1b non-Agent tool → no-op (empty stdout)', r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// 1c. empty prompt → no-op
+{
+  const r = runHook({tool_name: 'Agent', tool_input: {prompt: '   '}});
+  check('1c empty prompt → no-op', r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// ---------------------------------------------------------------------------
+// Part 1 (b) — idempotency, sibling isolated off throughout
+// ---------------------------------------------------------------------------
+
+{
+  // Re-run on the ALREADY-augmented prompt from 1a — must not double-append.
+  const first = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const second = runHook(
+    {...AGENT_PAYLOAD, tool_input: {...AGENT_PAYLOAD.tool_input, prompt: first.prompt}},
+    {PRISM_ANTI_NESTING_INJECT: 'off'}
+  );
+  check('idempotency: re-dispatching an already-augmented prompt → no rewrite',
+    second.exit === 0 && second.stdout === '', `stdout=${second.stdout}`);
+
+  // Hand-pasted doctrine text (not produced by this hook) also suppresses
+  // re-injection of OUR clauses. With the sibling isolated off, the sibling
+  // has nothing to add either, so the whole call is a true no-op.
+  const handPasted = 'Do the task. REPRODUCE before you fix and report ARTIFACTS, not counters or prose.';
+  const third = runHook(
+    {...AGENT_PAYLOAD, tool_input: {...AGENT_PAYLOAD.tool_input, prompt: handPasted}},
+    {PRISM_ANTI_NESTING_INJECT: 'off'}
+  );
+  check('idempotency: hand-pasted equivalent doctrine (sibling off) → no rewrite',
+    third.exit === 0 && third.stdout === '', `stdout=${third.stdout}`);
+
+  // Same hand-pasted text but with the sibling ON: OUR clauses still must not
+  // double, even though the sibling legitimately fires (it sees no nesting
+  // doctrine in this text) and adds ITS OWN footer.
+  const fourth = runHook({...AGENT_PAYLOAD, tool_input: {...AGENT_PAYLOAD.tool_input, prompt: handPasted}});
+  check('idempotency: hand-pasted doctrine (sibling on) → sibling fires, ours does not double',
+    typeof fourth.prompt === 'string'
+      && fourth.prompt.includes('[PRISM anti-nesting]')
+      && (fourth.prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 0,
+    `prompt=${fourth.prompt}`);
+}
+
+// ---------------------------------------------------------------------------
+// Part 1 (c) — kill-switch, hook-level subprocess
+// ---------------------------------------------------------------------------
+
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_DISPATCH_PREAMBLE: 'off'});
+  check('kill-switch: PRISM_DISPATCH_PREAMBLE=off (hook-level) → no rewrite',
+    r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// ---------------------------------------------------------------------------
+// Part 2 — REAL dispatcher subprocess: proves composition with the sibling
+// anti-nesting hook actually survives the first-writer-wins updatedInput
+// merge (this is the case that matters — a naive same-key rewrite by each
+// hook would silently drop one footer here).
+// ---------------------------------------------------------------------------
+
+function runDispatcher(payload, envOverrides = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'prism-preamble-'));
+  mkdirSync(join(home, '.claude'), {recursive: true});
+  writeFileSync(
+    join(home, '.claude', `.prism-turn-tier-${payload.session_id || 'anon'}.json`),
+    JSON.stringify({tier: 'opus', rationale: 't', source: 't', dispatched: false})
+  );
+  try {
+    const r = spawnSync(process.execPath, [DISPATCHER], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8', timeout: 15000, windowsHide: true,
+      env: {...process.env, HOME: home, USERPROFILE: home, ...envOverrides},
+    });
+    let parsed = null;
+    try { parsed = JSON.parse(r.stdout); } catch {}
+    const hso = parsed && parsed.hookSpecificOutput;
+    return {
+      exit: r.status,
+      stdout: (r.stdout || '').trim(),
+      stderr: (r.stderr || '').trim(),
+      prompt: hso && hso.updatedInput && hso.updatedInput.prompt,
+      additionalContext: hso && hso.additionalContext,
+    };
+  } finally {
+    try { rmSync(home, {recursive: true, force: true}); } catch {}
+  }
+}
+
+{
+  const payload = {
+    tool_name: 'Agent',
+    tool_input: {prompt: 'Fix the flaky checkout test.', subagent_type: 'general-purpose', description: 'fix flaky test'},
+    session_id: 'dispatcher-composition-test',
+  };
+  const r = runDispatcher(payload);
+  check('2a dispatcher run → exit 0 (never denies)', r.exit === 0, `exit=${r.exit} stderr=${r.stderr}`);
+  check('2a dispatcher run → updatedInput.prompt present', typeof r.prompt === 'string' && r.prompt.length > 0, `stdout=${r.stdout}`);
+  check('2a BOTH footers present: dispatch-preamble tag',
+    typeof r.prompt === 'string' && r.prompt.includes('[PRISM dispatch-preamble]'), `prompt=${r.prompt}`);
+  check('2a BOTH footers present: anti-nesting tag',
+    typeof r.prompt === 'string' && r.prompt.includes('[PRISM anti-nesting]'), `prompt=${r.prompt}`);
+  check('2a original prompt preserved at the start',
+    typeof r.prompt === 'string' && r.prompt.startsWith(payload.tool_input.prompt), `prompt=${r.prompt}`);
+  check('2a each tag appears exactly once (no duplication from the merge)',
+    typeof r.prompt === 'string'
+      && (r.prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1
+      && (r.prompt.match(/\[PRISM anti-nesting\]/g) || []).length === 1,
+    `prompt=${r.prompt}`);
+}
+
+// 2b. kill-switch through the real dispatcher: dispatch-preamble off, sibling
+// anti-nesting hook still fires normally (proves no interference).
+{
+  const payload = {
+    tool_name: 'Agent',
+    tool_input: {prompt: 'Investigate the flaky login test.', subagent_type: 'general-purpose', description: 'investigate login'},
+    session_id: 'dispatcher-killswitch-test',
+  };
+  const r = runDispatcher(payload, {PRISM_DISPATCH_PREAMBLE: 'off'});
+  check('2b kill-switch (dispatcher-level): no dispatch-preamble tag',
+    !(typeof r.prompt === 'string' && r.prompt.includes('[PRISM dispatch-preamble]')), `prompt=${r.prompt}`);
+  check('2b kill-switch (dispatcher-level): sibling anti-nesting still fires',
+    typeof r.prompt === 'string' && r.prompt.includes('[PRISM anti-nesting]'), `prompt=${r.prompt}`);
+}
+
+// 2c. idempotency through the real dispatcher: re-dispatch the already-fully-
+// augmented prompt from 2a — must not double either footer.
+{
+  const payload = {
+    tool_name: 'Agent',
+    tool_input: {prompt: 'Fix the flaky checkout test.', subagent_type: 'general-purpose', description: 'fix flaky test'},
+    session_id: 'dispatcher-idempotency-test',
+  };
+  const first = runDispatcher(payload);
+  const second = runDispatcher({...payload, tool_input: {...payload.tool_input, prompt: first.prompt}});
+  check('2c dispatcher idempotency: no updatedInput on re-dispatch (or no duplication)',
+    !second.prompt
+      || ((second.prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1
+          && (second.prompt.match(/\[PRISM anti-nesting\]/g) || []).length === 1),
+    `first.prompt=${first.prompt}\nsecond.prompt=${second.prompt}`);
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

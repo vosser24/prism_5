@@ -1,0 +1,7 @@
+playwright==1.60.0
+openpyxl==3.1.5
+# greenlet pinned to the last version shipping a cp39 Windows wheel; playwright
+# leaves it unpinned and pip would otherwise pull 3.2.5 (no cp39 wheel -> source
+# build -> needs MSVC). 3.2.4 has wheels for cp39-cp313, so it fixes Python 3.9
+# without changing anything for 3.10-3.12.
+greenlet==3.2.4

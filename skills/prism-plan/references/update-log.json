@@ -1,0 +1,93 @@
+{
+  "prism_version": "6.2.0",
+  "installed_date": "2026-04-20T10:10:21.359481",
+  "last_update_check": "2026-07-13T00:00:00.000000",
+  "next_scheduled_update": "2026-07-28T00:00:00.000000",
+  "calibration_history": [],
+  "update_history": [
+    {
+      "date": "2026-07-13T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.2.0 (nested-dispatch depth hardening (D039) + fork-aware anti-nesting injection wording; memory recall self-heal (auto-heal MEMORY.md decision/lesson pointers on SessionStart + auto-generate Standing rules from Locked adjudication Rule: lines + freshness-sweep M1 backstop); task round-trip (session-end snapshots open tasks to sidecar+project pointer, session-start auto-injects TASK-RECALL re-hydrate directive); /prism-clean plans now require per-task step-by-step; anti-brevity rules for task descriptions)."
+    },
+    {
+      "date": "2026-07-06T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.1.0 (minor: always-on capability catalog at session start (D037); live-agents ledger + SendMessage support for the project-master (SubagentStart/Stop → session sidecar, anti-confabulation rule); tier→opus escalation for complex prompts decoupled from panel-firing (D038, was broken by D034 → sonnet over-selection); tier-override telemetry (override_rate); compose-first guard on agent-factory (PRISM_COMPOSE_GUARD). Fixes: dispatch-guard false-positive blocking read-only tools for dispatched subagents; F9 skill-equip nudge noise (word-boundary + top-3); resolveAgentFile relative-path orphan false-positive; dangling-skill-path detection; removed 5 harmful output-length caps; RECALL-GATE on session-start memory injection; normalized legacy memory:true → memory:project; CLAUDE.md rule-1 stale classifier description)."
+    },
+    {
+      "date": "2026-06-26T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.0.3 (fix: roster usage-counter — SubagentStop hook read agent_name/agent which are absent for dispatched specialists, so every agent stayed at 0 task-uses and staleness/retirement logic was blind; now resolves agent_type→subagent_type→agent_name→agent with a normalized fallback, fail-open, +tests)."
+    },
+    {
+      "date": "2026-06-25T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.0.2 (model-matrix + spend-ledger price correction: Opus $15/$75 → $5/$25 — was 3x over, biasing cheapest-viable routing and inflating the spend ledger; default Opus → claude-opus-4-8; Fable 5 added; tools/mcp registries refreshed; audit baseline seeded)."
+    },
+    {
+      "date": "2026-06-25T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.0.1 (fix: /prism-health reported a stale version — prism-health.md now reads the version deterministically from ~/.claude/.prism-version → install-manifest.json and never from update-log.json; update-log.json reconciled; was frozen at 5.7.0 across 5.8→6.0)."
+    },
+    {
+      "date": "2026-06-25T00:00:00.000000",
+      "action": "Upgraded to PRISM v6.0.0 (explicit-only expert-panel trigger — panel fires ONLY on explicit user request, D034 lock; subsumes the 5.8–5.12 series whose entries were not recorded here). Also reconciled this update-log's stale prism_version (was frozen at 5.7.0 across 5.8→5.12→6.0) so /prism-health and the freshness sweep report the real installed version."
+    },
+    {
+      "date": "2026-06-10T00:00:00.000000",
+      "action": "Upgraded to PRISM v5.7.0 (PreToolUse enforcement consolidation: 7 guards -> prism-pretooluse-dispatcher.mjs; prism-home.mjs hardened HOME resolver fixes the Windows 'undefined/.claude/' artifact; self-healing claude-mem performance guard for Windows)"
+    },
+    {
+      "date": "2026-04-20T10:10:21.359481",
+      "action": "Installed PRISM v2.1.24"
+    },
+    {
+      "date": "2026-04-22T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.3.0 (cross-platform node discovery, Windows wrapper)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.4.0 (ATLAS→PRISM rename completed, Tier 1 trimmed to superpowers + ui-ux-pro-max)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.5.0 (summon_panel enforcement, model-matrix Opus 4.7 bump, /prism-deps, PHASE 0a inventory, legacy purge)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.6.0 (CLAUDE.md sizing discipline, /prism-discover subdomain detection + nested CLAUDE.md scaffolding)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.0 (classifier reconciliation + orchestration quality: summon_panel in keyword floor, deescalation + upgrade-reset, sentinel-first guard/advisor, dynamic cost multipliers, T-shape orchestrator, PHASE 1.5 senior review, blueprint de-duplication, workflow orchestrator-awareness, weekly calibration feedback loop)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.1 (parallel-dispatch enforcement: prism-hook parallel-opportunity detector, master-orchestrator Task() phrasing replaced with parallel-Agent()-in-single-message, blueprint [pgroup=N] as execution contract)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.2 (Windows BOM trap closed: mutation-guard now watches Bash writes with 15+ file-write patterns, blocks parent-context PowerShell writes that would introduce UTF-8 BOM; tier-router appends Windows note to dispatch advice recommending Edit/Write tools over Bash/PowerShell)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.3 (install-experience fixes based on v2.7.2 install friction: scripts/install-merge.mjs consolidates §4 merge logic with correct Windows escape handling; INSTALL.md §2.5 switches from printf to heredoc; §2.6 switches from rm -rf to rm -r; updated stale P5a.2 + V220.11 test assertions to match v2.7.0 advisor-PreToolUse + cacheKey-no-dirty behavior)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.4 (mutation-guard !opus-force: override fix — mutation-guard now reads sentinel.force_opus (set by tier-router on UserPromptSubmit) instead of relying on input.user_prompt which is not in PreToolUse payloads; dispatch-guard parity restored)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.7.5 (mutation-guard subagent-bypass parity with dispatch-guard — all 3 paths: parent_tool_use_id + CLAUDE_CODE_ENTRYPOINT=subagent + sentinel.dispatched=true. Closes the real-world lockout where a Claude Code build didn't propagate parent_tool_use_id to subagent tool calls, causing every Agent()-dispatched Edit/Write to be denied as parent-context)"
+    },
+    {
+      "date": "2026-04-23T00:00:00.000000",
+      "action": "Upgraded to PRISM v2.8.0 (audit-driven hardening release: verify.mjs now checks all 75 manifest entries; tightened RELEASE_SAFETY_RE to require release context around PRISM/version tokens; stale-prune uses explicit legacy-hook whitelist; INSTALL.md §2.6 purges named atlas-* paths only (no catch-all glob); added chmod+x for prism-monitor + subagent-summary; task-tier-advisor gets v2.7.5 three-path subagent bypass; atomic sentinel writes via tempfile+rename; session-start classifier-floor hint; classifier API errors logged with status+phase; INSTALL.md §2.7 ANTHROPIC_API_KEY + §2.8 tuning env docs; prism-recall YAML name; prism-safety fail-open on parse error; /prism-registry dangling refs cleaned)"
+    },
+    {
+      "date": "2026-06-09T00:00:00.000000",
+      "action": "Reconciled the shipped update-log + PRISM_VERSION constant to v5.5.0 (was frozen at the 2.8.0/3.11.0 stamps) and set next_scheduled_update to a future date so a fresh install does not emit a spurious 'Update is due' nag on first run."
+    },
+    {
+      "date": "2026-06-09T00:00:00.000000",
+      "action": "Upgraded to PRISM v5.6.0 (hook consolidation: 4 advisory per-event dispatchers — UserPromptSubmit 4->1, PostToolUse 5->1, SubagentStop 3->1, SessionEnd 2->1; ~11->4 hook spawns per turn on Windows, benchmark-verified faster; PreToolUse enforcement consolidation deferred to a future release)"
+    }
+  ]
+}

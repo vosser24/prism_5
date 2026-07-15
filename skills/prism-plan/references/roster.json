@@ -1,0 +1,122 @@
+{
+  "version": "3.1.0",
+  "last_updated": "2026-04-25",
+  "schema_version": "4.5.0",
+  "schema_notes": [
+    "v2.7.0 adds: default_model, corrections_since_last_upgrade, consecutive_successful_sonnet_tasks.",
+    "default_model=null means 'let orchestrator dynamic selection decide'.",
+    "Escalation ratchet: 3 corrections → opus-lock. Deescalation: 5 consecutive successful sonnet tasks with zero corrections → reset to sonnet.",
+    "Agent-factory upgrade clears all ratchet state (default_model, both counters, pending_upgrade).",
+    "v2.9.0 extends the file into a unified resource-index. Top-level agents block is unchanged (roster owns agent task-tracking). New siblings: skills (auto-populated by /prism-index from ~/.claude/skills/ + plugin skills), tools (resolved from tools-registry.md install state), mcps (from Claude Code mcpServers). Blueprint-prompt and master-orchestrator query all four blocks before panel assembly / subagent dispatch. Skills/tools/mcps entries are DISCOVERY metadata only — no task-tracking, no escalation ratchets, no NotebookLM notebooks.",
+    "v3.1.0 adds optional team_id field per agent. null = global/no team. String = arbitrary team identifier (e.g., 'platform-team', 'eng-uk'). /prism-roster --team <id> filters display to matching agents. Tier 3 visibility lever — surgical, no auth model implied. Admin convention: keep team_ids consistent across team's installs.",
+    "v4.1 adds the optional domain_groups block (top-level sibling to agents/skills/tools/mcps). Populated by /prism-index from agent.core_domains + skill.domains arrays — groups resources by shared domain so /prism-roster --by-domain can render a coverage view. domain_groups is DERIVED data: re-run /prism-index after agent/skill changes to refresh. Schema example at _schema_example_domain_group.",
+    "v4.4 adds optional per-agent flags requires_phase_1_5 (boolean, default false) and requires_phase_1_5_block (boolean, default false). When requires_phase_1_5 is true, the SubagentStop hook hooks/prism-phase-1-5-oob.mjs invokes an out-of-band reviewer via direct Anthropic SDK call to produce an independent PHASE 1.5 verdict. requires_phase_1_5_block: true makes the hook synchronous (master pauses until verdict completes). Legacy agents (missing fields) are treated as both false. See docs/prism/plans/2026-05-26-v4.4-implementation-plan.md.",
+    "v4.5 adds optional per-agent flags phase_1_5_lite_oob (boolean, default false) and skip_next_oob (boolean, ephemeral, auto-cleared). phase_1_5_lite_oob enables O1 LITE mode for the OOB Phase 1.5 reviewer — cheaper, faster, still independent. skip_next_oob is a one-shot kill switch: when true the next OOB review is skipped and the flag is immediately cleared. Both default to false/absent (falsy) for legacy agents. v4.5 Layer 2 — rationale: OOB reviewer cost control + V1 emergency bypass.",
+    "v5.12.0 (quality-gate) adds per-agent QUALITY metadata + the Agent Quality Gate (hooks/prism-agent-quality-gate.mjs, PostToolUse on Write/Edit/MultiEdit of .claude/agents/<name>.md). NET-NEW fields (reuse owned_skills/core_domains/notebooklm_notebook_id — do NOT add a duplicate equipped_skills): role ('builder'|'recon'|'consistency-enforcer'; distinct axis from scope; ABSENT⇒inferred, default builder), research_tier (1=external/NotebookLM best … 3=codebase-only; was already referenced by agent-factory.md:318), quality_score (1-5 from the gate; agent-factory.md:323), skills_wired (boolean — VERIFIED by body-grep, not claimed: a skill counts only if it is in the agent skills: frontmatter AND referenced in the body; a composes_with-only entry FAILS), last_enriched_at + last_synced_at (ISO dates for capability-staleness). The rubric (recommended skills / research_sources / depth_refs / min_research_tier_for_builder per domain) lives in references/skill-domain-map.json, NOT here. The gate writes its scorecard to ~/.claude/.prism-quality/<name>.json (a path the agent does not control). Mode: PRISM_AGENT_QUALITY=off|advisory|enforce (default advisory). All fields ABSENT on legacy agents ⇒ treated as unset (the gate flags, never wedges).",
+    "v5.12.0 adds the specialist-routing-guard (hooks/prism-specialist-routing-guard.mjs, PreToolUse/Agent, in dispatcher ROUTES). It matches BUILD-class dispatches routed to generic agents (general-purpose/claude/absent) against each agent's EXISTING core_domains array (NO new domain_keywords field — core_domains is canonical; an optional domain_keywords array is also honored if a future install adds one). Archived agents and agents with status != 'available' are skipped. Optional per-agent flag build_class (boolean, default treated-as-true): set build_class:false for read/analysis-only specialists that should NOT be recommended for build work. Override per-turn with the '!gp-force:' prompt prefix (rides the sentinel as force_gp) or globally with PRISM_SPECIALIST_GUARD=off|advisory|enforce (default advisory). To make the guard recommend a specialist, that specialist needs a roster.agents entry with core_domains populated — run /prism-index or agent-factory; agents that exist only as .md files without a roster entry will not be matched."
+  ],
+  "agents": {},
+  "skills": {},
+  "tools": {},
+  "mcps": {},
+  "domain_groups": {},
+  "index_meta": {
+    "last_indexed": null,
+    "indexer_version": null,
+    "enrichment": "none"
+  },
+  "_schema_example_agent": {
+    "__comment": "Agent entries: full task-tracking + escalation state. Created only by agent-factory (heavyweight path) or /prism-roster --reconcile (orphan recovery). Orchestrator ignores keys starting with underscore.",
+    "created": "ISO-date",
+    "last_upgraded": "ISO-date",
+    "version": 1,
+    "core_domains": ["array", "of", "domain", "tags"],
+    "build_class": true,
+    "_build_class_doc": "v5.12.0: optional. The specialist-routing-guard recommends this agent for BUILD-class domain work matching core_domains. Set false for read/analysis-only specialists (they won't be recommended for builds). ABSENT ⇒ treated as true.",
+    "role": "builder",
+    "_role_doc": "v5.12.0 (quality-gate): optional. 'builder' | 'recon' | 'consistency-enforcer'. Distinct axis from scope (broad/project). Only role:builder hits the full quality-gate bar. ABSENT ⇒ inferred (default builder).",
+    "research_tier": null,
+    "quality_score": null,
+    "skills_wired": null,
+    "_quality_doc": "v5.12.0 (quality-gate): research_tier (1=external/NotebookLM best … 3=codebase-only), quality_score (1-5 from the gate), skills_wired (boolean — VERIFIED by body-grep; composes_with-only FAILS). null ⇒ unset/unscored. Rubric in references/skill-domain-map.json; scorecard in ~/.claude/.prism-quality/<name>.json.",
+    "last_enriched_at": null,
+    "last_synced_at": null,
+    "tools_known": ["array", "of", "tool", "names"],
+    "projects_worked": [
+      {
+        "name": "project-name",
+        "date": "ISO-date",
+        "tasks_completed": 0,
+        "corrections_received": 0
+      }
+    ],
+    "total_tasks_completed": 0,
+    "total_corrections_received": 0,
+    "corrections_since_last_upgrade": 0,
+    "consecutive_successful_sonnet_tasks": 0,
+    "default_model": null,
+    "pending_upgrade": false,
+    "status": "available",
+    "requires_phase_1_5": false,
+    "requires_phase_1_5_block": false,
+    "phase_1_5_lite_oob": false,
+    "skip_next_oob": false,
+    "notebooklm_notebook_id": null,
+    "team_id": null,
+    "learns": false,
+    "domain_memory_file": null,
+    "owned_skills": [],
+    "file_path": "~/.claude/agents/<name>/agent.md",
+    "scope": "broad",
+    "_scope_doc": "v5.2.0: 'broad' (reusable, protected — never auto-archived) | 'project' (targeted; auto-archived reversibly when its home project is gone/stale, see [[D008]]). ABSENT ⇒ treated as 'broad'. Set by the creator (agent-factory/master) at creation.",
+    "home_project": null,
+    "home_project_path": null,
+    "archived": false,
+    "archived_at": null,
+    "archived_reason": null
+  },
+  "_schema_example_skill": {
+    "__comment": "Skill entries: discovery metadata only. Populated by /prism-index from scanning ~/.claude/skills/ and ~/.claude/plugins/*/skills/. Never hand-edited — re-run /prism-index to refresh.",
+    "type": "skill",
+    "source": "user | plugin:<plugin-name> | prism",
+    "path": "~/.claude/skills/<name>/SKILL.md",
+    "description": "first 200 chars of frontmatter description",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "from", "description", "body"],
+    "trigger_phrases": ["multi-word", "activation", "phrases"],
+    "last_indexed": "ISO-date",
+    "frontmatter_mtime": "ISO-date"
+  },
+  "_schema_example_tool": {
+    "__comment": "Tool entries: resolved from tools-registry.md with install-status probe. Populated by /prism-index.",
+    "type": "tool",
+    "source": "tools-registry.md",
+    "install_status": "installed | available | missing",
+    "tier": "1 | 2 | 3",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "terms"],
+    "install_hint": "command or path"
+  },
+  "_schema_example_mcp": {
+    "__comment": "MCP entries: from .claude.json mcpServers + ~/.claude/settings.json mcpServers. Populated by /prism-index.",
+    "type": "mcp",
+    "source": "claude-settings | project-mcp-json",
+    "server_name": "name-as-registered",
+    "domains": ["array", "of", "domain", "tags"],
+    "keywords": ["extracted", "terms"],
+    "status": "connected | configured"
+  },
+  "_schema_example_domain_group": {
+    "__comment": "Domain-group entries: keyed by lowercase-kebab domain tag. Aggregates agent + skill names that declare this domain in their core_domains / domains arrays. Re-derived on every /prism-index run; never hand-edited. Used by /prism-roster --by-domain.",
+    "agents": ["agent-name-1", "agent-name-2"],
+    "skills": ["skill-name-1"],
+    "agent_count": 2,
+    "skill_count": 1,
+    "last_indexed": "ISO-date"
+  },
+  "_schema_pilot_v4_4": {
+    "__comment": "v4.4 OOB PHASE 1.5 reviewer pilot guidance. Pilot tagging is per-install (not shipped with default roster.json). Recommended pilot specialists: @claude-master, @code-reviewer, @security-architect. To enable OOB review for an agent, add 'requires_phase_1_5: true' to its agent entry. Block-mode (requires_phase_1_5_block: true) is reserved for agents whose output drives an irreversible downstream action.",
+    "pilot_candidates": ["@claude-master", "@code-reviewer", "@security-architect"],
+    "default_mode": "async"
+  }
+}
