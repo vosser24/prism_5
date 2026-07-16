@@ -6,6 +6,31 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-07-16
+
+### Added
+
+- **Installed-vs-repo drift guard** (`tools/prism-drift-check.mjs`, wired into `/prism-health` Step 1b) — sha256-compares every install-manifest entry repo-vs-`~/.claude`; flags drift ONLY when the repo copy is clean vs git HEAD (uncommitted edits are `skipped_dirty`, never flagged), so a developer mid-edit cannot trip it. Closes the "shipped != installed" blind spot.
+- **SessionStart latency budget test** (`tests/v3/hooks/test-session-start-latency-budget.mjs`) — asserts the property (median-of-5 warm session-start < 5000 ms, warmup discarded) rather than the `spawnSync` proxy; proven to catch a deliberately-injected slow guard.
+- **Deterministic handoff resume pointer** (`hooks/prism-handoff-pointer.mjs`) — records `<cwd>/.claude/.prism-latest-handoff.json` (path + HEAD SHA) as a side-effect of the `/prism-clean` Step 4b handoff write; SessionStart surfaces a HANDOFF-RECALL block with `[CURRENT]` / `[STALE — N commits behind HEAD]` staleness. No second manual step (D040).
+- **SendMessage routed through the PreToolUse pipeline** — the dispatch preamble now reaches work assigned via `SendMessage` (opt-in, conservative work-assignment heuristic; ordinary status/question chatter untouched). Kill-switch `PRISM_SENDMESSAGE_ROUTE=off`. Closes the total SendMessage PreToolUse blind spot (D043 finding 4).
+- **Live-work dedup advisory** (`hooks/prism-live-work-dedup.mjs`) — deterministic keyword-overlap check across live agents' current-task summaries (updated at `Agent()` dispatch AND scope-assigning `SendMessage`); advisory-only, kill-switch `PRISM_LIVE_WORK_DEDUP=off`.
+- **Declared file-ownership lease advisory** (`hooks/prism-file-lease-guard.mjs`) — explicit `PRISM-LEASE:` declaration (never inferred), TTL-bounded, cleared on `SubagentStop`, fires only with ≥2 concurrent agents; advisory-only, kill-switch `PRISM_FILE_LEASE=off`. The declared agentId supplies the per-caller identity the runtime withholds.
+- **Borrowed-unlock visibility** — in agent-teams topology the dispatch guard emits a `borrowed_unlock` routing-log event + in-band advisory whenever a mutation is allowed via a shared-session dispatch flag the caller did not earn, making the previously-silent false-allow visible and measurable.
+- **Guard census** — 4 previously-uncensusable guards (`agent-model-guard`, `acl-rollback-guard`, `capture-evidence-guard`, `config-guard`) now emit event-keyed routing-log records so their fire-rate can be measured.
+
+### Changed
+
+- **The dispatch guard is honestly advisory under agent-teams** (`hooks/prism-parent-dispatch-guard.mjs`) — a session-global `dispatched` boolean cannot correctly gate concurrent actors that share one `session_id` (D043), so in agent-teams topology (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) the `dispatched`-gated hard-deny downgrades to advisory (exit 0); the genuine single-actor path is unchanged (still hard-denies). Fail-safe: an absent/unreadable marker preserves prior hard behavior. Kill-switch `PRISM_DISPATCH_GUARD_TEAMS=advisory|hard|off`.
+- **Honest deny messages** — the nested-dispatch and single-actor remediation texts no longer assert an enforced "main-loop-only / dispatch-once-then-allowed" guarantee the mechanism cannot keep under shared-session topology (D043).
+- **`config-guard` stale remediation** — replaced `python prism-v2.py` with `node tools/prism-installer.mjs install`.
+
+## [6.3.1] - 2026-07-16
+
+### Fixed
+
+- **claude-mem guard/detector now respect the plugin's `enabled:false` flag** — disabling (not just uninstalling) claude-mem stops the `:37790` health alert and the `fallback-claude-mem-unhealthy` nudge; PRISM falls back to native `MEMORY.md` silently. Root cause: PRISM treated leftover on-disk artifacts (`~/.claude-mem/` data dir, plugin cache) as "installed" even after the user disabled the plugin via `enabledPlugins` in `~/.claude/settings.json`, so it kept probing the dead worker port and alerting every session. `claudeMemPluginDisabled()` (`hooks/lib/prism-claude-mem-detect.mjs`) reads `enabledPlugins["claude-mem@*"]`; an explicit `false` is now treated as absent everywhere (`claudeMemInstalled()`, `hooks/lib/prism-claude-mem-guard.mjs` `healClaudeMem()`). A genuinely enabled-but-unhealthy install still alerts (preserved, regression-tested).
+
 ## [6.3.0] - 2026-07-15
 
 ### Added

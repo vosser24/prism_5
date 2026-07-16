@@ -1,5 +1,17 @@
 #!/usr/bin/env node
-// PRISM Parent Dispatch Guard (v2.6.0) — PreToolUse
+// PRISM Parent Dispatch Guard (v2.7.0) — PreToolUse
+//
+// v2.7.0 (D043, agent-teams topology): the `dispatched` flag is a session-global
+// boolean with no caller dimension, so under agent-teams (teammates sharing one
+// session_id) it cannot gate per-caller — producing loud false-DENIES and SILENT
+// false-ALLOWS. Three changes, all gated behind PRISM_DISPATCH_GUARD_TEAMS
+// (advisory=default | hard) and fail-safe to prior behavior when the teams marker
+// (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) is absent: (1) in teams+advisory the
+// dispatched-gated hard-deny downgrades to an advisory (closes the false-deny);
+// (2) every borrowed unlock (dispatched=true allow in teams) is logged
+// (`borrowed_unlock`) + flagged in-band (makes the silent false-allow visible);
+// (3) the deny's single-actor remediation text now carries the shared-session
+// caveat. See the TEAMS_MODE block below and docs/prism/adjudications/D043.
 //
 // v2.6.0 (Package F): fix the dispatch-guard dead-end false-positive that blocked
 // legitimately-dispatched research subagents. Root cause (live-repro 2026-07-06):
@@ -80,6 +92,32 @@ const MODE = String(process.env.PRISM_DISPATCH_GUARD ?? 'hard').toLowerCase();
 // v5.7.6 — nested-dispatch guard mode (hard|soft|off). Independent kill switch;
 // the master PRISM_DISPATCH_GUARD=off disables this too (early-return below).
 const NESTED_MODE = String(process.env.PRISM_NESTED_DISPATCH_GUARD ?? 'hard').toLowerCase();
+
+// v6.4.0 (D043) — AGENT-TEAMS TOPOLOGY HANDLING.
+// Under agent-teams every teammate is a top-level CLI session sharing ONE
+// session_id, so `sentinel.dispatched` (a session-global boolean with no caller
+// dimension) cannot gate per-caller: any teammate's Agent/TaskCreate unlocks
+// EVERY teammate, and any teammate's next message re-locks all of them. This
+// single root cause produces BOTH a loud false-DENY (a legit worker blocked
+// because the shared flag was just reset) AND a SILENT false-ALLOW (a teammate
+// mutates freely because an unrelated teammate dispatched moments earlier). The
+// false-allow is invisible by construction — no log line, no advisory (D043,
+// docs/prism/deviations/2026-07-14-guard-forensics-shared-sentinel-latch.md).
+//
+// PRISM_DISPATCH_GUARD_TEAMS: advisory (default) | hard
+//   advisory → in teams topology the `dispatched`-gated HARD-DENY DOWNGRADES to
+//              an advisory (exit 0 + additionalContext) — a coin-flip deny that
+//              cannot distinguish a legit dispatched worker from a false positive
+//              should not block work; AND every borrowed unlock (a dispatched=true
+//              allow) is LOGGED (`borrowed_unlock`) + flagged in-band, so the
+//              structurally-invisible false-allow becomes visible + measurable.
+//   hard     → restore the prior single-actor hard-deny even under teams (opt-in
+//              for an operator who wants the old behavior wholesale).
+// FAIL-SAFE (D039): the teams marker ABSENT or unreadable → prior HARD behavior,
+// UNCHANGED — zero regression for a genuine single-actor parent. The master
+// switch PRISM_DISPATCH_GUARD=off still disables the whole guard (early-return).
+const TEAMS_MODE = String(process.env.PRISM_DISPATCH_GUARD_TEAMS ?? 'advisory').toLowerCase();
+const IN_AGENT_TEAMS = String(process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS || '') === '1';
 
 const ALWAYS_ALLOW = new Set([
   'Agent', 'TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop',
@@ -334,8 +372,8 @@ export function run(input) {
       mode: NESTED_MODE,
     });
     const nestedNotice = [
-      `PRISM NESTED-DISPATCH GUARD: Agent() denied — you are a dispatched subagent, and PRISM dispatch is MAIN-LOOP-ONLY. A worker that spawns its own sub-agents stalls the tree (throttled / near-zero spawns; live-repro 98-minute hang).`,
-      `Do the work INLINE here (Read / Grep / Edit / Bash directly). If you genuinely need parallel help, return your findings or a dispatch plan to the main loop and let IT fan out — teammates coordinate via SendMessage, they do not spawn.`,
+      `PRISM NESTED-DISPATCH GUARD: nested Agent() call detected — you look like a dispatched subagent. PRISM dispatch SHOULD be main-loop-only: a worker that spawns its own sub-agents risks stalling the tree (throttled / near-zero spawns; live-repro 98-minute hang). Note this detection is best-effort, not a reliable hard block (D043) — treat the doctrine as the rule, not this guard.`,
+      `Strongly prefer doing the work INLINE here (Read / Grep / Edit / Bash directly). If you genuinely need parallel help, return your findings or a dispatch plan to the main loop and let IT fan out — teammates coordinate via SendMessage, they do not spawn.`,
       `Override: set PRISM_NESTED_DISPATCH_GUARD=off (or PRISM_DISPATCH_GUARD=off).`,
     ].join('\n');
     if (NESTED_MODE === 'hard') {
@@ -529,7 +567,41 @@ export function run(input) {
   if (sentinel.tier === 'opus') return done(0);
 
   // v2.2.1 Path 3: haiku/sonnet tier + already dispatched → pass.
-  if (sentinel.dispatched) return done(0);
+  // v6.4.0 (D043) — BORROWED-UNLOCK VISIBILITY. In the single-actor case (no
+  // teams marker) this stays a silent pass, byte-identical to before. Under
+  // agent-teams, `dispatched` is shared across every teammate, so this "allow"
+  // may be BORROWED from an unrelated teammate's Agent/TaskCreate — this caller
+  // may never have been individually gated at all. In advisory teams-mode we LOG
+  // the borrowed unlock (so the structurally-invisible false-allow becomes
+  // measurable — the rate that later gates whether a hard per-caller lease is
+  // ever justified) and attach an in-band advisory. Still exit 0 (allow): a hard
+  // block here without per-caller identity would just re-create the false-DENY
+  // lottery from the other side (D043 — the guard cannot tell a borrower from a
+  // legitimately-dispatched worker; only session_id + parent_tool_use_id exist).
+  if (sentinel.dispatched) {
+    if (IN_AGENT_TEAMS && TEAMS_MODE === 'advisory') {
+      appendLog({
+        event: 'borrowed_unlock',
+        ts: new Date().toISOString(),
+        session_id: sessionId,
+        tool: toolName,
+        tier: sentinel.tier,
+        teams_mode: TEAMS_MODE,
+      });
+      write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: [
+            `PRISM DISPATCH-GUARD (agent-teams / D043): allowing ${toolName} on a BORROWED unlock.`,
+            `sentinel.dispatched=true, but under agent-teams that flag is session-global with no caller dimension — it may have been set by an UNRELATED teammate's Agent/TaskCreate, not by any dispatch of YOURS. Dispatch-gating cannot distinguish callers here, so this allow is not evidence you were individually dispatched.`,
+            `Confirm YOU own the file/scope you are about to mutate (the orchestrator assigns per-agent ownership). This event is logged as borrowed_unlock for false-allow rate measurement (D043). To restore the prior single-actor hard-deny set PRISM_DISPATCH_GUARD_TEAMS=hard.`,
+          ].join('\n'),
+        },
+      }));
+      return done(0);
+    }
+    return done(0);
+  }
 
   // Defense-in-depth: orchestration-command allowlist match → pass.
   if (typeof sentinel.rationale === 'string' &&
@@ -538,10 +610,20 @@ export function run(input) {
   }
 
   // Haiku/Sonnet tier, parent context, no dispatch yet → deny.
+  // v6.4.0 (D043) — teams advisory-downgrade: under agent-teams the shared
+  // `dispatched` flag makes this deny a coin-flip w.r.t. THIS caller's legitimacy
+  // (as likely a false positive — a legit worker whose shared flag was just reset
+  // by an unrelated teammate's message — as a real block), so in advisory
+  // teams-mode we DOWNGRADE it to an advisory instead of hard-denying. Fail-safe:
+  // no teams marker (or PRISM_DISPATCH_GUARD_TEAMS=hard) → prior hard-deny intact.
+  const teamsAdvisoryDowngrade = IN_AGENT_TEAMS && TEAMS_MODE === 'advisory';
   const why = sentinel.rationale ? ` Reason: ${sentinel.rationale}` : '';
+  // CHANGE 3 (D043): the old middle line ("After one dispatch, subsequent parent
+  // tools are allowed") asserted a SINGLE-ACTOR guarantee that is false under
+  // agent-teams' shared-session_id topology. Made honest with the teams caveat.
   const notice = [
     `PRISM DISPATCH-GUARD: ${toolName} denied in parent context — this turn routed to ${sentinel.tier}-tier.${why}`,
-    `If you are the PARENT (main loop): dispatch the work first via Agent({subagent_type:'general-purpose', model:'${sentinel.tier}', prompt:'<task>'}) or TaskCreate/plan. After one dispatch, subsequent parent tools are allowed.`,
+    `If you are the PARENT (main loop): dispatch the work first via Agent({subagent_type:'general-purpose', model:'${sentinel.tier}', prompt:'<task>'}) or TaskCreate/plan. After one dispatch, subsequent parent tools are allowed for THIS session. CAVEAT (D043): "dispatched" is a session-global flag with no caller dimension — under agent-teams (teammates sharing one session_id) ANY teammate's dispatch unlocks all of them and ANY teammate's next message re-locks all of them, so this is NOT a per-actor guarantee.`,
     `If you are a DISPATCHED SUBAGENT: you cannot call Agent (dispatch is main-loop-only — it is denied / not exposed to you). Read-only tools (Read/Grep/Glob/WebFetch/WebSearch) are already allowed for you — use them, or a provably read-only Bash probe, and return findings to the main loop for any mutation.`,
     `Override: prefix the user prompt with !opus-force: (or set PRISM_DISPATCH_GUARD=off).`,
   ].join('\n');
@@ -553,9 +635,31 @@ export function run(input) {
     tool: toolName,
     tier: sentinel.tier,
     score: sentinel.score,
-    blocked: MODE === 'hard',
+    blocked: MODE === 'hard' && !teamsAdvisoryDowngrade,
     mode: MODE,
+    teams_mode: IN_AGENT_TEAMS ? TEAMS_MODE : null,
+    teams_downgrade: teamsAdvisoryDowngrade || undefined,
   });
+
+  // CHANGE 1 (D043): teams advisory-downgrade — allow with an in-band advisory
+  // (exit 0 + additionalContext) instead of the hard deny. Closes the loud
+  // false-DENY without pretending the gate is sound (it explains why it cannot
+  // gate concurrent actors here).
+  if (teamsAdvisoryDowngrade) {
+    const teamsNotice = [
+      `PRISM DISPATCH-GUARD (agent-teams / D043): ADVISORY, not a block — allowing ${toolName}.`,
+      `This turn routed to ${sentinel.tier}-tier with no dispatch recorded, but you appear to be in an agent-teams session (shared session_id). Dispatch-gating cannot gate concurrent actors here: the \`dispatched\` flag has no caller dimension, so a hard deny would be a coin-flip unrelated to whether YOU were legitimately dispatched. Proceeding.`,
+      `If you are the ORCHESTRATOR/parent: prefer dispatching the work to a teammate anyway (that is still the cheaper-model discipline). If you are a dispatched teammate doing assigned work: confirm YOU own the file/scope you are mutating.`,
+      `To restore the hard block set PRISM_DISPATCH_GUARD_TEAMS=hard. Full override: !opus-force: or PRISM_DISPATCH_GUARD=off.`,
+    ].join('\n');
+    write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        additionalContext: teamsNotice,
+      },
+    }));
+    return done(0);
+  }
 
   if (MODE === 'hard') {
     const deny = {

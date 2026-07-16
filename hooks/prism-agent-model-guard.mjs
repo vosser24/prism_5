@@ -118,6 +118,7 @@ export async function run(input) {
   const isSubagentByDispatched = !!(sentinelEarly && sentinelEarly.dispatched === true);
   if (isSubagentById || isSubagentByEnv || isSubagentByDispatched) {
     appendLog({
+      event: 'agent_model_guard',
       ts: new Date().toISOString(),
       session_id: sessionId,
       tool: 'Agent',
@@ -132,6 +133,7 @@ export async function run(input) {
   // Master-orchestrator dispatch is always allowed without extra classification.
   if (String(subagentType).toLowerCase() === 'master-orchestrator') {
     appendLog({
+      event: 'agent_model_guard',
       ts: new Date().toISOString(),
       session_id: sessionId,
       tool: 'Agent',
@@ -146,6 +148,7 @@ export async function run(input) {
   // using a heavyweight model in a heavyweight context — no guidance needed.
   if (input.tool_input && input.tool_input.model === 'opus' && sentinelEarly && sentinelEarly.tier !== 'haiku') {
     appendLog({
+      event: 'agent_model_guard',
       ts: new Date().toISOString(),
       session_id: sessionId,
       tool: 'Agent',
@@ -157,6 +160,7 @@ export async function run(input) {
 
   if (hasModel) {
     appendLog({
+      event: 'agent_model_guard',
       ts: new Date().toISOString(),
       session_id: sessionId,
       tool: 'Agent',
@@ -230,6 +234,7 @@ export async function run(input) {
   const action = shouldDeny ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
 
   appendLog({
+    event: 'agent_model_guard',
     ts: new Date().toISOString(),
     session_id: sessionId,
     tool: 'Agent',

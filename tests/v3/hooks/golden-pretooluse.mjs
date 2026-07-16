@@ -101,7 +101,14 @@ function runGuard(guardFile, payload, {env = {}, sentinel = null} = {}) {
       encoding: 'utf8',
       timeout: 15000,
       windowsHide: true,
-      env: {...process.env, HOME: home, USERPROFILE: home, ...env},
+      // Pin the single-actor baseline: clear CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+      // so this golden captures the deterministic single-actor path regardless of
+      // whether the harness is itself run inside an agent-teams session (where the
+      // ambient marker would otherwise flip prism-parent-dispatch-guard's D043
+      // advisory-downgrade and make the baseline non-portable). Same rationale as
+      // clearing CLAUDE_CODE_ENTRYPOINT in test-prism-nested-dispatch-guard.mjs.
+      // Agent-teams behavior has its OWN dedicated test (test-prism-dispatch-guard-teams.mjs).
+      env: {...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '', ...env},
     });
     return {exit: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim()};
   } finally {

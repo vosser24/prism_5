@@ -14,9 +14,9 @@ async function main() {
   let payload = {};
   try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { process.exit(0); }
 
-  const [subStop, panel, oob, dedup] = await Promise.all([
+  const [subStop, panel, oob, dedup, lease] = await Promise.all([
     imp('prism-subagent-stop.mjs'), imp('prism-panel-guard.mjs'), imp('prism-phase-1-5-oob.mjs'),
-    imp('prism-dispatch-dedup-guard.mjs'),
+    imp('prism-dispatch-dedup-guard.mjs'), imp('prism-file-lease-guard.mjs'),
   ]);
 
   const calls = [
@@ -27,6 +27,9 @@ async function main() {
     // identical re-dispatch is allowed again. Cannot block (always exit 0); the
     // 12-min TTL backstops a missed close.
     dedup && typeof dedup.runSubagentStop === 'function' ? dedup.runSubagentStop(payload) : null,
+    // File-lease clear (task #19) — releases the stopping agent's declared file
+    // leases. Advisory-only guard; cannot block (always exit 0); TTL backstops.
+    lease && typeof lease.runSubagentStop === 'function' ? lease.runSubagentStop(payload) : null,
   ].map(p => p ? Promise.resolve(p).catch(() => ({ exit: 0, stdout: '', stderr: '' })) : Promise.resolve({ exit: 0, stdout: '', stderr: '' }));
 
   const results = await Promise.all(calls);

@@ -62,6 +62,10 @@ function runHook(hook, home, payload, {entrypoint = ''} = {}) {
     HOME: home, USERPROFILE: home,
     PRISM_DISPATCH_GUARD: 'hard', PRISM_MUTATION_GUARD: 'hard',
     CLAUDE_CODE_ENTRYPOINT: entrypoint,
+    // Pin single-actor: clear the agent-teams marker so this test's single-actor
+    // hard-deny assertions don't flip to the D043 advisory-downgrade when the
+    // harness runs inside an agent-teams session (ambient marker leak).
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '',
   };
   const r = spawnSync(process.execPath, [hook], {encoding: 'utf-8', input: JSON.stringify(payload), env, timeout: 15000});
   return {status: r.status, stdout: r.stdout || '', stderr: r.stderr || ''};

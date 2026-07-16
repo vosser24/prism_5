@@ -29,6 +29,7 @@
 
 import {
   existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, renameSync,
+  appendFileSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
 
@@ -86,6 +87,16 @@ function appendRollbackDigest(entry) {
   writeFileSync(dp, JSON.stringify(digest, null, 2), 'utf-8');
 }
 
+// ── Routing-log emission (census visibility) ─────────────────────────────────
+// Event-keyed record in ~/.claude/.prism-routing.jsonl so an event-keyed guard
+// census can see this guard fire. Additive only — never affects control flow.
+function appendLog(obj) {
+  try {
+    mkdirSync(CLAUDE_DIR, { recursive: true });
+    appendFileSync(join(CLAUDE_DIR, '.prism-routing.jsonl'), JSON.stringify(obj) + '\n');
+  } catch { /* fail-open */ }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -124,6 +135,7 @@ async function main() {
 
   if (!entry) {
     // Not in roster — passthrough
+    appendLog({ event: 'acl_rollback_guard', ts: new Date().toISOString(), session_id: payload.session_id || 'anon', cap_name: capName, rolledback: false, outcome: 'cap-not-in-roster' });
     process.exit(0);
   }
 
@@ -132,6 +144,7 @@ async function main() {
   // No rollback if: not recently upgraded, or already at v1
   if (!entry.last_upgraded_at || currentVersion <= 1) {
     // Safe no-op
+    appendLog({ event: 'acl_rollback_guard', ts: new Date().toISOString(), session_id: payload.session_id || 'anon', cap_name: capName, rolledback: false, outcome: 'no-op-not-upgraded-or-v1' });
     process.exit(0);
   }
 
@@ -153,6 +166,7 @@ async function main() {
   if (!priorFile) {
     // No prior version snapshot found — safe no-op
     process.stderr.write(`[acl-rollback-guard] no prior version snapshot found for ${capName} v${priorVersion} at ${priorVersionDir}\n`);
+    appendLog({ event: 'acl_rollback_guard', ts: new Date().toISOString(), session_id: payload.session_id || 'anon', cap_name: capName, rolledback: false, outcome: 'no-prior-snapshot' });
     process.exit(0);
   }
 
@@ -178,6 +192,7 @@ async function main() {
   } catch (e) {
     process.stderr.write(`[acl-rollback-guard] atomic restore failed for ${capName}: ${e.message}\n`);
     try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath + '.dead'); } catch {}
+    appendLog({ event: 'acl_rollback_guard', ts: new Date().toISOString(), session_id: payload.session_id || 'anon', cap_name: capName, rolledback: false, outcome: 'restore-failed' });
     process.exit(0);
   }
 
@@ -198,6 +213,8 @@ async function main() {
 
   // Append to digest
   appendRollbackDigest({ name: capName, from: currentVersion, to: priorVersion });
+
+  appendLog({ event: 'acl_rollback_guard', ts: new Date().toISOString(), session_id: payload.session_id || 'anon', cap_name: capName, rolledback: true, outcome: 'rolledback', from: currentVersion, to: priorVersion });
 
   process.stderr.write(`[acl-rollback-guard] rolled back ${capName} v${currentVersion}→v${priorVersion}\n`);
   process.exit(0);

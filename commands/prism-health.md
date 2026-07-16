@@ -79,6 +79,37 @@ Then run the layout-appropriate file checks below.
 
 Report missing with severity.
 
+### Step 1b — Installed-vs-repo drift (deterministic, v6.3.2)
+
+Step 0's version markers can MATCH while the installed hook/tool CONTENT is
+stale — on 2026-07-14 a session built 6 mechanisms into the repo while the
+live session ran old hooks from `~/.claude/` (three hook files missing from
+the install entirely). This step catches that class deterministically.
+
+Run (only when the cwd is a PRISM repo clone — i.e. `tools/install-manifest.json`
+exists; the tool self-reports `not-applicable` otherwise and that is NOT a
+warning):
+```
+node tools/prism-drift-check.mjs
+```
+It sha256-compares every manifest file + directory tree (minus
+`preserve_files` user state) in the repo against `~/.claude/`, and reports
+drift ONLY for files whose repo copy is committed (clean vs git HEAD) —
+uncommitted work-in-progress is counted as `skipped_dirty`, never flagged,
+so a developer mid-edit cannot make this cry wolf.
+
+- exit 0, `no drift` → report "installed copy matches committed repo state."
+- exit 1 → report LOUDLY: the live session is NOT running what the repo
+  ships. Surface each `MISSING`/`STALE` file verbatim and carry into
+  Step 10 as a **priority 1** item with the fix:
+  `node tools/prism-installer.mjs update`
+- `skipped_dirty > 0` → mention the count in one line (informational).
+
+This check deliberately lives HERE and not in SessionStart: measured
+2026-07-16, hashing the 152 manifest file pairs over SMB took ~10-12s —
+far over the SessionStart latency budget. A deliberate health run can
+afford it.
+
 ### Step 2 — Agent roster health
 Read roster.json, count:
 - Total agents

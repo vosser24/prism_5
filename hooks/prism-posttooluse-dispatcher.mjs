@@ -11,9 +11,9 @@ const HOOKS = dirname(fileURLToPath(import.meta.url));
 const imp = (f) => import(pathToFileURL(join(HOOKS, f)).href).catch(() => null);
 
 const ROUTES = {
-  Write:     [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-phase-0d-challenges.mjs','run'],['prism-phase-0d-oob.mjs','run'],['prism-panel-guard.mjs','runPostToolUse']],
-  Edit:      [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run']],
-  MultiEdit: [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run']],
+  Write:     [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run'],['prism-phase-0d-challenges.mjs','run'],['prism-phase-0d-oob.mjs','run'],['prism-panel-guard.mjs','runPostToolUse']],
+  Edit:      [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run']],
+  MultiEdit: [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run']],
   Agent:     [['prism-dispatch-cap.mjs','run']],
 };
 

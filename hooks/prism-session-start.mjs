@@ -36,7 +36,7 @@
 // one-line notice with the top "disable X to save Yt" recommendation.
 // Output is throttled to once per 24h so it doesn't itself become noise.
 import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync, appendFileSync} from 'fs';
-import {join} from 'path';
+import {join, isAbsolute} from 'path';
 // detached spawn (audit block) uses a dynamic import. The git-sha staleness
 // check below uses async execFile — deliberately NOT the blocking sync
 // child_process call — because this file was hardened after a prior
@@ -719,6 +719,55 @@ try {
             deferredLine +
             `\n</TASK-RECALL>`;
           notices.push(taskRecall);
+        }
+      }
+    } catch {}
+  }
+
+  // ── Task #31: HANDOFF-RECALL — latest /prism-clean Step 4b handoff doc ────
+  // Reads <cwd>/.claude/.prism-latest-handoff.json, written deterministically
+  // by hooks/prism-handoff-pointer.mjs (PostToolUse) as a side-effect of the
+  // Write/Edit that produces docs/prism/plans/<date>-SESSION-HANDOFF.md —
+  // never a manual step. Surfaces the pointer with the same SHA-STAMP-001
+  // staleness labeling TASK-RECALL uses ([CURRENT] / [STALE — N commits
+  // behind HEAD]). The handoff doc is gitignored local state, so this is a
+  // pure on-disk pointer; the SHA stamp compares repo HEAD positions, which
+  // works fine for an untracked file. Off-switch:
+  // PRISM_DISABLE_HANDOFF_RECALL=1. Fail-open: missing/malformed pointer or
+  // a deleted handoff doc is skipped silently.
+  if (process.env.PRISM_DISABLE_HANDOFF_RECALL !== '1') {
+    try {
+      const handoffPtrPath = join(process.cwd(), '.claude', '.prism-latest-handoff.json');
+      if (existsSync(handoffPtrPath)) {
+        let hp = null;
+        try { hp = JSON.parse(readFileSync(handoffPtrPath, 'utf-8')); } catch {}
+        if (hp && typeof hp.path === 'string' && hp.path) {
+          const handoffAbs = isAbsolute(hp.path) ? hp.path : join(process.cwd(), hp.path);
+          if (existsSync(handoffAbs)) {
+            let staleTag = '';
+            if (hp.git_sha) {
+              const currentSha = await getGitHeadSha(process.cwd());
+              if (currentSha) {
+                if (currentSha === hp.git_sha) {
+                  staleTag = ' [CURRENT]';
+                } else {
+                  const dist = await getCommitDistance(process.cwd(), hp.git_sha, currentSha);
+                  staleTag = dist !== null
+                    ? ` [STALE — ${dist} commit${dist === 1 ? '' : 's'} behind HEAD]`
+                    : ' [STALE — HEAD has moved since this was captured]';
+                }
+              }
+            }
+            const handoffRecall =
+              `<HANDOFF-RECALL priority=high> Latest session handoff (written ${hp.ts || '(unknown time)'})${staleTag}: ` +
+              `${hp.path} — before resuming multi-session work, READ this doc for the narrative context ` +
+              `(next steps, branch state, evidence pointers) that the task list alone does not carry.` +
+              (staleTag.includes('STALE')
+                ? ` HEAD has moved since it was written — verify its claims against current repo state before acting on them.`
+                : '') +
+              ` </HANDOFF-RECALL>`;
+            notices.push(handoffRecall);
+          }
         }
       }
     } catch {}

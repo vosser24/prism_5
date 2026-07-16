@@ -58,10 +58,18 @@
 // after a claude-mem update is therefore slow/ghost-prone, then self-heals.
 //
 // OFF-SWITCH: PRISM_DISABLE_CLAUDE_MEM_GUARD=1 disables the guard entirely.
+//
+// v5.2 (2026-07-16): a user-disabled claude-mem plugin (`enabledPlugins` in
+// settings.json has a `claude-mem@*` key set to `false`) is treated as ABSENT
+// — the guard neither patches hooks.json nor probes/alerts on the worker port.
+// See hooks/lib/prism-claude-mem-detect.mjs for the shared detection helper
+// and the full rationale (leftover on-disk artifacts must not count as
+// "installed" once the user has turned the plugin off).
 
 import {existsSync, readFileSync, writeFileSync, readdirSync, statSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import http from 'node:http';
+import {claudeMemPluginDisabled} from './prism-claude-mem-detect.mjs';
 
 // Windows default worker port is deterministic (see header) → 37777 for every
 // install, which is exactly what collides and ghosts. CHOSEN_PORT is a fixed,
@@ -189,6 +197,7 @@ function workerHealthy(port, timeoutMs = 600) {
 export async function healClaudeMem({home}) {
   const notices = [];
   if (process.env.PRISM_DISABLE_CLAUDE_MEM_GUARD === '1') return {notices};
+  if (claudeMemPluginDisabled(home)) return {notices};   // user-disabled → treat as absent, no probe/alert
 
   const cm = resolveClaudeMem(home);
   if (!cm.installPath || !cm.roots.length) return {notices};   // not installed → no-op

@@ -26,7 +26,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Agent|TaskCreate|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch",
+        "matcher": "Bash|PowerShell|Agent|TaskCreate|Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearch|SendMessage",
         "hooks": [
           {
             "type": "command",

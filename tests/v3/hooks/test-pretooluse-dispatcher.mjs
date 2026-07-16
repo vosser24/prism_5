@@ -26,7 +26,14 @@ function run(payload, {env = {}, sentinel = null} = {}) {
   try {
     const r = spawnSync(process.execPath, [DISPATCHER], {
       input: JSON.stringify(payload), encoding: 'utf8', timeout: 15000, windowsHide: true,
-      env: {...process.env, HOME: home, USERPROFILE: home, ...env},
+      // Pin single-actor determinism: clear the agent-teams marker so these
+      // dispatcher assertions (which pin single-actor hard-deny behavior) do not
+      // flip when the harness itself runs inside an agent-teams session, where
+      // the ambient CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 would trigger the D043
+      // advisory-downgrade in prism-parent-dispatch-guard. Teams behavior has its
+      // own dedicated test (state/test-prism-dispatch-guard-teams.mjs). Kept
+      // before `...env` so a future teams case can still opt in explicitly.
+      env: {...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '', ...env},
     });
     let decision;
     try { decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision; } catch { decision = undefined; }

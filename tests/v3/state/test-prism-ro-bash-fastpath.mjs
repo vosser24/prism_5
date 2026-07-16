@@ -27,7 +27,7 @@ function runGuard(command, toolName = 'Bash', extraEnv = {}) {
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(join(home, '.claude', `.prism-turn-tier-${SID}.json`),
       JSON.stringify({ tier: 'haiku', dispatched: false, force_opus: false, summon_panel: false, mode: 'hard' }));
-    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', ...extraEnv };
+    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '', ...extraEnv };
     const r = spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ tool_name: toolName, tool_input: { command }, session_id: SID }),
       encoding: 'utf-8', env, timeout: 10000,
@@ -78,7 +78,7 @@ function runGuardTool(toolName) {
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(join(home, '.claude', `.prism-turn-tier-${SID}.json`),
       JSON.stringify({ tier: 'haiku', dispatched: false, force_opus: false, summon_panel: false, mode: 'hard' }));
-    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard' };
+    const env = { ...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' };
     const r = spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ tool_name: toolName, tool_input: { file_path: '/tmp/x' }, session_id: SID }),
       encoding: 'utf-8', env, timeout: 10000,

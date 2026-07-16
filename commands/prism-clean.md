@@ -227,6 +227,8 @@ If this session was part of **long-running or multi-session feature work** (an i
 
 **Path:** `docs/prism/plans/<YYYY-MM-DD>-SESSION-HANDOFF.md` (use `docs/prism/lessons/` instead if the work is a lesson log rather than an active plan). If a handoff for today already exists, UPDATE it in place rather than clobbering.
 
+**Resume pointer (automatic — no action needed):** the Write/Edit that produces this doc triggers `hooks/prism-handoff-pointer.mjs` (PostToolUse), which records `{path, git HEAD sha, ts}` to `<project>/.claude/.prism-latest-handoff.json`. SessionStart's HANDOFF-RECALL block surfaces that pointer to the next session with a [CURRENT]/[STALE — N commits behind HEAD] staleness label. Do NOT hand-maintain "see handoff" pointer lines in MEMORY.md — the mechanism owns this now.
+
 **Before writing anything, source the task list.** Call `TaskList` (and `TaskGet` per task for full detail) to pull the live task state — this is the authoritative record of what is still open, not your recollection of the conversation. Fold every task whose status is `pending` or `in_progress` into the handoff. Copy each task's **`description` field verbatim, in full** — do NOT re-summarize, truncate, or terse-ify it. If the live task's description is itself thin, that is a signal to enrich it *in the handoff* (see the sub-step requirement below), not an excuse to compress it further. Tasks already `completed` do not need a PENDING entry, but note them under DONE this session if useful.
 
 **Format** (model-driven — write the actual content, this is the shape):

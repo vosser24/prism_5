@@ -50,7 +50,14 @@ const ROUTES = {
   // exported run() directly (see prism-dispatch-preamble.mjs header) — so its
   // rewrite is the superset that must win the same-key race. Reordering these
   // two silently drops one hook's footer from every dispatched prompt.
-  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-specialist-routing-guard.mjs', 'prism-dispatch-dedup-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT],
+  // Task #19 (2026-07-16) — prism-live-work-dedup + prism-file-lease-guard are
+  // ADVISORY-ONLY (never deny; additionalContext + exit 0) and each has its own
+  // kill-switch (PRISM_LIVE_WORK_DEDUP=off / PRISM_FILE_LEASE=off). They MUST
+  // run BEFORE prism-dispatch-preamble.mjs so they see the raw, pre-footer
+  // prompt (the preamble's fixed clause text would pollute keyword overlap).
+  // Neither emits updatedInput, so the preamble/anti-nesting rewrite pair below
+  // keeps its documented first-writer-wins contract untouched.
+  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-specialist-routing-guard.mjs', 'prism-dispatch-dedup-guard.mjs', 'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT],
   TaskCreate:   [PARENT, 'prism-task-tier-advisor.mjs'],
   Edit:         ['prism-capture-evidence-guard.mjs', PARENT],
   Write:        ['prism-capture-evidence-guard.mjs', PARENT],
@@ -58,6 +65,19 @@ const ROUTES = {
   NotebookEdit: [PARENT],
   WebFetch:     [PARENT],
   WebSearch:    [PARENT],
+  // Task #17 (2026-07-16) — SendMessage joins PreToolUse so agent-teams work
+  // assignments receive the dispatch preamble. OPT-IN, NOT BLANKET: only the
+  // preamble is routed — the Agent-route guards were never designed to parse a
+  // SendMessage payload ({to, message, summary}) and would false-fire. The
+  // preamble is therefore the SOLE writer of the `message` updatedInput key on
+  // this route (consolidate() is first-writer-wins per key — any future guard
+  // added here must NOT rewrite `message`). Kill-switch:
+  // PRISM_SENDMESSAGE_ROUTE=off (checked in main() below and in the preamble).
+  // Task #19 — live-work-dedup records scope-assigning messages into the
+  // live-agents ledger; file-lease-guard parses PRISM-LEASE declarations.
+  // NEITHER rewrites `message` (advisory/ledger-only) — the preamble stays the
+  // SOLE writer of that updatedInput key, per the contract above.
+  SendMessage:  ['prism-dispatch-preamble.mjs', 'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs'],
 };
 
 // Normalize one guard result {exit, stdout, stderr} into a decision.
@@ -184,6 +204,10 @@ function logConflict(payload, w) {
 async function main() {
   let payload;
   try { payload = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { process.exit(0); }
+  // Task #17 — route-level kill-switch: PRISM_SENDMESSAGE_ROUTE=off restores
+  // the pre-#17 behavior (SendMessage unrouted, no guard runs). Read per-run.
+  if (payload && payload.tool_name === 'SendMessage'
+      && String(process.env.PRISM_SENDMESSAGE_ROUTE ?? 'on').toLowerCase() === 'off') process.exit(0);
   const route = ROUTES[payload && payload.tool_name];
   if (!route || !route.length) process.exit(0);
 

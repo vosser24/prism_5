@@ -52,9 +52,57 @@ const FOOTER = [
   '4. Report ARTIFACTS, not counters or prose. Show the command and its output.',
 ].join('\n');
 
+// v1.1.0 (task #17, 2026-07-16) — SendMessage work-assignment preamble.
+// Agent-teams assign real work over SendMessage, which historically bypassed
+// PreToolUse entirely, so those workers never received the clause set. The
+// dispatcher now routes SendMessage to THIS hook only (see ROUTES.SendMessage).
+//
+// HEURISTIC (conservative + deterministic — a false rewrite of teammate
+// chatter is the failure mode to avoid, so every doubt resolves to NO-OP):
+//   rewrite ONLY when ALL hold:
+//   1. tool_input.message is a plain string (structured protocol messages —
+//      shutdown/plan-approval JSON — are never touched);
+//   2. length ≥ 200 chars (status pings and questions are short);
+//   3. the message does NOT OPEN with a completion/status marker
+//      ("phase N complete", "task #N complete/done", "status:", "update:",
+//      "fyi", "re:") — reports ABOUT tasks are not assignments OF tasks;
+//   4. an ASSIGNMENT marker appears in the first 400 chars ("new task",
+//      "task #N", "your task", "you are a/the … worker/specialist/agent");
+//   5. a COMPLETION-CRITERIA marker appears anywhere ("acceptance",
+//      "deliverable(s)", "done when", "budget … tool calls").
+//   Idempotent via the same PRESENT_RE as the Agent path.
+// Kill-switch: PRISM_SENDMESSAGE_ROUTE=off (read per call; ALSO enforced at
+// route level in prism-pretooluse-dispatcher.mjs main()). The hook-wide
+// PRISM_DISPATCH_PREAMBLE=off kills this branch too.
+const SM_STATUS_OPEN_RE = /^\s*(?:phase\s+\d+\s+(?:complete|done)|task\s*#?\d+\s+(?:complete|done)|completed?\b|done[.:!\s]|status\b|update[:\s]|fyi\b|re:)/i;
+const SM_ASSIGN_RE = /\b(?:new task|task\s*#\d+|your task|you are (?:a|the) [^\n]{0,80}\b(?:worker|specialist|agent)\b)/i;
+const SM_CRITERIA_RE = /\b(?:acceptance|deliverables?|done when|budget\b[^\n]{0,40}\btool calls)\b/i;
+
+function runSendMessage(input) {
+  const quiet = {exit: 0, stdout: '', stderr: ''};
+  if (String(process.env.PRISM_SENDMESSAGE_ROUTE ?? 'on').toLowerCase() === 'off') return quiet;
+  const ti = input.tool_input || {};
+  const message = ti.message;
+  if (typeof message !== 'string') return quiet;
+  if (message.length < 200) return quiet;
+  if (PRESENT_RE.test(message)) return quiet;
+  if (SM_STATUS_OPEN_RE.test(message)) return quiet;
+  if (!SM_ASSIGN_RE.test(message.slice(0, 400))) return quiet;
+  if (!SM_CRITERIA_RE.test(message)) return quiet;
+  const out = {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      updatedInput: {...ti, message: message + '\n' + FOOTER},
+      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
+    },
+  };
+  return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
+}
+
 export function run(input) {
   try {
     if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
+    if (input && input.tool_name === 'SendMessage') return runSendMessage(input);
     if (!input || input.tool_name !== 'Agent') return {exit: 0, stdout: '', stderr: ''};
     const ti = input.tool_input || {};
     const prompt = typeof ti.prompt === 'string' ? ti.prompt : '';

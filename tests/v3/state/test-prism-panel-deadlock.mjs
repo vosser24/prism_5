@@ -55,7 +55,10 @@ function seedSentinel(home, sessionId, obj) {
   writeFileSync(sentinelPath(home, sessionId), JSON.stringify(obj));
 }
 function runHook(hook, home, payload) {
-  const env = {...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', PRISM_MUTATION_GUARD: 'hard'};
+  // CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS cleared: pin single-actor hard-deny so
+  // these panel-gate assertions don't flip to the D043 advisory-downgrade when
+  // the harness runs inside an agent-teams session (ambient marker leak).
+  const env = {...process.env, HOME: home, USERPROFILE: home, PRISM_DISPATCH_GUARD: 'hard', PRISM_MUTATION_GUARD: 'hard', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: ''};
   const r = spawnSync(process.execPath, [hook], {encoding: 'utf-8', input: JSON.stringify(payload), env, timeout: 15000});
   return {status: r.status, stdout: r.stdout || '', stderr: r.stderr || ''};
 }

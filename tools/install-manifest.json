@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "6.3.0",
+  "prism_version": "6.4.0",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -25,9 +25,12 @@
     {"src": "hooks/prism-bash-hang-guard.mjs", "dst": "hooks/prism-bash-hang-guard.mjs", "executable": true},
     {"src": "hooks/prism-dispatch-cap.mjs", "dst": "hooks/prism-dispatch-cap.mjs", "executable": true},
     {"src": "hooks/prism-dispatch-dedup-guard.mjs", "dst": "hooks/prism-dispatch-dedup-guard.mjs", "executable": true},
+    {"src": "hooks/prism-live-work-dedup.mjs", "dst": "hooks/prism-live-work-dedup.mjs", "executable": true},
+    {"src": "hooks/prism-file-lease-guard.mjs", "dst": "hooks/prism-file-lease-guard.mjs", "executable": true},
     {"src": "hooks/prism-git-clean-nudge.mjs", "dst": "hooks/prism-git-clean-nudge.mjs", "executable": true},
     {"src": "hooks/prism-hook.mjs", "dst": "hooks/prism-hook.mjs", "executable": true},
     {"src": "hooks/prism-kb-autosync.mjs", "dst": "hooks/prism-kb-autosync.mjs", "executable": true},
+    {"src": "hooks/prism-handoff-pointer.mjs", "dst": "hooks/prism-handoff-pointer.mjs", "executable": true},
     {"src": "hooks/prism-lesson-match.mjs", "dst": "hooks/prism-lesson-match.mjs", "executable": true},
     {"src": "hooks/prism-live-agents-summary.mjs", "dst": "hooks/prism-live-agents-summary.mjs", "executable": true},
     {"src": "hooks/prism-memory-save-nudge.mjs", "dst": "hooks/prism-memory-save-nudge.mjs", "executable": true},
@@ -102,6 +105,7 @@
     {"src": "tools/prism-retire.mjs", "dst": "tools/prism-retire.mjs", "executable": true},
     {"src": "tools/prism-state.ps1", "dst": "tools/prism-state.ps1", "executable": false},
     {"src": "tools/prism-sync.mjs", "dst": "tools/prism-sync.mjs", "executable": true},
+    {"src": "tools/prism-drift-check.mjs", "dst": "tools/prism-drift-check.mjs", "executable": true},
     {"src": "tools/prism-telemetry-aggregate.mjs", "dst": "tools/prism-telemetry-aggregate.mjs", "executable": true},
     {"src": "tools/prism-uninstall-cleanup.mjs", "dst": "tools/prism-uninstall-cleanup.mjs", "executable": true},
     {"src": "tools/prism-validate-plugins.mjs", "dst": "tools/prism-validate-plugins.mjs", "executable": true},

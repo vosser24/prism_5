@@ -41,8 +41,21 @@
 // {exit, stdout, stderr} for the in-process PreToolUse dispatcher; the
 // standalone shim at the bottom preserves stdin->stdout/exit wire behavior.
 
-import {readFileSync, existsSync} from 'fs';
-import {basename} from 'path';
+import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'fs';
+import {basename, join, dirname} from 'path';
+import {prismHome} from './lib/prism-home.mjs';
+
+// Event-keyed routing-log record (census visibility). A default-HARD blocking
+// guard with no audit trail cannot be censused — emit on BOTH the deny and the
+// allow path of every IN-SCOPE evaluation (out-of-scope writes stay silent so
+// this never floods the log). Additive only; never affects control flow.
+function appendLog(obj) {
+  try {
+    const p = join(prismHome(), '.claude', '.prism-routing.jsonl');
+    mkdirSync(dirname(p), {recursive: true});
+    appendFileSync(p, JSON.stringify(obj) + '\n');
+  } catch { /* fail-open */ }
+}
 
 // Read fresh on every call (not cached at module load) so this stays
 // testable in-process (import once, toggle env per-case) with no change to
@@ -158,14 +171,29 @@ export function run(input) {
   if (!isInScope(filePath)) return done(0);
 
   const content = resultingContent(toolName, ti);
+  const logBase = {
+    event: 'capture_evidence_guard',
+    ts: new Date().toISOString(),
+    session_id: input.session_id || 'anon',
+    tool: toolName,
+    file: normalizePath(filePath),
+    mode,
+  };
   const claimMatch = CLAIM_TRIGGER_RE.exec(content);
-  if (!claimMatch) return done(0); // no factual claim asserted — nothing to gate
+  if (!claimMatch) { // no factual claim asserted — nothing to gate
+    appendLog({...logBase, blocked: false, outcome: 'no-claim'});
+    return done(0);
+  }
 
-  if (EVIDENCE_FIELD_RE.test(content)) return done(0); // evidence field present — satisfied
+  if (EVIDENCE_FIELD_RE.test(content)) { // evidence field present — satisfied
+    appendLog({...logBase, blocked: false, outcome: 'evidence-present'});
+    return done(0);
+  }
 
   const notice = denyMessage(filePath, claimMatch[0]);
 
   if (mode === 'soft') {
+    appendLog({...logBase, blocked: false, outcome: 'soft-nudge', claim: claimMatch[0]});
     write(JSON.stringify({
       hookSpecificOutput: {hookEventName: 'PreToolUse', additionalContext: notice},
     }));
@@ -173,6 +201,7 @@ export function run(input) {
   }
 
   // hard (default)
+  appendLog({...logBase, blocked: true, outcome: 'deny', claim: claimMatch[0]});
   write(JSON.stringify({
     hookSpecificOutput: {hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: notice},
   }));

@@ -52,6 +52,9 @@ tests/v3/bench/
 # Staged/un-wired manual probe (dev-only, personal-path runbook — see its README)
 tests/v3/probe/
 
+# untracked PII-bearing scratch test — never commit
+tests/v3/memory-field-normalize.test.mjs
+
 # --- PRISM ---
 CLAUDE.local.md
 .claude/settings.local.json
