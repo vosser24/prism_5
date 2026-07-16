@@ -69,3 +69,6 @@ CLAUDE.local.md
 # .claude/ (explicit entries above are kept too, for self-documentation).
 .claude/.prism-*
 # --- end PRISM ---
+
+# project-master roster carries machine-local absolute paths (non-portable); keep local, regenerated per machine
+.claude/agents/roster.json
