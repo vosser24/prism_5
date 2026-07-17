@@ -1,0 +1,50 @@
+#!/bin/sh
+# PRISM pre-commit gate.
+#
+# Runs the two existing manifest-completeness guard tests on every commit.
+# Both predate this gate and already correctly detect the P0 regression
+# class (a shipped file missing from tools/install-manifest.json) when run
+# — the mechanism was never in question, only that nothing forced it to
+# run before a commit landed. See docs/prism/adjudications for the incident
+# this closes.
+#
+# Deliberately narrow: only tests/v3/state/test-manifest-coverage.mjs and
+# tests/v3/install-manifest-completeness.test.mjs run here (both complete in
+# well under a second combined). The full state suite
+# (tests/v3/state/test-prism-installer.mjs — 20+ sequential sandboxed
+# installs, tens of minutes on an SMB-mounted repo) MUST NOT be added here;
+# a slow pre-commit gate gets bypassed with --no-verify, which recreates the
+# exact "optional guard" problem this gate exists to fix. Run the full suite
+# in CONTRIBUTING.md's pre-PR checklist instead.
+#
+# Activate once per clone:
+#   git config core.hooksPath .githooks
+# (scripts/setup-git-hooks.sh / .ps1 does this for you.)
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT" || exit 1
+
+fail=0
+
+echo "[pre-commit] manifest guard: test-manifest-coverage.mjs"
+if ! node tests/v3/state/test-manifest-coverage.mjs; then
+  fail=1
+fi
+
+echo "[pre-commit] manifest guard: install-manifest-completeness.test.mjs"
+if ! node tests/v3/install-manifest-completeness.test.mjs; then
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "[pre-commit] BLOCKED: one or more manifest guards failed (see above)."
+  echo "[pre-commit] Fix tools/install-manifest.json (or the file that triggered the gap), then retry."
+  echo "[pre-commit] Do not bypass with --no-verify — that is exactly how this regression shipped."
+  exit 1
+fi
+
+echo "[pre-commit] manifest guards passed."
+exit 0

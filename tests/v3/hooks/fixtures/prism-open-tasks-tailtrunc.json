@@ -1,0 +1,23 @@
+{
+  "session_id": "prior-tailtrunc",
+  "project": "placeholder",
+  "ts": "2026-07-15T19:00:00.000Z",
+  "tail_truncated": true,
+  "meta": {
+    "structured_hits": 2,
+    "regex_fallbacks": 0,
+    "unmatched_task_results": 0,
+    "tail_truncated": true,
+    "degraded": false
+  },
+  "open_tasks": [
+    {
+      "id": "4",
+      "subject": "Migrate config loader",
+      "description": "Move config parsing from ad-hoc env reads to a single loader module.",
+      "activeForm": "Migrating config loader",
+      "status": "pending",
+      "blockedBy": null
+    }
+  ]
+}

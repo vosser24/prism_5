@@ -34,16 +34,47 @@
 import {writeFileSync, renameSync, unlinkSync, mkdirSync} from 'node:fs';
 import {join, dirname, basename, isAbsolute, relative} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {logAdvisory} from './lib/prism-advisory-log.mjs';
 
-const HANDOFF_BASENAME_RE = /^\d{4}-\d{2}-\d{2}-SESSION-HANDOFF\.md$/i;
+// D046 finding #3 — the old canonical-only regex (`^\d{4}-\d{2}-\d{2}-
+// SESSION-HANDOFF\.md$`) silently missed any real handoff whose slug wasn't
+// the generic "SESSION-HANDOFF" (e.g. the real, /prism-clean-authored
+// "2026-06-04-distribution-fixes-handoff.md") — the file existed, but no
+// pointer got written, so the next session's HANDOFF-RECALL block silently
+// pointed at a STALE prior handoff (or nothing). Verified against the real
+// corpus (docs/prism/plans + docs/prism/lessons, 39 files): the old regex
+// matched 15/39; this one matches 39/39, with zero false positives among
+// the 24 newly-caught files (each spot-checked as a genuine handoff).
+const HANDOFF_BASENAME_RE = /^\d{4}-\d{2}-\d{2}-.*HANDOFF.*\.md$/i;
+// A basename that mentions "handoff" but fails the canonical pattern above —
+// e.g. a version-numbered doc like the real `docs/prism/HANDOFF-5.7.3-
+// dispatch-memory-concurrency.md`, which predates the YYYY-MM-DD convention
+// and is NOT caught even by the broadened regex. This is the residual class
+// the near-miss signal below exists to surface, rather than silently drop.
+const HANDOFF_LOOSE_RE = /handoff/i;
+// Test/fixture marker — same convention as prism-session-start.mjs's
+// HANDOFF-RECALL reconciliation scan (D046 finding #3, F3b design): a
+// basename containing COTEST is a test fixture, never a real handoff, and
+// must never fire ANY signal (pointer or near-miss).
+const FIXTURE_MARKER_RE = /COTEST/i;
 const DOCS_PRISM_RE = /[/\\]docs[/\\]prism[/\\]/i;
 
-function isHandoffPath(p) {
-  if (typeof p !== 'string' || !p) return false;
-  // Accept both an absolute path and a cwd-relative one like
-  // "docs/prism/plans/2026-07-16-SESSION-HANDOFF.md" (no leading separator).
+// Classifies a Write/Edit/MultiEdit target against the handoff-pointer
+// contract:
+//   'canonical' — matches the broadened pattern; pointer gets written.
+//   'near-miss' — mentions "handoff" but fails the pattern; no pointer, but
+//                 a ledger line + best-effort stdout note (see run()).
+//   'fixture'   — carries the COTEST marker; never a real handoff, silent.
+//   'no'        — not under docs/prism/, or no "handoff" mention at all.
+function classifyHandoffPath(p) {
+  if (typeof p !== 'string' || !p) return 'no';
   const normalized = '/' + p.replace(/\\/g, '/');
-  return HANDOFF_BASENAME_RE.test(basename(p)) && DOCS_PRISM_RE.test(normalized);
+  if (!DOCS_PRISM_RE.test(normalized)) return 'no';
+  const bn = basename(p);
+  if (FIXTURE_MARKER_RE.test(bn)) return 'fixture';
+  if (HANDOFF_BASENAME_RE.test(bn)) return 'canonical';
+  if (HANDOFF_LOOSE_RE.test(bn)) return 'near-miss';
+  return 'no';
 }
 
 function gitHeadSha(cwd) {
@@ -73,7 +104,29 @@ export async function run(payload) {
   if (!['Write', 'Edit', 'MultiEdit'].includes(payload.tool_name)) return ok;
 
   const filePath = payload.tool_input && payload.tool_input.file_path;
-  if (!isHandoffPath(filePath)) return ok;
+  const kind = classifyHandoffPath(filePath);
+  if (kind === 'no' || kind === 'fixture') return ok;
+
+  if (kind === 'near-miss') {
+    // DETECT -> LEDGER leg (D046 dominant-defect-shape): a handoff-shaped
+    // write that the canonical pattern will NOT record. logAdvisory() is
+    // itself fail-open (never throws), so no extra try/catch is needed here.
+    const bn = basename(filePath);
+    logAdvisory({event: 'handoff_pointer_near_miss', path: filePath, basename: bn, session_id: payload.session_id || null});
+    // SURFACE-AT-CONSUMPTION leg: the canonical channel for this is
+    // PostToolUse `hookSpecificOutput.additionalContext`, which requires
+    // hooks/prism-posttooluse-dispatcher.mjs to merge a `context` field from
+    // routed hooks — today it only concatenates plain stdout, which Claude
+    // Code does NOT add to model context (transcript-only, same measured gap
+    // as this hook's own existing success message below). That dispatcher
+    // change is cross-cutting (all 8 routed hooks) and out of this fix's
+    // scope. The stdout line below matches this hook's existing convention
+    // and is real — visible in the raw transcript, and to any caller that
+    // reads stdout directly (e.g. a test) — but does not yet reach the
+    // agent's context on a live PostToolUse turn. The ledger line above is
+    // the channel that works today.
+    return {exit: 0, stdout: `[prism-handoff-pointer] NOT RECORDED: '${bn}' looks like a handoff but does not match <YYYY-MM-DD>-...HANDOFF...md — the next session will NOT be pointed at this file. Rename it to the canonical date-prefixed form now if this is a real session handoff.`, stderr: ''};
+  }
 
   try {
     const cwd = payload.cwd || process.cwd();

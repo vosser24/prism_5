@@ -1,0 +1,8 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_c1","name":"TaskCreate","input":{"subject":"alpha task","description":"","activeForm":"doing alpha"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_c1","content":"Task #1 created"}]},"toolUseResult":{"task":{"id":"1","subject":"alpha task"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_c2","name":"TaskCreate","input":{"subject":"bravo task","description":"","activeForm":"doing bravo"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_c2","content":"Task #2 created"}]},"toolUseResult":{"task":{"id":"2","subject":"bravo task"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_u2","name":"TaskUpdate","input":{"taskId":"2"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_u2","content":"Task #2 updated"}]},"toolUseResult":{"success":true,"taskId":"2","updatedFields":["status"],"statusChange":{"from":"pending","to":"completed"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_tl","name":"TaskList","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_tl","content":"3 tasks"}]},"toolUseResult":{"tasks":[{"id":"1","subject":"alpha task","status":"in_progress"},{"id":"2","subject":"bravo task","status":"completed"},{"id":"7","subject":"golf task","status":"pending"}]}}

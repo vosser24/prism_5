@@ -6,6 +6,36 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-07-17
+
+Recall-integrity release: PRISM's memory/handoff/task-carryover surfaces silently
+lost or misrouted data across a session boundary, in three separate places, and
+nothing reported the loss. All three are fixed and each is regression-tested
+against a reproduced failure, not just a passing suite. Grew out of a 9-finding
+remediation (D046) plus a follow-on audit that named the broader defect shape
+(D047 — a signal whose presence does not mean what it claims).
+
+### Fixed
+
+- **Handoff-pointer regex undercounted 24 of 39 real handoffs (P2 / D046 #3, `88e7256b5`).** `HANDOFF_BASENAME_RE` in `hooks/prism-handoff-pointer.mjs` matched only the canonical `YYYY-MM-DD-SESSION-HANDOFF.md` basename, so only 15 of 39 real handoff files on disk were ever pointed to; the other 24 were silently missed and the next session's SessionStart `HANDOFF-RECALL` block could resume with a stale (or absent) handoff and no warning. Broadened to `/^\d{4}-\d{2}-\d{2}-.*HANDOFF.*\.md$/i`, added a near-miss ledger event (`handoff_pointer_near_miss`) for files that still don't match, and excluded test fixtures. Now 39/39. The consumer of this pointer (`hooks/prism-session-start.mjs`'s `HANDOFF-RECALL` block) is deterministic code with its own tests, not an LLM judgment call, so this fix is genuinely enforced going forward.
+- **Task carryover across `/clear`/session-end now actually works.** `hooks/lib/prism-task-snapshot.mjs` read `obj.tool_use_result` from session transcripts, but on-disk transcripts emit camelCase `obj.toolUseResult` (only headless stream-json is snake_case) — task-snapshot recall was a permanent no-op through v6.4.0, silently dropping open tasks and fabricating others as completed. Fixed to dual-read both keys (`9c1cd6d4b`). This release also fixes the merge that made the recovered snapshot trustworthy for long-lived tasks: `mergeOpenTasks()` treated "the session touched this task id" as authority over the task's *entire* record, so a status-only `TaskUpdate` on a task whose original `TaskCreate` had scrolled out of the scanned transcript window blanked that task's subject/description back to empty strings on the next recall (`TASK-RECALL` then rendered "(no subject) — (no description)" for a real, still-open task). Fixed to merge subject/description field-wise: keep the session's value only when it actually observed one, otherwise fall back to the prior pointer's populated value (`d8bfe698b`).
+- **git-stats tri-state — `null` is no longer conflated with `0` (Fix B / D046 #7, `7f67006cd`).** `commands/prism-clean.md`'s git-stats numbers (`commits`/`files_changed`/`insertions`/`deletions`) previously reported `0/0/0/0` both for "genuinely no changes" and "the git command failed," which could get a real session misclassified as L1 NOISE. Each field is now either a real measured number (including `0`) or `null` = "could not be measured," plus a `warning` field carrying the exact failing command, exit code, and stderr when something fails. Because the only consumer of this field is LLM-judged prose (`commands/prism-clean.md`), not code, this fix raises the ceiling to "honest producer + loud label" — it cannot make the consumer diligent, only incapable of being lied to.
+
+### Held back from this release
+
+- **`tools/prism-repair-open-tasks.mjs` is NOT installed in 6.5.0.** An earlier attempt to fix its cross-transcript fold (`ca6854cb1`) turned out to have its own bug: `FOLD_FALLBACK_FIELDS` only carried `subject`/`description` forward, not `status`/`blockedBy`, so a later transcript that only renames a task (no status change) still lets the extractor's `status: 'pending'` default win the fold — `--apply` could write a previously-completed task back into `open_tasks` as open. Independent verification caught this before release. The pointer-repair tool is held back from this release pending a fix to that bug; it has never shipped in any prior release, so nothing is lost for existing users. `ca6854cb1` itself stays in the repo (it is a real improvement over the pre-existing fold logic) as the base for the follow-up fix; the tool is exempted from `tools/install-manifest.json` and from `tests/v3/state/test-manifest-coverage.mjs`'s coverage gate (same repo-only-tool pattern already used for `tools/prism-monitor/`) until it ships.
+
+### Changed
+
+- **`MEMORY.md` hand-written block rot removed (P3 / D046 #4, `6bd3e4203`).** The Stack/Datasources block in `.claude/agents/MEMORY.md` duplicated the always-loaded root `CLAUDE.md` "Project Identity" section and rotted independently of it; deleted. The hand-tracked "Active workstreams" list (last edited describing v5.10–v5.12 work on a v6.4+ codebase) is also removed — active work is already surfaced every SessionStart by the generated `TASK-RECALL` block, which carries staleness tagging the hand-written list never had. Also corrected a line that contradicted Locked D007 (`@agent-factory` is reached only through the orchestrator's Team Assembly decision tree, never called directly).
+
+### Known issues (open, not fixed this release)
+
+- D046 findings #2 (mangled task-subject markup — root cause traced upstream of the hook, not yet measured), #5 (`.prism-open-tasks.json` schema undocumented), #6 (tier router can override a standing per-project model preference), #8 (capture artifact dates are model-typed rather than `new Date()`), and #9 (capture-evidence gate wording conflicts with `capture-conventions.md`) remain open.
+- The D047 vacuous-signals audit (fields that conflate "no" with "didn't check") that produced the git-stats fix above has not been run project-wide — only the instances already found opportunistically this cycle are fixed.
+- A `~30–40%` dispatched-worker-stall rate (holding-string returns instead of real work under agent-teams) was observed and logged this session but has never been independently re-measured or root-caused; do not treat it as a verified figure.
+- The pre-commit gate (`.githooks/pre-commit`, wired via `git config core.hooksPath .githooks`) is **opt-in per clone** — git cannot force `core.hooksPath` on a fresh checkout, and this repo has no CI, so there is no enforceable chokepoint for anyone who skips the one-time `scripts/setup-git-hooks.sh`/`.ps1` setup.
+
 ## [6.4.0] - 2026-07-16
 
 ### Added

@@ -50,10 +50,30 @@ case above).
 The JSON output tells you the rough session size:
 - `commits` — how many landed
 - `files_changed`, `insertions`, `deletions` — diff against the boundary
+- `boundary_sha` — the commit (or git's empty-tree object, when `--since`
+  predates the repo's first commit) the diff was measured against
+- `warning` — **read this field first, before any of the numbers above.**
 
-**Pre-classification heuristic from D002 §6:**
+**`null` vs `0` — read this before applying the heuristic below (D046 #7 / Fix B):**
+`commits`, `files_changed`, `insertions`, `deletions` are each EITHER a real
+measured number (`0` included — a session can genuinely have zero commits)
+OR `null`, meaning the underlying git command failed and that field could
+NOT be measured at all. **`null` is never `0`.** If `warning` is non-null,
+or if ANY of these four fields is `null`, treat the whole result as
+UNMEASURED, not as evidence of an empty session:
+- Do NOT classify as L1 NOISE from a `null`/`warning` result.
+- Read `warning` verbatim to the user (it names the failing git command)
+  and run the fallback command it suggests (typically
+  `git log --stat --since=<iso>`) to get a real answer before classifying.
+- A `commits` count that IS a real number (not `null`) is always reliable
+  even when `files_changed`/`insertions`/`deletions` are `0` — those three
+  are genuinely computed together or not at all (see `warning`).
+
+**Pre-classification heuristic from D002 §6 (applies ONLY once you've
+confirmed above that nothing is `null` / no `warning` is present):**
 - If `commits == 0` AND no edits AND the session was conversational only → likely L1 NOISE. Don't surface anything; tell the user "session has no durable artifacts" and exit.
 - If `commits == 0` BUT the session produced agent panels, adjudications, or substantial design work → still surface (panel work counts as L5 even without commits).
+- If `commits > 0`, the session has real landed work — `files_changed`/`insertions`/`deletions` of `0` alongside `commits > 0` should not occur any more (D046 #7 fix); if you ever see that exact shape with `warning: null`, treat it as suspicious and verify with `git log --stat --since=<iso>` rather than trusting it.
 
 ---
 
@@ -309,7 +329,8 @@ session lessons is `docs/prism/lessons/YYYY-MM-DD-session.md`.
 |---|---|
 | No `.prism-state.json`, NOT a worktree (`git rev-parse --git-common-dir` prints `.git` and `.git` is a directory) | STOP; tell user `/prism-bootstrap` first — project was never bootstrapped |
 | No `.prism-state.json`, IS a worktree (`git-common-dir` differs from `.git`, or `.git` is a file) | Do NOT stop and do NOT advise `/prism-bootstrap`. PROCEED with capture using the bounded git-stats fallback (Step 1); skip only the state-derived `--slug` pointer-append calls (they already exit(5) "note and skip" — expected) |
-| `git-stats --since <baseline>` returns shape `{commits: 0, files_changed: 0, ...}` AND no panel/deviation in session | Report "no durable artifacts" and exit |
+| `git-stats --since <baseline>` returns `{commits: 0, files_changed: 0, ...}` with `warning: null` (a genuine measured zero) AND no panel/deviation in session | Report "no durable artifacts" and exit |
+| `git-stats --since <baseline>` returns any `null` field or a non-null `warning` (D046 #7 — the tool could not measure, e.g. a young repo where `--since` predates the first commit, or a git command failure) | Do NOT report "no durable artifacts". Read `warning`, run the fallback it names (typically `git log --stat --since=<baseline>`), and classify from that instead |
 | User unchecks an L5 item without `--allow-l5-skip` | Refuse; explain the auto-archive contract |
 | Filename collision | Surface to user; offer rename or append (lessons) |
 | Write fails mid-loop | Report which files were written; the slash command does not roll back successful writes |

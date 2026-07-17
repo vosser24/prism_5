@@ -1,0 +1,31 @@
+{
+  "session_id": "prior-degraded",
+  "project": "placeholder",
+  "ts": "2026-07-15T18:00:00.000Z",
+  "tail_truncated": false,
+  "meta": {
+    "structured_hits": 0,
+    "regex_fallbacks": 1,
+    "unmatched_task_results": 2,
+    "tail_truncated": false,
+    "degraded": true
+  },
+  "open_tasks": [
+    {
+      "id": "7",
+      "subject": "Fix login redirect bug",
+      "description": "Repro: log in from /pricing, land on /404. Fix the post-auth redirect to honor the referrer.",
+      "activeForm": "Fixing login redirect",
+      "status": "in_progress",
+      "blockedBy": null
+    },
+    {
+      "id": "9",
+      "subject": "Add logout audit event",
+      "description": "Emit an audit row on every logout.",
+      "activeForm": "Adding logout audit",
+      "status": "pending",
+      "blockedBy": null
+    }
+  ]
+}

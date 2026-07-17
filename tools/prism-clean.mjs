@@ -13,7 +13,15 @@
 //
 //   git-stats --since <iso> [--root <path>]
 //       Run git log + git diff to summarise activity since <iso>.
-//       Prints JSON: {commits, files_changed, insertions, deletions}.
+//       Prints JSON: {commits, files_changed, insertions, deletions,
+//       boundary_sha, warning}. Tri-state contract (D046 finding #7 / Fix
+//       B): commits/files_changed/insertions/deletions are each EITHER a
+//       real measured number (0 included) OR null when the underlying git
+//       command failed and that field could not be measured — 0 never
+//       means "the command failed and we defaulted". warning is non-null
+//       whenever any field is null, and names the git command to re-run
+//       for a manual check. See commands/prism-clean.md Step 1 for how
+//       the LLM classifier is required to read this shape.
 //
 //   append-decision --slug <s> --d-number <NNN> --title <text>
 //       Append a "- [[D###]] <title>" line to the "Recent decisions" section
@@ -147,31 +155,73 @@ function nextDNumber(root) {
   return String(max + 1).padStart(3, '0');
 }
 
+// git's well-known empty-tree object hash — present in every repository
+// without needing to exist as a commit. Used below as the diff boundary
+// when `--since` predates the first commit: "everything since before
+// commit #1" IS "everything since the empty repo", so diffing against it
+// is the semantically correct answer, not a fallback hack.
+const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+// D046 finding #7 (Fix B) — tri-state contract: every numeric field is
+// either a real measured number (including a genuine 0) or `null` when it
+// could not be measured at all. A `0` NEVER means "the git command failed
+// and we defaulted" — that ambiguity is exactly the defect this replaces
+// (58 real commits previously reported as `{files_changed: 0, insertions: 0,
+// deletions: 0}`, indistinguishable from a session with zero changes, which
+// let /prism-clean's LLM classifier read real work as L1 NOISE). `warning`
+// is non-null only when at least one field is `null`, and names the exact
+// git command to re-run for a manual check. `boundary_sha` is a real git
+// object (a commit sha, or EMPTY_TREE_SHA when the window covers the
+// repo's entire history) whenever it is knowable, and `null` only when the
+// git command that would determine it failed outright.
+// git's own message for "this branch has no commits yet" — the ONE non-zero
+// `git log` exit that is a genuine, known zero (an empty repo has exactly
+// zero commits in every window, by definition) rather than a real failure.
+// Every OTHER non-zero exit (bad --since format, corrupt repo, git missing,
+// permissions) is treated as truly unmeasured.
+const EMPTY_REPO_RE = /does not have any commits yet/i;
+
 function gitStats(root, sinceIso) {
+  const unmeasured = (commits, boundary_sha, warning) =>
+    ({commits, files_changed: null, insertions: null, deletions: null, boundary_sha, warning});
+
   // commits since the cutoff
   const logRes = spawnSync('git', ['-C', root, 'log', `--since=${sinceIso}`, '--oneline'], {encoding: 'utf8'});
-  const commits = logRes.status === 0 && logRes.stdout
-    ? logRes.stdout.trim().split('\n').filter(Boolean).length
-    : 0;
-
-  // diff stats against the commit at-or-before the cutoff
-  let files_changed = 0, insertions = 0, deletions = 0;
-  if (commits > 0) {
-    // Try rev-list --before to find the boundary commit
-    const revRes = spawnSync('git', ['-C', root, 'rev-list', '-n', '1', `--before=${sinceIso}`, 'HEAD'], {encoding: 'utf8'});
-    const boundarySha = revRes.status === 0 ? revRes.stdout.trim() : '';
-    if (boundarySha) {
-      const diffRes = spawnSync('git', ['-C', root, 'diff', '--shortstat', `${boundarySha}..HEAD`], {encoding: 'utf8'});
-      if (diffRes.status === 0) {
-        ({files_changed, insertions, deletions} = parseShortstat(diffRes.stdout));
-      }
+  if (logRes.status !== 0) {
+    if (EMPTY_REPO_RE.test(logRes.stderr || '')) {
+      return {commits: 0, files_changed: 0, insertions: 0, deletions: 0, boundary_sha: null, warning: null};
     }
-    // If no boundary commit (cutoff is before repo's first commit), all commits are "since"
-    // but `git diff` against an empty tree isn't meaningful here — leave at zeros.
-    // The commit count is the load-bearing signal for the classifier.
+    return unmeasured(null, null,
+      `git log --since=${sinceIso} failed (exit ${logRes.status}): ${(logRes.stderr || '').trim().slice(0, 200)} — ` +
+      `commit count could NOT be measured. This is UNKNOWN, not zero — do not classify as NOISE from this result.`);
+  }
+  const commits = logRes.stdout ? logRes.stdout.trim().split('\n').filter(Boolean).length : 0;
+
+  if (commits === 0) {
+    // Genuinely zero commits in the window: the diff is trivially zero too,
+    // and that IS a measured fact, not a degraded read.
+    return {commits: 0, files_changed: 0, insertions: 0, deletions: 0, boundary_sha: null, warning: null};
   }
 
-  return {commits, files_changed, insertions, deletions};
+  // commits > 0: find the boundary commit (at-or-before the cutoff) to diff against.
+  const revRes = spawnSync('git', ['-C', root, 'rev-list', '-n', '1', `--before=${sinceIso}`, 'HEAD'], {encoding: 'utf8'});
+  if (revRes.status !== 0) {
+    return unmeasured(commits, null,
+      `commits=${commits} since ${sinceIso}, but git rev-list failed (exit ${revRes.status}) — diff stats ` +
+      `could NOT be measured. This is UNKNOWN, not zero. Verify with: git log --stat --since=${sinceIso}`);
+  }
+  // Empty stdout means no commit exists before the cutoff (the window covers
+  // the repo's entire history) — use the empty-tree boundary (see above),
+  // NOT a silent zero.
+  const boundarySha = revRes.stdout.trim() || EMPTY_TREE_SHA;
+  const diffRes = spawnSync('git', ['-C', root, 'diff', '--shortstat', `${boundarySha}..HEAD`], {encoding: 'utf8'});
+  if (diffRes.status !== 0) {
+    return unmeasured(commits, boundarySha,
+      `commits=${commits} since ${sinceIso}, boundary=${boundarySha}, but git diff failed (exit ${diffRes.status}) — ` +
+      `diff stats could NOT be measured. This is UNKNOWN, not zero. Verify with: git log --stat --since=${sinceIso}`);
+  }
+  const {files_changed, insertions, deletions} = parseShortstat(diffRes.stdout);
+  return {commits, files_changed, insertions, deletions, boundary_sha: boundarySha, warning: null};
 }
 
 function parseShortstat(text) {

@@ -54,8 +54,9 @@
 // Run: node tests/v3/install-manifest-completeness.test.mjs
 
 import {readFileSync, existsSync} from 'node:fs';
-import {dirname, join, posix as posixPath} from 'node:path';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {stripLineComments, extractLocalImportSpecs, buildImportClosure} from '../../tools/lib/prism-import-closure.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -78,18 +79,10 @@ function check(name, cond, msg) { if (cond) ok(name); else bad(name, msg || 'ass
 
 function toPosix(p) { return p.split('\\').join('/'); }
 
-// Crude comment stripper — good enough for THIS repo's own source (no JS
-// parser dependency, stays dep-free). Only ever drops a trailing `//`
-// comment on a line; none of the string literals we scan for (bare `.mjs`
-// filenames, `./`/`../` import specifiers, `hooks/...mjs` path fragments)
-// contain `//`, so a false-strip here can only remove prose, never a
-// filename reference we need to catch.
-function stripLineComments(src) {
-  return src.split('\n').map(line => {
-    const idx = line.indexOf('//');
-    return idx === -1 ? line : line.slice(0, idx);
-  }).join('\n');
-}
+// stripLineComments / extractLocalImportSpecs / buildImportClosure live in
+// tools/lib/prism-import-closure.mjs (shared with tools/prism-installer.mjs
+// verify, which runs the same closure-walk against the INSTALLED tree
+// instead of the repo tree) — imported above, not redefined here.
 
 function loadManifestSrcSet(manifestObj) {
   return new Set((manifestObj.files || []).map(f => toPosix(f.src)));
@@ -136,32 +129,19 @@ function checkDispatcherRoutes(manifestSrcSet) {
 }
 
 // ── Check 2: transitive local-import closure ────────────────────────────────
-// Matches real ES import/export syntax with a relative specifier:
+// extractLocalImportSpecs (tools/lib/prism-import-closure.mjs) matches real
+// ES import/export syntax with a relative specifier:
 //   import {x} from './y.mjs'   import y from '../y.mjs'   export * from './y.mjs'
 //   import('./y.mjs')            (static string literal dynamic import only)
 // Deliberately does NOT match the dispatcher's own pathToFileURL(join(HOOKS,
 // f)) dynamic-dispatch pattern — those aren't literal import specifiers, and
 // are already covered by Check 1.
-const STATIC_IMPORT_RE = /\b(?:import|export)\s*(?:[\w*{}\s,]+\s*from\s*)?['"](\.\.?\/[^'"]+)['"]/g;
-const DYNAMIC_IMPORT_RE = /\bimport\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g;
 
-function extractLocalImportSpecs(fileAbsPath) {
-  const src = stripLineComments(readFileSync(fileAbsPath, 'utf-8'));
-  const specs = new Set();
-  for (const re of [STATIC_IMPORT_RE, DYNAMIC_IMPORT_RE]) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(src))) specs.add(m[1]);
-  }
-  return specs;
-}
-
-function resolveSpecToRepoPath(fromFileRepoRelPath, spec) {
-  const fromDir = posixPath.dirname(fromFileRepoRelPath);
-  return posixPath.normalize(posixPath.join(fromDir, spec));
-}
-
-// Walks the import graph starting from every MANIFESTED hooks/**/*.mjs file.
+// Walks the import graph starting from every MANIFESTED hooks/**/*.mjs file,
+// resolved against REPO_ROOT (repo-side: is the resolved file in the
+// manifest?). tools/prism-installer.mjs verify runs the same
+// buildImportClosure against CLAUDE_DIR instead (installed-side: does the
+// resolved file exist on disk?).
 // Scope note: intentionally hooks/-only. tools/**/*.mjs uses the same ESM
 // import syntax but those files are invoked directly as CLI scripts, not
 // dynamically loaded by a dispatcher's fail-open `.catch(() => null)` —
@@ -170,24 +150,7 @@ function resolveSpecToRepoPath(fromFileRepoRelPath, spec) {
 // mode than the silent-death this guard targets. Out of scope for this file.
 function buildTransitiveClosure(manifestSrcSet) {
   const seeds = [...manifestSrcSet].filter(p => p.startsWith('hooks/') && p.endsWith('.mjs'));
-  const visited = new Set();
-  const dependents = new Map(); // resolvedPath -> Set(files that import it)
-  const queue = [...seeds];
-  while (queue.length) {
-    const rel = queue.shift();
-    if (visited.has(rel)) continue;
-    visited.add(rel);
-    const abs = join(REPO_ROOT, rel);
-    if (!existsSync(abs)) continue; // manifested-but-missing-on-disk is a different bug, not this guard's job
-    const specs = extractLocalImportSpecs(abs);
-    for (const spec of specs) {
-      const resolvedRel = resolveSpecToRepoPath(rel, spec);
-      if (!dependents.has(resolvedRel)) dependents.set(resolvedRel, new Set());
-      dependents.get(resolvedRel).add(rel);
-      if (!visited.has(resolvedRel)) queue.push(resolvedRel);
-    }
-  }
-  return {visited, dependents};
+  return buildImportClosure(seeds, rel => join(REPO_ROOT, rel));
 }
 
 function checkTransitiveClosure(manifestSrcSet) {

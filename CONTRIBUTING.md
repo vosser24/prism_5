@@ -14,7 +14,16 @@ Thanks for your interest in improving PRISM. This is a small, focused project â€
 git clone https://github.com/vosser24/prism_5.git
 cd prism_5
 node tools/prism-installer.mjs verify   # sanity-check a local install
+bash scripts/setup-git-hooks.sh         # one-time: activate the pre-commit manifest guards
 ```
+
+(On Windows PowerShell: `pwsh scripts/setup-git-hooks.ps1`.)
+
+This points `core.hooksPath` at the tracked `.githooks/` directory, so every
+commit runs `tests/v3/state/test-manifest-coverage.mjs` and
+`tests/v3/install-manifest-completeness.test.mjs` â€” the two guards that catch
+a file shipped without being added to `tools/install-manifest.json`. Both
+run in well under a second; do not bypass with `--no-verify`.
 
 ## Before you open a PR
 

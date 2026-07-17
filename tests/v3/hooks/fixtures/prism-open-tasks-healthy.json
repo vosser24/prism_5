@@ -1,0 +1,23 @@
+{
+  "session_id": "prior-healthy",
+  "project": "placeholder",
+  "ts": "2026-07-15T21:00:00.000Z",
+  "tail_truncated": false,
+  "meta": {
+    "structured_hits": 2,
+    "regex_fallbacks": 0,
+    "unmatched_task_results": 0,
+    "tail_truncated": false,
+    "degraded": false
+  },
+  "open_tasks": [
+    {
+      "id": "1",
+      "subject": "Wire metrics endpoint",
+      "description": "Expose /metrics with request counters. Acceptance: curl /metrics returns prometheus text format.",
+      "activeForm": "Wiring metrics endpoint",
+      "status": "in_progress",
+      "blockedBy": null
+    }
+  ]
+}

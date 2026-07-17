@@ -1,0 +1,32 @@
+{
+  "session_id": "prior-carried",
+  "project": "placeholder",
+  "ts": "2026-07-15T20:00:00.000Z",
+  "tail_truncated": false,
+  "meta": {
+    "structured_hits": 3,
+    "regex_fallbacks": 0,
+    "unmatched_task_results": 0,
+    "tail_truncated": false,
+    "degraded": false
+  },
+  "open_tasks": [
+    {
+      "id": "2",
+      "subject": "Refresh API docs",
+      "description": "Regenerate the OpenAPI spec after the v2 endpoint changes.",
+      "activeForm": "Refreshing API docs",
+      "status": "pending",
+      "blockedBy": null,
+      "carried_from": {"session": "much-older-session", "ts": "2026-07-14T08:00:00.000Z"}
+    },
+    {
+      "id": "5",
+      "subject": "Tighten CSP headers",
+      "description": "Add script-src and frame-ancestors directives; verify the admin panel still loads.",
+      "activeForm": "Tightening CSP headers",
+      "status": "in_progress",
+      "blockedBy": null
+    }
+  ]
+}

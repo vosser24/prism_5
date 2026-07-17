@@ -7,6 +7,11 @@ import {readFileSync as r, writeFileSync as w, existsSync as e, mkdirSync as mk,
 import {join as j} from 'path';
 import {pathToFileURL} from 'url';
 import {spawnSync} from 'node:child_process';
+import {logAdvisory} from './lib/prism-advisory-log.mjs';
+// Slice 6 (Fix A): task-snapshot machinery extracted VERBATIM to the shared
+// lib so tools/prism-repair-open-tasks.mjs runs the EXACT same extractor —
+// tool/hook divergence is structurally impossible. Behavior unchanged.
+import {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks} from './lib/prism-task-snapshot.mjs';
 
 // ATOMIC-WRITE-001: tempfile + renameSync with direct-write fallback.
 // Matches hooks/prism-session-start.mjs:121-136 canonical pattern.
@@ -40,131 +45,6 @@ function getGitHeadSha(cwd) {
     }
   } catch {}
   return null;
-}
-
-// ── C5 (recall-hardening v6.2.0): Task API snapshot / carryover ────────────
-// Reconstructs final per-task state from TaskCreate/TaskUpdate/TaskList/
-// TaskGet tool_use + tool_result events found in the transcript tail (the
-// same `lines` array the rest of this hook already tokenizes for lesson/
-// error extraction — see the main try block below).
-//
-// Real wire schema (verified against a captured transcript —
-// tests/v3/bench/item6/results/A/rep1/sess4/stream.jsonl:61-71):
-//   TaskCreate  tool_use.input   = {subject, description, activeForm, blockedBy?}
-//   TaskCreate  tool_use_result  = {task: {id, subject}}          (id is a string)
-//   TaskUpdate  tool_use.input   = {taskId, status?, subject?, description?,
-//                                   activeForm?, blockedBy?}
-//   TaskUpdate  tool_use_result  = {success, taskId, updatedFields,
-//                                   statusChange: {from, to}}
-// TaskList/TaskGet result shapes were not exercised in any captured
-// transcript; they are handled defensively (tool_use_result.tasks[] /
-// .task) so a real payload, if one ever appears, still merges in transcript
-// order like everything else. `tool_use_result` sits as a top-level sibling
-// of `message` on the `type:"user"` tool_result row, NOT nested inside
-// `message.content` — matches the pattern already relied on elsewhere in
-// this file (e.g. no equivalent lookup existed before; this is new).
-//
-// Fail-open: a malformed line is skipped (existing per-line try/catch
-// pattern in the main loop); this function itself never throws — worst
-// case it returns whatever it managed to reconstruct so far.
-function extractTaskSnapshot(rawLines) {
-  const tasks = new Map(); // id (string) -> {id, subject, description, activeForm, status, blockedBy}
-  const pendingCalls = new Map(); // tool_use_id -> {name, input}
-  const TASK_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
-
-  function upsert(id, patch) {
-    if (id === null || id === undefined || id === '') return;
-    const key = String(id);
-    const prev = tasks.get(key) || {id: key, subject: '', description: '', activeForm: '', status: 'pending', blockedBy: null};
-    tasks.set(key, {...prev, ...patch, id: key});
-  }
-
-  for (const line of rawLines) {
-    if (!line.trim()) continue;
-    let obj;
-    try { obj = JSON.parse(line); } catch { continue; }
-
-    // Track TaskCreate/TaskUpdate/TaskList/TaskGet tool_use calls issued by
-    // the assistant, keyed by tool_use id, so the matching tool_result row
-    // (below) can be resolved back to the call that produced it.
-    const am = obj.message;
-    if (am && am.role === 'assistant' && Array.isArray(am.content)) {
-      for (const c of am.content) {
-        if (c && c.type === 'tool_use' && c.id && TASK_TOOL_NAMES.has(c.name)) {
-          pendingCalls.set(c.id, {name: c.name, input: c.input || {}});
-        }
-      }
-    }
-
-    // Match tool_result rows (type:"user" messages carrying a tool_result
-    // content block) back to the pending call via tool_use_id.
-    const um = obj.message;
-    const content = um && Array.isArray(um.content) ? um.content : null;
-    if (!content) continue;
-
-    for (const c of content) {
-      if (!c || c.type !== 'tool_result' || !c.tool_use_id) continue;
-      const call = pendingCalls.get(c.tool_use_id);
-      if (!call) continue;
-      const tur = obj.tool_use_result || null; // sibling of `message`
-      const resultText = typeof c.content === 'string' ? c.content : '';
-
-      if (call.name === 'TaskCreate') {
-        let id = (tur && tur.task && tur.task.id != null) ? tur.task.id : null;
-        if (id === null) { const m = resultText.match(/Task #(\S+)/); if (m) id = m[1]; }
-        if (id !== null) {
-          upsert(id, {
-            subject: call.input.subject || (tur && tur.task && tur.task.subject) || '',
-            description: call.input.description || '',
-            activeForm: call.input.activeForm || '',
-            status: 'pending',
-            blockedBy: call.input.blockedBy ?? null,
-          });
-        }
-      } else if (call.name === 'TaskUpdate') {
-        let id = (call.input.taskId != null) ? call.input.taskId : ((tur && tur.taskId != null) ? tur.taskId : null);
-        if (id === null) { const m = resultText.match(/task #(\S+)/i); if (m) id = m[1]; }
-        if (id !== null) {
-          const patch = {};
-          if (call.input.subject !== undefined) patch.subject = call.input.subject;
-          if (call.input.description !== undefined) patch.description = call.input.description;
-          if (call.input.activeForm !== undefined) patch.activeForm = call.input.activeForm;
-          if (call.input.blockedBy !== undefined) patch.blockedBy = call.input.blockedBy;
-          if (call.input.status !== undefined) patch.status = call.input.status;
-          if (tur && tur.statusChange && tur.statusChange.to) patch.status = tur.statusChange.to; // most authoritative
-          upsert(id, patch);
-        }
-      } else if (call.name === 'TaskGet') {
-        const t = tur && tur.task ? tur.task : null;
-        if (t && t.id != null) {
-          const patch = {};
-          if (t.subject !== undefined) patch.subject = t.subject;
-          if (t.description !== undefined) patch.description = t.description;
-          if (t.activeForm !== undefined) patch.activeForm = t.activeForm;
-          if (t.status !== undefined) patch.status = t.status;
-          if (t.blockedBy !== undefined) patch.blockedBy = t.blockedBy;
-          upsert(t.id, patch);
-        }
-      } else if (call.name === 'TaskList') {
-        const arr = (tur && Array.isArray(tur.tasks)) ? tur.tasks : null;
-        if (arr) {
-          for (const t of arr) {
-            if (!t || t.id == null) continue;
-            const patch = {};
-            if (t.subject !== undefined) patch.subject = t.subject;
-            if (t.description !== undefined) patch.description = t.description;
-            if (t.activeForm !== undefined) patch.activeForm = t.activeForm;
-            if (t.status !== undefined) patch.status = t.status;
-            if (t.blockedBy !== undefined) patch.blockedBy = t.blockedBy;
-            upsert(t.id, patch);
-          }
-        }
-      }
-      pendingCalls.delete(c.tool_use_id);
-    }
-  }
-
-  return Array.from(tasks.values());
 }
 
 try {
@@ -358,9 +238,31 @@ try {
   // Graceful no-op if no Task events occurred this session. Off-switch:
   // PRISM_DISABLE_TASK_SNAPSHOT=1. Fail-open — never breaks SessionEnd.
   let taskSnapshotPayload = null;
+  let sessionTouchedIds = new Set(); // 1c — every id this session reconstructed (open OR closed); drives merge drop-logic
   if (process.env.PRISM_DISABLE_TASK_SNAPSHOT !== '1') {
     try {
-      const allTasks = extractTaskSnapshot(lines);
+      // 1b: task snapshot reads the FULL transcript (own capped pass), NOT the
+      // 500KB summary tail — so Task events >500KB from EOF are no longer lost.
+      const {lines: taskScanLines, tail_truncated} = readTaskScanLines(transcriptPath);
+      // Slice 5 (panel-53 E1/F1): count how each Task tool_result was resolved.
+      const counters = {structured_hits: 0, regex_fallbacks: 0, unmatched_task_results: 0};
+      const allTasks = extractTaskSnapshot(taskScanLines, counters);
+      const taskResultsSeen = counters.structured_hits + counters.regex_fallbacks + counters.unmatched_task_results;
+      // degraded = the Finding-1 signature: Task results ran this session but
+      // the structured reader recognized NONE of them (shape miss).
+      const meta = {
+        ...counters,
+        tail_truncated,
+        degraded: taskResultsSeen > 0 && counters.structured_hits === 0,
+      };
+      // LEDGER leg (E1 DETECT→LEDGER→SURFACE): one routing-log line per
+      // snapshot when the extraction is degraded or the scan window was
+      // truncated — fires even when zero tasks were reconstructed (the worst
+      // miss must still be recorded). No stderr: SessionEnd is a dead channel.
+      if (meta.degraded || tail_truncated) {
+        logAdvisory({hook: 'prism-session-end', event: 'task_snapshot_integrity', session_id: sessionId, ...meta});
+      }
+      sessionTouchedIds = new Set(allTasks.map(t => String(t.id)));
       if (allTasks.length) {
         const openTasks = allTasks
           .filter(t => t.status === 'pending' || t.status === 'in_progress')
@@ -388,6 +290,8 @@ try {
           project: cwd,
           ts: new Date().toISOString(),
           git_sha: gitSha, // SHA-STAMP-001 — null when not resolvable; consumed by SessionStart's staleness check
+          tail_truncated, // 1b — true iff transcript exceeded the 20MB task-scan cap (older Task events unseen)
+          meta, // Slice 5 — extraction health stamp; SessionStart's TASK-RECALL derives its self-clearing integrity line from this
           open_tasks: openTasks.map(t => ({
             id: t.id,
             subject: t.subject,
@@ -417,14 +321,24 @@ try {
   // carryover pointer instead of leaving a stale one for SessionStart to
   // re-surface. Both writes are independently fail-open.
   if (taskSnapshotPayload) {
+    // Sidecar — this-session-only forensic/recovery record. NEVER merged (1c):
+    // it must faithfully reflect what THIS session reconstructed.
     try {
       const tasksSidecarPath = j(outDir, `${sessionId}.tasks.json`);
       atomicWriteSync(tasksSidecarPath, JSON.stringify(taskSnapshotPayload, null, 2));
     } catch {}
+    // Cross-session carryover pointer — MERGE with the existing pointer (1c) so
+    // a prior-session task still open but untouched this session is not silently
+    // dropped. Read defensively; fail-open to this session's snapshot.
     try {
       const projClaudeDir = j(cwd, '.claude');
       mk(projClaudeDir, {recursive: true});
-      atomicWriteSync(j(projClaudeDir, '.prism-open-tasks.json'), JSON.stringify(taskSnapshotPayload, null, 2));
+      const pointerPath = j(projClaudeDir, '.prism-open-tasks.json');
+      let existingPointer = null;
+      try { if (e(pointerPath)) existingPointer = JSON.parse(r(pointerPath, 'utf-8')); } catch { existingPointer = null; }
+      const mergedOpen = mergeOpenTasks(existingPointer, taskSnapshotPayload.open_tasks, sessionTouchedIds, Date.now());
+      const pointerPayload = {...taskSnapshotPayload, open_tasks: mergedOpen};
+      atomicWriteSync(pointerPath, JSON.stringify(pointerPayload, null, 2));
     } catch {}
   }
 

@@ -50,6 +50,7 @@ const FOOTER = [
   '2. "There is no bug" / "the premise is wrong" is a VALID outcome. Do not manufacture a finding to look useful.',
   '3. REPRODUCE before you fix. An inherited diagnosis is a hypothesis, not a fact.',
   '4. Report ARTIFACTS, not counters or prose. Show the command and its output.',
+  '5. KARPATHY DISCIPLINE: make surgical, minimal changes — no speculative features or abstractions; surface your assumptions instead of picking silently; define verifiable success criteria and verify them before reporting.',
 ].join('\n');
 
 // v1.1.0 (task #17, 2026-07-16) — SendMessage work-assignment preamble.
@@ -93,7 +94,7 @@ function runSendMessage(input) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       updatedInput: {...ti, message: message + '\n' + FOOTER},
-      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
+      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
     },
   };
   return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
@@ -129,7 +130,7 @@ export function run(input) {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: {...ti, prompt: augmented},
-        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
+        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
       },
     };
     return {exit: 0, stdout: JSON.stringify(out), stderr: ''};

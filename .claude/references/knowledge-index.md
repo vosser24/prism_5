@@ -43,6 +43,7 @@ _Last rebuilt: 2026-07-16 · 35 adjudications, 43 lessons_
 
 ## Lessons
 
+
 - [[lesson:2026-07-16]] claude-mem enabled:false fix + verify-field-location-against-real-file lesson
 - [[lesson:2026-07-15]] Tactical lessons — v6.3.0 release + prism_5 PII-gate near-miss (2026-07-15)
 - [[lesson:2026-07-14]] Dispatch-preamble hook: what changed + a same-key updatedInput collision gotcha

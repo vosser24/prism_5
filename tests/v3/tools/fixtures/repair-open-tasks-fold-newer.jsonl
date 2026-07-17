@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_fold_2","name":"TaskUpdate","input":{"taskId":"17","status":"in_progress"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_fold_2","content":"Updated task #17"}]},"toolUseResult":{"success":true,"taskId":"17","updatedFields":["status"],"statusChange":{"from":"pending","to":"in_progress"}}}

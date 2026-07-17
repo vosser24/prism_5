@@ -23,7 +23,7 @@
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync, readFileSync, unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join} from 'node:path';
+import {basename, dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -88,6 +88,32 @@ function writePayload(projectDir, filePath, sessionId = 'sess-hop') {
   return {tool_name: 'Write', tool_input: {file_path: filePath}, cwd: projectDir, session_id: sessionId};
 }
 
+// D046 finding #3 (Fix): the near-miss path writes to the ledger via
+// logAdvisory(), which resolves ~/.claude through prismHome() — HOME/
+// USERPROFILE read AT CALL TIME (hooks/lib/prism-home.mjs's own doc
+// comment: "lets tests flip HOME between calls"). pointerRun() is called
+// DIRECTLY (in-process import, not a subprocess with an env override like
+// runStartHook below), so every call that could hit the near-miss branch
+// must flip HOME/USERPROFILE to the fixture's sandboxed home first, or it
+// silently writes into the real machine's ~/.claude/.prism-routing.jsonl.
+async function pointerRunSandboxed(fx, payload) {
+  const prevHome = process.env.HOME, prevUserProfile = process.env.USERPROFILE;
+  process.env.HOME = fx.home;
+  process.env.USERPROFILE = fx.home;
+  try {
+    return await pointerRun(payload);
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevUserProfile;
+  }
+}
+const ledgerPathOf = (home) => join(home, '.claude', '.prism-routing.jsonl');
+function readLedgerLines(home) {
+  const p = ledgerPathOf(home);
+  if (!existsSync(p)) return [];
+  return readFileSync(p, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+}
+
 function runStartHook({home, projectDir}, extraEnv = {}) {
   const payload = JSON.stringify({session_id: 'current-session', cwd: projectDir});
   return spawnSync(process.execPath, [START_HOOK], {
@@ -110,7 +136,7 @@ await test('pointer hook: handoff Write records path + real HEAD sha (side-effec
   try {
     const sha = initGitRepo(fx.projectDir);
     const {abs, rel} = writeHandoffDoc(fx.projectDir);
-    const r = await pointerRun(writePayload(fx.projectDir, abs));
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
     assert(r.exit === 0, `exit ${r.exit}`);
     assert(r.stdout.includes('latest-handoff pointer recorded'), `stdout: ${r.stdout}`);
     assert(existsSync(pointerPathOf(fx.projectDir)), 'pointer sidecar written');
@@ -125,20 +151,112 @@ await test('pointer hook: handoff Write records path + real HEAD sha (side-effec
   }
 });
 
-await test('pointer hook: non-handoff Write is a no-op; off-switch suppresses', async () => {
+await test('pointer hook: a basename with no "handoff" mention at all is a true no-op (no pointer, no ledger)', async () => {
   const fx = makeFixture('noop');
   try {
     initGitRepo(fx.projectDir);
-    const other = join(fx.projectDir, 'docs', 'prism', 'plans', 'not-a-handoff.md');
+    const other = join(fx.projectDir, 'docs', 'prism', 'plans', 'readme.md');
     writeFileSync(other, 'x');
-    let r = await pointerRun(writePayload(fx.projectDir, other));
-    assert(r.exit === 0 && !existsSync(pointerPathOf(fx.projectDir)), 'no pointer for non-handoff basename');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, other));
+    assert(r.exit === 0 && r.stdout === '' && !existsSync(pointerPathOf(fx.projectDir)), 'no pointer, no message, for a basename with no handoff mention');
+    assert(readLedgerLines(fx.home).length === 0, 'no ledger entry either — this is a true negative, not a near-miss');
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
 
+await test('pointer hook: off-switch suppresses even a canonical handoff Write', async () => {
+  const fx = makeFixture('offswitch');
+  try {
+    initGitRepo(fx.projectDir);
     const {abs} = writeHandoffDoc(fx.projectDir);
     process.env.PRISM_DISABLE_HANDOFF_POINTER = '1';
-    try { r = await pointerRun(writePayload(fx.projectDir, abs)); }
+    let r;
+    try { r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs)); }
     finally { delete process.env.PRISM_DISABLE_HANDOFF_POINTER; }
     assert(r.exit === 0 && !existsSync(pointerPathOf(fx.projectDir)), 'off-switch: no pointer written');
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+// ─── D046 finding #3 (Fix) — broadened regex, near-miss, fixture exclusion ──
+
+await test('pointer hook: a REAL previously-missed handoff slug now gets a pointer (the D046 #3 fix, reproducing the field bug)', async () => {
+  const fx = makeFixture('broadened-win');
+  try {
+    initGitRepo(fx.projectDir);
+    // Mirrors an actual file in this repo's own docs/prism/plans/ corpus —
+    // the old canonical-only regex (`SESSION-HANDOFF` exactly) missed this
+    // shape; reproduced against the live hook before this fix (see report).
+    const {abs, rel} = writeHandoffDoc(fx.projectDir, 'docs/prism/plans/2026-06-04-distribution-fixes-handoff.md');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0 && r.stdout.includes('latest-handoff pointer recorded'), `stdout: ${r.stdout}`);
+    assert(existsSync(pointerPathOf(fx.projectDir)), 'pointer sidecar written for the non-canonical slug');
+    const p = JSON.parse(readFileSync(pointerPathOf(fx.projectDir), 'utf-8'));
+    assert(p.path === rel.replace(/\\/g, '/'), `path recorded: ${p.path}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('pointer hook: near-miss — a handoff-shaped basename with NO date prefix gets NO pointer, but a ledger line + stdout note', async () => {
+  const fx = makeFixture('near-miss');
+  try {
+    initGitRepo(fx.projectDir);
+    // Mirrors two REAL files in this repo: docs/prism/HANDOFF-5.7.3-... and
+    // HANDOFF-5.7.4-...md — version-numbered, predate the YYYY-MM-DD
+    // convention, and are NOT caught even by the broadened regex. This is
+    // the residual class the near-miss signal exists to surface.
+    const rel = 'docs/prism/HANDOFF-5.7.3-dispatch-memory-concurrency.md';
+    const abs = join(fx.projectDir, rel);
+    writeFileSync(abs, '# some real content\n');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0, `exit ${r.exit}`);
+    assert(!existsSync(pointerPathOf(fx.projectDir)), 'no pointer written for a near-miss');
+    assert(r.stdout.includes('NOT RECORDED') && r.stdout.includes(basename(abs)), `near-miss stdout note: ${r.stdout}`);
+    const lines = readLedgerLines(fx.home);
+    assert(lines.length === 1, `exactly one ledger line, got ${lines.length}`);
+    assert(lines[0].event === 'handoff_pointer_near_miss', `ledger event: ${JSON.stringify(lines[0])}`);
+    assert(lines[0].basename === basename(abs), `ledger basename: ${JSON.stringify(lines[0])}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('pointer hook: near-miss also fires for a handoff-mentioning basename that lacks a date prefix entirely (not-a-handoff.md)', async () => {
+  const fx = makeFixture('near-miss-lowercase');
+  try {
+    initGitRepo(fx.projectDir);
+    const rel = 'docs/prism/plans/not-a-handoff.md';
+    const abs = join(fx.projectDir, rel);
+    writeFileSync(abs, 'x');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0 && !existsSync(pointerPathOf(fx.projectDir)), 'no pointer for this near-miss either');
+    assert(r.stdout.includes('NOT RECORDED'), `stdout: ${r.stdout}`);
+    const lines = readLedgerLines(fx.home);
+    assert(lines.length === 1 && lines[0].event === 'handoff_pointer_near_miss', `ledger: ${JSON.stringify(lines)}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('pointer hook: fixture-path exclusion — a COTEST-marked basename is fully silent (no pointer, no ledger, no message)', async () => {
+  const fx = makeFixture('fixture-exclusion');
+  try {
+    initGitRepo(fx.projectDir);
+    const rel = 'docs/prism/plans/2026-07-17-COTEST-SESSION-HANDOFF.md';
+    const abs = join(fx.projectDir, rel);
+    writeFileSync(abs, 'fixture content, not a real handoff');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0 && r.stdout === '', `COTEST fixture must be fully silent, got stdout: ${r.stdout}`);
+    assert(!existsSync(pointerPathOf(fx.projectDir)), 'no pointer for a COTEST fixture');
+    assert(readLedgerLines(fx.home).length === 0, 'no ledger entry for a COTEST fixture — matches the anti-cry-wolf discipline');
   } finally {
     rmSync(fx.home, {recursive: true, force: true});
     rmSync(fx.projectDir, {recursive: true, force: true});
@@ -152,7 +270,7 @@ await test('SessionStart: fresh pointer (sha == HEAD) -> HANDOFF-RECALL with [CU
   try {
     initGitRepo(fx.projectDir);
     const {abs, rel} = writeHandoffDoc(fx.projectDir);
-    await pointerRun(writePayload(fx.projectDir, abs));
+    await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
     const r = runStartHook(fx);
     assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
     const ctx = additionalContextOf(r);
@@ -173,7 +291,7 @@ await test('SessionStart: HEAD moved 2 commits -> HANDOFF-RECALL [STALE — 2 co
   try {
     initGitRepo(fx.projectDir);
     const {abs} = writeHandoffDoc(fx.projectDir);
-    await pointerRun(writePayload(fx.projectDir, abs));
+    await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
     commitEmpty(fx.projectDir, 'second commit');
     commitEmpty(fx.projectDir, 'third commit');
     const r = runStartHook(fx);
@@ -196,7 +314,7 @@ await test('SessionStart: pointer present but handoff doc DELETED -> no HANDOFF-
   try {
     initGitRepo(fx.projectDir);
     const {abs} = writeHandoffDoc(fx.projectDir);
-    await pointerRun(writePayload(fx.projectDir, abs));
+    await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
     unlinkSync(abs);
     const r = runStartHook(fx);
     assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
@@ -212,7 +330,7 @@ await test('non-git cwd: pointer written with git_sha null; surfaced with no CUR
   try {
     // projectDir deliberately never git-init'd
     const {abs} = writeHandoffDoc(fx.projectDir);
-    const rr = await pointerRun(writePayload(fx.projectDir, abs));
+    const rr = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
     assert(rr.exit === 0, `pointer run exit ${rr.exit}`);
     const p = JSON.parse(readFileSync(pointerPathOf(fx.projectDir), 'utf-8'));
     assert(p.git_sha === null, `git_sha null for non-git cwd, got ${JSON.stringify(p.git_sha)}`);

@@ -36,6 +36,7 @@ import {fileURLToPath} from 'url';
 import {createHash} from 'crypto';
 import {spawnSync} from 'child_process';
 import { withRosterLock } from './lib/prism-roster-lock.mjs';
+import { buildImportClosure } from './lib/prism-import-closure.mjs';
 
 // ─── Path resolution ──────────────────────────────────────────────────────────
 // [[feedback-windows-spawnsync-url-path]]: always use fileURLToPath, never new URL().pathname
@@ -934,6 +935,49 @@ async function runUpdate() {
   }
 }
 
+// ─── verify: transitive-import resolution (installed tree) ────────────────────
+// Static check only — never executes a hook. Walks the local (./ ../) import
+// closure of every top-level installed hook (hooks/*.mjs) using the same
+// buildImportClosure walk as tests/v3/install-manifest-completeness.test.mjs
+// Check 2, but resolved against CLAUDE_DIR (the INSTALLED tree) instead of
+// REPO_ROOT (the repo tree) — this is what would have caught the P0
+// (hooks/prism-session-end.mjs shipped without hooks/lib/prism-task-
+// snapshot.mjs: the repo-side manifest check can be green while an install
+// still ships an incomplete tree, e.g. a stale/partial copy).
+//
+// Per hook, returns one of:
+//   OK                 every transitively-imported local module exists on disk
+//   MISSING(<module>)  a transitively-imported local module is not installed
+//   UNCHECKED(<why>)   the hook file itself isn't installed / isn't readable,
+//                      so its import graph could not be walked
+function checkInstalledTransitiveImports(manifest) {
+  const results = [];
+  const topLevelHooks = manifest.files
+    .filter(f => /^hooks\/[^/]+\.mjs$/.test(f.src.replace(/\\/g, '/')))
+    .map(f => f.dst.replace(/\\/g, '/'));
+
+  for (const hookDst of topLevelHooks) {
+    const abs = join(CLAUDE_DIR, hookDst);
+    if (!existsSync(abs)) {
+      results.push({hook: hookDst, status: 'UNCHECKED', detail: 'hook not installed'});
+      continue;
+    }
+    let closure;
+    try {
+      closure = buildImportClosure([hookDst], (rel) => join(CLAUDE_DIR, rel));
+    } catch (e) {
+      results.push({hook: hookDst, status: 'UNCHECKED', detail: `import scan failed: ${e.message}`});
+      continue;
+    }
+    const missing = [...closure.visited]
+      .filter((rel) => rel !== hookDst && !existsSync(join(CLAUDE_DIR, rel)));
+    results.push(missing.length
+      ? {hook: hookDst, status: 'MISSING', detail: missing.join(', ')}
+      : {hook: hookDst, status: 'OK'});
+  }
+  return results;
+}
+
 // ─── verify (inner, reusable) ─────────────────────────────────────────────────
 function runVerifyInner(manifest) {
   const failures = [];
@@ -989,6 +1033,25 @@ function runVerifyInner(manifest) {
     try { JSON.parse(stripBom(readFileSync(rosterPath, 'utf8'))); rosterOk = true; }
     catch { failures.push('MALFORMED: skills/prism-plan/references/roster.json'); }
     checks.push({label: 'roster.json parses', pass: rosterOk});
+  }
+
+  // Check every installed hook's transitive local imports resolve on disk
+  // (static analysis only — no hook is executed). Catches an installed tree
+  // that is internally inconsistent even when every manifest file[] entry
+  // itself is present (the P0 class: manifest gap -> ERR_MODULE_NOT_FOUND
+  // at import time -> hook silently dead, since hooks fail open).
+  const importResults = checkInstalledTransitiveImports(manifest);
+  for (const r of importResults) {
+    const label = `hook imports resolve: ${r.hook}`;
+    if (r.status === 'OK') {
+      checks.push({label, pass: true});
+    } else if (r.status === 'MISSING') {
+      checks.push({label, pass: false});
+      failures.push(`MISSING(${r.detail}): ${r.hook} imports a module not present in the installed tree`);
+    } else { // UNCHECKED
+      checks.push({label, pass: false});
+      failures.push(`UNCHECKED(${r.detail}): ${r.hook}`);
+    }
   }
 
   return {checks, failures, allPass: failures.length === 0};

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "6.4.0",
+  "prism_version": "6.5.0",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -76,6 +76,7 @@
     {"src": "hooks/lib/prism-router.mjs", "dst": "hooks/lib/prism-router.mjs", "executable": true},
     {"src": "hooks/lib/prism-roster-resolve.mjs", "dst": "hooks/lib/prism-roster-resolve.mjs", "executable": false},
     {"src": "hooks/lib/prism-agent-quality.mjs", "dst": "hooks/lib/prism-agent-quality.mjs", "executable": false},
+    {"src": "hooks/lib/prism-task-snapshot.mjs", "dst": "hooks/lib/prism-task-snapshot.mjs", "executable": false},
     {"src": "tools/prism-audit-runner.mjs", "dst": "tools/prism-audit-runner.mjs", "executable": true},
     {"src": "tools/prism-capability-cli.mjs", "dst": "tools/prism-capability-cli.mjs", "executable": true},
     {"src": "tools/prism-capability-detect.mjs", "dst": "tools/prism-capability-detect.mjs", "executable": true},
@@ -114,6 +115,7 @@
     {"src": "tools/lib/prism-agent-scope.mjs", "dst": "tools/lib/prism-agent-scope.mjs", "executable": true},
     {"src": "tools/lib/prism-bm25.mjs", "dst": "tools/lib/prism-bm25.mjs", "executable": true},
     {"src": "tools/lib/prism-flag-file.mjs", "dst": "tools/lib/prism-flag-file.mjs", "executable": true},
+    {"src": "tools/lib/prism-import-closure.mjs", "dst": "tools/lib/prism-import-closure.mjs", "executable": true},
     {"src": "tools/lib/prism-kb-knowledge-query.mjs", "dst": "tools/lib/prism-kb-knowledge-query.mjs", "executable": true},
     {"src": "tools/lib/prism-kb-rerank.mjs", "dst": "tools/lib/prism-kb-rerank.mjs", "executable": true},
     {"src": "tools/lib/prism-roster-lock.mjs", "dst": "tools/lib/prism-roster-lock.mjs", "executable": true},

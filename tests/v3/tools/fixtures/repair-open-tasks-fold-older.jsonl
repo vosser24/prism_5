@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_fold_1","name":"TaskCreate","input":{"subject":"Full subject from original TaskCreate","description":"Full description — the real record. Must survive the cross-transcript fold.","activeForm":"Doing the fold-survival thing"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_fold_1","content":"Created task #17"}]},"toolUseResult":{"task":{"id":"17","subject":"Full subject from original TaskCreate"}}}

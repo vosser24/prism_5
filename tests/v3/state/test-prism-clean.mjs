@@ -173,7 +173,7 @@ test('git-stats: requires --since flag, exit 5', () => {
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('git-stats: empty repo since future date → all zeros', () => {
+test('git-stats: empty repo since future date → all zeros (genuine zero, not unmeasured)', () => {
   const root = makeTestbed('zero');
   try {
     const r = run(root, 'git-stats', '--since', '9999-01-01T00:00:00Z');
@@ -183,10 +183,12 @@ test('git-stats: empty repo since future date → all zeros', () => {
     assertEq(out.files_changed, 0);
     assertEq(out.insertions, 0);
     assertEq(out.deletions, 0);
+    assertEq(out.boundary_sha, null);
+    assertEq(out.warning, null);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
-test('git-stats: one commit since past date → commits: 1, files_changed: 1', () => {
+test('git-stats: one commit since past date → real deterministic numbers, not the old 0-or-1 ambiguity', () => {
   const root = makeTestbed('one');
   try {
     commitFile(root, 'a.txt', 'line1\nline2\n', 'first commit');
@@ -194,11 +196,62 @@ test('git-stats: one commit since past date → commits: 1, files_changed: 1', (
     assertEq(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
     assertEq(out.commits, 1);
-    // files_changed counts deltas vs baseline; for a fresh repo with one commit,
-    // there's no earlier baseline, so the diff shortstat may return 0 — accept either 0 or 1.
-    assert(out.files_changed >= 0 && out.files_changed <= 1, 'files_changed: ' + out.files_changed);
-    assert(out.insertions >= 0, 'insertions non-negative');
-    assert(out.deletions >= 0, 'deletions non-negative');
+    // D046 #7 (Fix B) deterministic repair: --since predates the repo's first
+    // commit, so the boundary is git's empty-tree object and the diff is REAL
+    // (previously this silently defaulted to 0/0/0 regardless of content).
+    assertEq(out.files_changed, 1);
+    assertEq(out.insertions, 2);
+    assertEq(out.deletions, 0);
+    assertEq(out.boundary_sha, '4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+    assertEq(out.warning, null);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ── D046 finding #7 (Fix B) — tri-state contract ────────────────────────────
+// The bug this guards: a young/recently-initialized repo with N real commits
+// (measured in the field as 58) reported files_changed/insertions/deletions
+// as 0/0/0 — indistinguishable from a session with genuinely zero changes —
+// which let /prism-clean's LLM classifier read real work as L1 NOISE and
+// drop it from capture. The fix: every numeric field is either a real
+// measured number (0 included) or `null` when it could not be measured;
+// `0` never means "the git command failed and we silently defaulted".
+
+test('git-stats: many commits since before repo existed → real non-zero diff (the field-measured 58-commit bug, reproduced + fixed)', () => {
+  const root = makeTestbed('many-commits-young-repo');
+  try {
+    commitFile(root, 'a.txt', 'line1\n', 'commit 1');
+    commitFile(root, 'b.txt', 'line2\n', 'commit 2');
+    commitFile(root, 'c.txt', 'line3\nline4\n', 'commit 3');
+    const r = run(root, 'git-stats', '--since', '2020-01-01T00:00:00Z');
+    assertEq(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assertEq(out.commits, 3);
+    // Before the fix this was {files_changed: 0, insertions: 0, deletions: 0}
+    // for ANY number of commits whenever --since predates the first commit.
+    assert(out.files_changed > 0, 'files_changed must be REAL, not the old silent zero: ' + JSON.stringify(out));
+    assert(out.insertions > 0, 'insertions must be REAL, not the old silent zero: ' + JSON.stringify(out));
+    assertEq(out.files_changed, 3);
+    assertEq(out.insertions, 4);
+    assertEq(out.warning, null, 'a fully-measured result must not carry a warning');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('git-stats: corrupt .git → UNKNOWN (null), never a silent zero, and warning names the failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'prism-clean-test-corrupt-'));
+  try {
+    // Passes the CLI's own `existsSync(.git)` guard but is not a valid gitdir
+    // pointer — every subsequent git command genuinely fails.
+    writeFileSync(join(root, '.git'), 'not a real gitdir\n');
+    const r = run(root, 'git-stats', '--since', '2020-01-01T00:00:00Z');
+    assertEq(r.status, 0, r.stderr);  // the CLI itself doesn't crash — it reports UNKNOWN
+    const out = JSON.parse(r.stdout);
+    assertEq(out.commits, null);
+    assertEq(out.files_changed, null);
+    assertEq(out.insertions, null);
+    assertEq(out.deletions, null);
+    assertEq(out.boundary_sha, null);
+    assert(typeof out.warning === 'string' && out.warning.length > 0, 'warning must be a non-empty string: ' + JSON.stringify(out));
+    assert(/UNKNOWN, not zero/.test(out.warning), 'warning must explicitly say UNKNOWN not zero: ' + out.warning);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 

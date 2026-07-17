@@ -1,0 +1,24 @@
+{
+  "session_id": "sess-corrupt",
+  "project": "__PROJECT__",
+  "ts": "2026-07-16T09:00:00.000Z",
+  "git_sha": null,
+  "open_tasks": [
+    {
+      "id": "1",
+      "subject": "Fix parser crash on nested arrays",
+      "description": "TRUNCATED-BY-CORRUPTION",
+      "activeForm": "Fixing parser crash",
+      "status": "pending",
+      "blockedBy": null
+    },
+    {
+      "id": "99",
+      "subject": "Old completed task",
+      "description": "This one was finished in-session.",
+      "activeForm": "Working old task",
+      "status": "pending",
+      "blockedBy": null
+    }
+  ]
+}

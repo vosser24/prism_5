@@ -1,0 +1,17 @@
+{
+  "session_id": "sess-prior-001",
+  "project": "/fake/project",
+  "ts": "2026-07-01T00:00:00.000Z",
+  "git_sha": "abc1234",
+  "tail_truncated": false,
+  "open_tasks": [
+    {
+      "id": "100",
+      "subject": "prior-session task still open",
+      "description": "opened last session, untouched this session — must be carried forward",
+      "activeForm": "doing prior task",
+      "status": "pending",
+      "blockedBy": null
+    }
+  ]
+}

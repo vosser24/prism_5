@@ -6,6 +6,7 @@
 
 # Explicit: shell, node, and python sources must always be LF (they're
 # executed on POSIX and CRLF breaks shebangs).
+.githooks/* text eol=lf
 *.sh  text eol=lf
 *.mjs text eol=lf
 *.js  text eol=lf

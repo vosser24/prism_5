@@ -83,6 +83,8 @@ const AGENT_PAYLOAD = {
     'is a VALID outcome',
     'REPRODUCE before you fix',
     'Report ARTIFACTS, not counters',
+    'KARPATHY DISCIPLINE: make surgical, minimal changes',
+    'verifiable success criteria',
   ];
   for (const c of clauses) {
     check(`1a clause present: "${c}"`, typeof prompt === 'string' && prompt.includes(c), `prompt=${prompt}`);

@@ -678,7 +678,14 @@ try {
           // held back). Hard invariant: an in_progress task is NEVER the one
           // deferred — only pending tasks can be deferred — and a shown
           // task's description is NEVER truncated: a task is either injected
-          // whole or pointed to, never partially. Default cap 3 (in_progress
+          // whole or pointed to, never partially. [AMENDED — Slice 5, panel-53
+          // E2 pre-ship gate: the count cap alone left total chars unbounded
+          // (3 huge descriptions could still flood context), so a per-task
+          // description char cap (PRISM_TASK_RECALL_DESC_MAXCHARS, default
+          // 1000) now bounds the block at ~4KB worst case. The amendment keeps
+          // the ruling's spirit: truncation is LOUD — an explicit marker
+          // stating how many chars were cut and naming the repair (TaskGet) —
+          // so nothing ever goes silent.] Default cap 3 (in_progress
           // first, then most recent by task id — ids are assigned
           // sequentially by TaskCreate, verified against hooks/prism-
           // session-end.mjs's own id-ascending sort, so id-descending is a
@@ -699,12 +706,46 @@ try {
           const fullSet = [...inProgressTasks, ...otherTasksByRecency.slice(0, remainingSlots)];
           const deferredCount = n - fullSet.length;
 
-          const taskLines = fullSet.map((t) =>
-            `#${t.id} [${t.status}] ${t.subject || '(no subject)'} — ${t.description || '(no description)'}`
-          );
+          // Slice 5 (E2 size cap): bound each injected description; the
+          // truncation marker is loud + evidence-carrying (chars cut, repair
+          // action) per the E1 fail-loud contract.
+          const rawDescMax = Number.parseInt(process.env.PRISM_TASK_RECALL_DESC_MAXCHARS, 10);
+          const descMax = (Number.isFinite(rawDescMax) && rawDescMax > 0) ? rawDescMax : 1000;
+          const taskLines = fullSet.map((t) => {
+            const full = t.description || '(no description)';
+            const desc = full.length > descMax
+              ? `${full.slice(0, descMax)} …[truncated ${full.length - descMax} more chars — run TaskGet #${t.id} for the full description]`
+              : full;
+            return `#${t.id} [${t.status}] ${t.subject || '(no subject)'} — ${desc}`;
+          });
           const deferredLine = deferredCount > 0
             ? `\n+${deferredCount} more open task${deferredCount === 1 ? '' : 's'} — call TaskList`
             : '';
+
+          // ── Slice 5 (panel-53 E1/F1 SURFACE leg): self-clearing integrity
+          // line. Derived from the pointer being consumed RIGHT NOW (state,
+          // not event — no sticky flag): fires only while the artifact is
+          // degraded (Finding-1 shape miss), tail-truncated, or carrying
+          // prior-session tasks; disappears on the first healthy SessionEnd.
+          // Evidence-carrying (the counts) + ONE named repair (run TaskList).
+          // A pre-meta pointer (older SessionEnd) gets no parse-counts clause
+          // — counts are never fabricated.
+          const integMeta = (pointer.meta && typeof pointer.meta === 'object') ? pointer.meta : null;
+          const carriedCount = pointer.open_tasks.filter((t) => t && t.carried_from).length;
+          const integDegraded = !!(integMeta && integMeta.degraded);
+          const integTailTrunc = !!(pointer.tail_truncated || (integMeta && integMeta.tail_truncated));
+          let integrityLine = '';
+          if (integDegraded || integTailTrunc || carriedCount > 0) {
+            const structured = integMeta ? (integMeta.structured_hits | 0) : 0;
+            const seenTotal = integMeta
+              ? structured + (integMeta.regex_fallbacks | 0) + (integMeta.unmatched_task_results | 0)
+              : 0;
+            const parsedClause = integMeta ? `; parsed ${structured}/${seenTotal} structurally` : '';
+            integrityLine =
+              `\nTASK-RECALL: ${n} open (${carriedCount} carried from prior sessions)` +
+              parsedClause + (integTailTrunc ? ', tail truncated' : '') +
+              ` — if this looks wrong, run TaskList.`;
+          }
           const recallDirective = deferredCount > 0
             ? `Full-fidelity detail below for ${fullSet.length} of ${n} (in-progress tasks are never deferred): ` +
               `re-hydrate via TaskCreate before proceeding, preserving each FULL description; ` +
@@ -717,6 +758,7 @@ try {
             recallDirective + ` Tasks:\n` +
             taskLines.join('\n') +
             deferredLine +
+            integrityLine +
             `\n</TASK-RECALL>`;
           notices.push(taskRecall);
         }
