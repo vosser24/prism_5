@@ -41,18 +41,10 @@ function check(label, cond) {
 //
 // tools/prism-monitor/ is a repo-only Python monitoring dashboard — intentionally
 // never installed into ~/.claude (zero manifest entries by design).
-//
-// tools/prism-repair-open-tasks.mjs is HELD BACK from install as of v6.5.0
-// (D046/D047 release): independent verification found its cross-transcript
-// fold (ca6854cb1) can resurrect a completed task as open (FOLD_FALLBACK_FIELDS
-// excludes status/blockedBy, so a rename-only later transcript stamps status
-// back to the extractor's 'pending' default). The fix itself stays in the repo
-// for a follow-up (see 6.5.1 task), it just does not ship until fixed.
 const FILES_EXEMPT = new Set([
   'tools/prism-installer.mjs',
   'hooks/prism-acl-audit-notify-stub.mjs',
   'hooks/prism-acl-audit-rollback-stub.mjs',
-  'tools/prism-repair-open-tasks.mjs',
 ]);
 // Prefix-based exemption for the repo-only prism-monitor dashboard.
 const EXEMPT_PREFIXES = [

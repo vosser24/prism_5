@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_r_2","name":"TaskCreate","input":{"subject":"Different task B","description":"Independently created in a LATER session — id #42 was reused, not the same task.","activeForm":"Doing different task B"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_r_2","content":"Created task #42"}]},"toolUseResult":{"task":{"id":"42","subject":"Different task B"}}}

@@ -61,18 +61,36 @@ const DOCS_PRISM_RE = /[/\\]docs[/\\]prism[/\\]/i;
 
 // Classifies a Write/Edit/MultiEdit target against the handoff-pointer
 // contract:
-//   'canonical' — matches the broadened pattern; pointer gets written.
-//   'near-miss' — mentions "handoff" but fails the pattern; no pointer, but
-//                 a ledger line + best-effort stdout note (see run()).
+//   'canonical' — under docs/prism/ AND matches the broadened pattern;
+//                 pointer gets written.
+//   'near-miss' — mentions "handoff" but is not a pointer-write target
+//                 (either it fails the canonical pattern, or it is outside
+//                 docs/prism/ entirely — task #16): no pointer, but a
+//                 ledger line + best-effort stdout note (see run()).
 //   'fixture'   — carries the COTEST marker; never a real handoff, silent.
-//   'no'        — not under docs/prism/, or no "handoff" mention at all.
+//   'no'        — no "handoff" mention at all.
+//
+// Task #16 (D047 vacuous-signal class): the near-miss check used to sit
+// DOWNSTREAM of the DOCS_PRISM_RE path gate, so a handoff-shaped file
+// outside docs/prism/ (e.g. a real project's tasks/HANDOFF_*.md — measured
+// as 48% of real *handoff* files across 3 external corpora) hit the gate
+// first and returned 'no' — not even a near-miss. The ledger that exists
+// specifically to make misses visible could not see the biggest miss,
+// because it was scoped to the same gate it was meant to audit. The fix:
+// the in-scope check (`inScope`) now gates ONLY the pointer-write
+// ('canonical') branch, never the near-miss detection — so an out-of-scope
+// handoff-shaped basename still reaches HANDOFF_LOOSE_RE and is classified
+// 'near-miss' (ledger-visible, no pointer). Pointer-write behavior for
+// in-scope files is unchanged: canonical still requires BOTH inScope AND
+// HANDOFF_BASENAME_RE, exactly as before. DOCS_PRISM_RE itself is not
+// widened — this is detection-only, per the task's explicit scope.
 function classifyHandoffPath(p) {
   if (typeof p !== 'string' || !p) return 'no';
   const normalized = '/' + p.replace(/\\/g, '/');
-  if (!DOCS_PRISM_RE.test(normalized)) return 'no';
+  const inScope = DOCS_PRISM_RE.test(normalized);
   const bn = basename(p);
   if (FIXTURE_MARKER_RE.test(bn)) return 'fixture';
-  if (HANDOFF_BASENAME_RE.test(bn)) return 'canonical';
+  if (inScope && HANDOFF_BASENAME_RE.test(bn)) return 'canonical';
   if (HANDOFF_LOOSE_RE.test(bn)) return 'near-miss';
   return 'no';
 }

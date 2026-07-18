@@ -101,10 +101,16 @@ async function main() {
 
   // ── (d) window-boundary — #100's TaskCreate outside the scanned window ──
   // Session touched #100 (e.g. a status-only TaskUpdate) but never observed
-  // its TaskCreate, so its reconstruction has subject/description defaulted
-  // to '' by extractTaskSnapshot()'s upsert(). Prior pointer has #100 with
-  // real subject/description populated (from the fixture).
-  const sessionD = [{id: '100', subject: '', description: '', activeForm: '', status: 'in_progress', blockedBy: null}];
+  // its TaskCreate. Task #14 root-cause fix: extractTaskSnapshot() now
+  // represents "never observed" as an ABSENT key, not a fabricated ''
+  // (verified directly in tests/v3/hooks/test-task-snapshot-observed-fields.mjs
+  // against the real extractor) — so subject/description are OMITTED here
+  // entirely, matching what the fixed extractor actually produces (this
+  // fixture used to set them to '' as a stand-in for "unobserved", which
+  // mergeOpenTasks() no longer treats as the unobserved signal — see the
+  // key-presence merge in hooks/lib/prism-task-snapshot.mjs). Prior pointer
+  // has #100 with real subject/description populated (from the fixture).
+  const sessionD = [{id: '100', activeForm: '', status: 'in_progress', blockedBy: null}];
   const mergedD = mergeOpenTasks(prior, sessionD, new Set(['100']), priorTs + 1 * DAY);
   const t100d = mergedD.find(t => String(t.id) === '100');
   console.log(`[d window-boundary]    subject=${JSON.stringify(t100d && t100d.subject)} description=${JSON.stringify(t100d && t100d.description)} status=${t100d && t100d.status}`);

@@ -73,11 +73,30 @@ function parseAdjFilename(name) {
   return {dNum: parseInt(m[1], 10), slug: m[2], ref: 'D' + m[1]};
 }
 
+// LESSON_DATE_RE is retained for sortDate only (scanLessons below); it no
+// longer feeds the lesson `ref`.
 const LESSON_DATE_RE = /^(\d{4}-\d{2}-\d{2})/;
-function parseLessonFilename(name) {
-  const stem = name.replace(/\.md$/, '');
-  const m = stem.match(LESSON_DATE_RE);
-  return {ref: m ? m[1] : stem};
+
+// Parse lesson filename: ref = the full basename slug (filename minus .md).
+//
+// SINGLE OWNER (task #22, anti-rot per D046 finding #4). This function used to
+// be COPY-PASTED here and in tools/prism-knowledge-index.mjs. task #21 fixed
+// the copy over there (ref = full stem) but left THIS copy on the old
+// date-only bug, so every SessionStart self-heal (applyDelta re-renders the
+// WHOLE index) rewrote every lesson ref back to the collision-prone bare-date
+// form — silently regressing the fix. Two same-date lessons
+// (e.g. 2026-07-17-session.md and 2026-07-17-session-addendum.md) both reduced
+// to ref '2026-07-17' and evicted/duplicated each other in the index and
+// keyword map (exit 0, no warning — the D047 vacuous-signal class).
+//
+// Fix: ref = the full filename stem — unique BY CONSTRUCTION (a directory
+// cannot hold two files with the same name), so no separate collision check is
+// needed. This module is now the ONE definition: prism-knowledge-index.mjs
+// imports parseLessonFilename FROM HERE, so the append and delta paths can
+// never diverge again.
+export function parseLessonFilename(name) {
+  const ref = name.replace(/\.md$/, '');
+  return {ref};
 }
 
 // ─── field extractors ────────────────────────────────────────────────────────

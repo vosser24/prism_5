@@ -23,14 +23,20 @@
 //   - die(msg, code) => process.exit(code)
 
 import {createHash} from 'node:crypto';
-import {existsSync, mkdirSync, readdirSync, readFileSync, renameSync,
-        statSync, writeFileSync} from 'node:fs';
-import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
+import {existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
+        renameSync, statSync, writeFileSync} from 'node:fs';
+import {basename, dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
-// Shared delta module — imported lazily in cmdDelta to avoid top-level await.
-// applyDelta(root) → {added, changed, removed}  (also self-heals index+manifest+kwmap)
+// Shared delta module owns the SINGLE definition of parseLessonFilename
+// (task #22, anti-rot). Static import is safe: knowledge-delta.mjs has no
+// top-level side effects and does NOT import this file back (no import cycle).
+import {parseLessonFilename} from './lib/knowledge-delta.mjs';
+
+// Shared delta module — also imported lazily in cmdDelta to avoid top-level
+// await on applyDelta. applyDelta(root) → {added, changed, removed}  (also
+// self-heals index+manifest+kwmap)
 let _deltaLib = null;
 async function getDeltaLib() {
   if (_deltaLib) return _deltaLib;
@@ -122,16 +128,17 @@ function parseAdjFilename(name) {
   return {dNum: parseInt(m[1], 10), slug: m[2], ref: 'D' + m[1]};
 }
 
-// Parse lesson filename: YYYY-MM-DD-<anything>.md  →  ref = 'YYYY-MM-DD'
-// Non-dated: ref = filename without .md
+// Lesson `ref` derivation (task #21: ref = full filename stem, NOT the bare
+// date — two same-date lessons must get distinct refs).
+//
+// SINGLE OWNER (task #22, anti-rot per D046 finding #4): parseLessonFilename
+// was previously copy-pasted here AND in tools/lib/knowledge-delta.mjs, and the
+// two copies diverged (the delta/SessionStart-self-heal copy kept the old
+// date-only bug and rewrote every ref back to bare-date). There is now exactly
+// ONE definition — knowledge-delta.mjs (the shared lib, imported statically at
+// the top of this file) — so the append path here and the delta path there can
+// never diverge again. LESSON_DATE_RE is kept below (used only for sortDate).
 const LESSON_DATE_RE = /^(\d{4}-\d{2}-\d{2})/;
-
-function parseLessonFilename(name) {
-  const stem = name.replace(/\.md$/, '');
-  const m = stem.match(LESSON_DATE_RE);
-  const ref = m ? m[1] : stem;
-  return {ref};
-}
 
 // Extract first `# ` H1 line text from file content
 function extractTitle(content, fallback) {
@@ -363,24 +370,94 @@ async function cmdRebuild(root) {
 
 // ─────────────────────────────────────────────── append ─────────────────────
 
-// Parse a single file into an entry object
-function parseSingleFile(root, type, filePath) {
-  // Resolve: if absolute use as-is; if just a filename look in the corpus dir
-  let absPath;
-  if (isAbsolute(filePath)) {
-    absPath = filePath;
-  } else {
-    const corpusDir = type === 'adjudication'
-      ? join(root, 'docs', 'prism', 'adjudications')
-      : join(root, 'docs', 'prism', 'lessons');
-    absPath = join(corpusDir, filePath);
+// Resolve a user-supplied --file to a real, canonical path that is genuinely
+// inside the corpus dir FOR THE GIVEN --type, or die() loudly.
+//
+// Three accepted --file forms, dispatched by path SHAPE:
+//   (a) bare basename (no separator) → resolved inside the corpus dir
+//   (b) relative WITH separators     → resolved against --root
+//   (c) absolute path                → used as-is
+//
+// Dispatch is by shape, NEVER by which candidate happens to exist. Picking
+// whichever path exists collapses "right file", "wrong --type" and "wrong
+// path" into a single "found something" exit 0 — the D047 vacuous-signal
+// class (docs/prism/adjudications/D047-vacuous-signals-no-vs-didnt-check.md).
+// It also silently destroyed the guard the corpus dir used to provide
+// IMPLICITLY, letting an adjudication be filed as a lesson at exit 0.
+// Containment below restores that guard EXPLICITLY: --type and --file must
+// agree, and disagreement is an error rather than an accident of path
+// arithmetic.
+function resolveCorpusFile(root, type, filePath) {
+  const corpusDir = type === 'adjudication'
+    ? join(root, 'docs', 'prism', 'adjudications')
+    : join(root, 'docs', 'prism', 'lessons');
+
+  if (!existsSync(corpusDir)) {
+    die(`corpus dir for --type ${type} does not exist: ${corpusDir}`, 1);
   }
 
-  if (!existsSync(absPath)) die(`file not found: ${absPath}`, 1);
+  const hasSep = filePath.includes('/') || filePath.includes('\\');
+  const absPath = isAbsolute(filePath)
+    ? resolve(filePath)                    // (c)
+    : hasSep
+      ? resolve(root, filePath)            // (b)
+      : resolve(corpusDir, filePath);      // (a)
+
+  // Errors name the path the USER passed, plus how it was resolved — never a
+  // bare mangled internal join.
+  if (!existsSync(absPath)) {
+    die(`file not found: ${filePath}\n  --type ${type} resolved it to: ${absPath}`, 1);
+  }
+  // existsSync() is not isFile() — a directory must die() here rather than
+  // surface as a raw EISDIR throw out of readFileSync().
+  if (!statSync(absPath).isFile()) {
+    die(`--file is not a file: ${filePath}\n  --type ${type} resolved it to: ${absPath}`, 1);
+  }
+
+  // Canonicalize BOTH sides before comparing. realpath resolves symlinks and
+  // 8.3 short names, and on a case-INSENSITIVE volume (NTFS here) returns the
+  // real on-disk casing — so a mis-cased --file canonicalizes to the SAME
+  // manifest key instead of creating a duplicate. On a case-SENSITIVE volume
+  // a mis-cased path simply does not exist and dies at the check above; both
+  // outcomes are correct and neither yields two keys for one file.
+  const realRoot = realpathSync.native(root);
+  const realCorpus = realpathSync.native(corpusDir);
+  const realFile = realpathSync.native(absPath);
+
+  // Containment, separator-aware: relative() normalizes separators (and case
+  // on win32), so a contained DIRECT CHILD yields exactly one path segment.
+  // Everything else is out of corpus: '' (the dir itself), a '..' escape, a
+  // different drive (relative() then returns an absolute path), or a nested
+  // subdir. Direct-child rather than any-descendant is deliberate — rebuild()
+  // and delta() scan the corpus with a FLAT readdirSync, so a nested file
+  // could be appended here yet would never be re-scanned, leaving the
+  // manifest silently drifted from the corpus.
+  const rel = relative(realCorpus, realFile);
+  const contained = rel !== '' && rel !== '..' && !isAbsolute(rel) &&
+    !rel.includes(sep) && !rel.includes('/');
+  if (!contained) {
+    die(
+      `--file is not inside the corpus dir for --type ${type}: ${filePath}\n` +
+      `  resolved to: ${realFile}\n` +
+      `  corpus dir:  ${realCorpus}\n` +
+      `  A --type/--file mismatch is the likely cause: --type ${type} requires ` +
+      `--file to name a file directly inside that corpus dir.`,
+      1
+    );
+  }
+
+  return {absPath: realFile, realRoot};
+}
+
+// Parse a single file into an entry object
+function parseSingleFile(root, type, filePath) {
+  const {absPath, realRoot} = resolveCorpusFile(root, type, filePath);
 
   const name = basename(absPath);
   const content = readFileSync(absPath, 'utf8');
-  const relPath = relative(root, absPath).replace(/\\/g, '/');
+  // relPath is the manifest key — derived from the CANONICAL path so that
+  // casing/symlink variants of one file can never key two manifest entries.
+  const relPath = relative(realRoot, absPath).replace(/\\/g, '/');
 
   if (type === 'adjudication') {
     const parsed = parseAdjFilename(name);

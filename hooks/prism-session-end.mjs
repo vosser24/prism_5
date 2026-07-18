@@ -264,8 +264,20 @@ try {
       }
       sessionTouchedIds = new Set(allTasks.map(t => String(t.id)));
       if (allTasks.length) {
+        // ROOT-CAUSE FIX (task #14): candidacy is now "not explicitly closed
+        // this session" rather than "explicitly open this session". Before,
+        // a rename-only/status-untouched TaskUpdate for a task whose
+        // TaskCreate lay outside the scan window reconstructed with NO
+        // `status` key at all (see upsert() in lib/prism-task-snapshot.mjs)
+        // — `t.status === 'pending' || t.status === 'in_progress'` is false
+        // for `undefined`, so that task silently vanished from open_tasks
+        // entirely (excluded here, then ALSO excluded from mergeOpenTasks'
+        // carry-forward step because sessionTouchedIds already marks it
+        // touched). Passing status-unknown tasks through as candidates lets
+        // mergeOpenTasks() resolve the true status from the prior pointer
+        // instead of this hook guessing one.
         const openTasks = allTasks
-          .filter(t => t.status === 'pending' || t.status === 'in_progress')
+          .filter(t => t.status === undefined || t.status === 'pending' || t.status === 'in_progress')
           .sort((a, b) => {
             const na = Number(a.id), nb = Number(b.id);
             if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
@@ -275,7 +287,7 @@ try {
         if (openTasks.length) {
           md.push(`## Open tasks (carryover)`);
           for (const t of openTasks) {
-            md.push(`- **#${t.id}** [${t.status}] ${t.subject || '(no subject)'}`);
+            md.push(`- **#${t.id}** [${t.status || '?'}] ${t.subject || '(no subject)'}`);
             if (t.description) md.push(`  ${t.description}`);
             if (t.blockedBy) {
               const b = Array.isArray(t.blockedBy) ? t.blockedBy.join(', ') : t.blockedBy;
@@ -292,14 +304,16 @@ try {
           git_sha: gitSha, // SHA-STAMP-001 — null when not resolvable; consumed by SessionStart's staleness check
           tail_truncated, // 1b — true iff transcript exceeded the 20MB task-scan cap (older Task events unseen)
           meta, // Slice 5 — extraction health stamp; SessionStart's TASK-RECALL derives its self-clearing integrity line from this
-          open_tasks: openTasks.map(t => ({
-            id: t.id,
-            subject: t.subject,
-            description: t.description,
-            activeForm: t.activeForm,
-            status: t.status,
-            blockedBy: t.blockedBy ?? null,
-          })),
+          // Root-cause fix (task #14): spread the task AS RECONSTRUCTED
+          // instead of re-literal-izing every field. A literal
+          // `{subject: t.subject, ...}` reconstruction would re-introduce an
+          // explicit `subject: undefined` key even for a field this session
+          // never observed (object literals keep an explicitly-assigned key
+          // even when its value is `undefined`) — defeating the key-absence
+          // signal upsert() now produces and mergeOpenTasks() depends on to
+          // tell "unobserved" apart from "observed as empty/null". Spreading
+          // preserves exactly the keys extractTaskSnapshot() actually set.
+          open_tasks: openTasks.map(t => ({...t})),
         };
       }
     } catch {}
@@ -336,7 +350,10 @@ try {
       const pointerPath = j(projClaudeDir, '.prism-open-tasks.json');
       let existingPointer = null;
       try { if (e(pointerPath)) existingPointer = JSON.parse(r(pointerPath, 'utf-8')); } catch { existingPointer = null; }
-      const mergedOpen = mergeOpenTasks(existingPointer, taskSnapshotPayload.open_tasks, sessionTouchedIds, Date.now());
+      // Task #20 Defect B: pass the payload's meta (same ref persisted into the
+      // pointer) so mergeOpenTasks can record any cross-session id collisions on
+      // meta.id_collisions — SessionStart surfaces them as an ID-COLLISION line.
+      const mergedOpen = mergeOpenTasks(existingPointer, taskSnapshotPayload.open_tasks, sessionTouchedIds, Date.now(), 14, taskSnapshotPayload.meta);
       const pointerPayload = {...taskSnapshotPayload, open_tasks: mergedOpen};
       atomicWriteSync(pointerPath, JSON.stringify(pointerPayload, null, 2));
     } catch {}

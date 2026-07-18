@@ -1,0 +1,8 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_1","name":"TaskCreate","input":{"subject":"Zombie task","description":"This task will be completed in this same transcript.","activeForm":"Doing zombie thing"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_1","content":"Created task #99"}]},"toolUseResult":{"task":{"id":"99","subject":"Zombie task"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_2","name":"TaskUpdate","input":{"taskId":"99","status":"completed"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_2","content":"Updated task #99"}]},"toolUseResult":{"success":true,"taskId":"99","updatedFields":["status"],"statusChange":{"from":"pending","to":"completed"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_3","name":"TaskCreate","input":{"subject":"Genuinely open task","description":"This task stays open across transcripts.","activeForm":"Doing genuinely open thing"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_3","content":"Created task #88"}]},"toolUseResult":{"task":{"id":"88","subject":"Genuinely open task"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_4","name":"TaskUpdate","input":{"taskId":"88","status":"in_progress"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_4","content":"Updated task #88"}]},"toolUseResult":{"success":true,"taskId":"88","updatedFields":["status"],"statusChange":{"from":"pending","to":"in_progress"}}}

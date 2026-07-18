@@ -42,15 +42,45 @@ import {statSync, openSync, readSync, closeSync} from 'fs';
 // `unmatched_task_results` (a Task tool_result that yielded nothing). The
 // return stays a plain array so existing extraction-based tests/callers are
 // unaffected. seen>0 && structured==0 is the Finding-1 shape-miss signature.
-function extractTaskSnapshot(rawLines, counters = null) {
+// D048 (6.5.2): the optional `createdIds` out-param, when passed (a Set), is
+// populated ONLY from the TaskCreate branch below — direct provenance for
+// "did THIS scan actually create this id" (vs. merely touch it via
+// TaskUpdate/TaskList/TaskGet), letting a caller distinguish a genuine
+// per-session id-reuse (independently TaskCreate'd in two scans) from an
+// ordinary cross-session rename (TaskUpdate only) without proxying through
+// mergeOpenTasks' carried_from dormancy signal. Opt-in and additive — no
+// existing caller passes it, so this changes no existing behavior.
+function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
   const tasks = new Map(); // id (string) -> {id, subject, description, activeForm, status, blockedBy}
   const pendingCalls = new Map(); // tool_use_id -> {name, input}
   const TASK_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
 
+  // ROOT-CAUSE FIX (task #14, D047 vacuous-signal class): the old fallback
+  // object here — `{subject:'', description:'', activeForm:'', status:'pending',
+  // blockedBy:null}` — FABRICATED a concrete value for every field this id
+  // had never actually been seen carrying, the instant an update arrived for
+  // an id whose TaskCreate lies outside the scanned window (the common
+  // trigger: a status-only or rename-only TaskUpdate for a task created in
+  // an earlier session/transcript). A fabricated 'pending' is then
+  // structurally indistinguishable from a genuinely-observed 'pending' —
+  // exactly D047's class, expressed as a defaulting object instead of a
+  // boolean. FALLBACK_FIELDS in mergeOpenTasks() below patched over this by
+  // enumerating which two fields to protect; that enumeration is itself the
+  // defect (the next field added silently isn't on the list).
+  //
+  // The fix: `prev` starts with ONLY `{id}` — no invented fields. A field
+  // this id has never appeared in a `patch` for (across every upsert() call
+  // for this id within this scan) is simply ABSENT as a key on the returned
+  // object, not present-with-a-guessed-value. Absence IS the UNKNOWN state,
+  // representable directly, checkable with `'field' in task` by any
+  // consumer — no field list required. TaskCreate's patch already always
+  // supplies all five keys (see the TaskCreate branch below), so a task
+  // whose creation WAS observed this scan is unaffected; only the
+  // window-boundary case changes shape (from wrong-value to absent-key).
   function upsert(id, patch) {
     if (id === null || id === undefined || id === '') return;
     const key = String(id);
-    const prev = tasks.get(key) || {id: key, subject: '', description: '', activeForm: '', status: 'pending', blockedBy: null};
+    const prev = tasks.get(key) || {id: key};
     tasks.set(key, {...prev, ...patch, id: key});
   }
 
@@ -90,6 +120,7 @@ function extractTaskSnapshot(rawLines, counters = null) {
         if (id === null) { const m = resultText.match(/Task #(\S+)/); if (m) id = m[1]; }
         if (id !== null) {
           resolved = true;
+          if (createdIds) createdIds.add(String(id));
           upsert(id, {
             subject: call.input.subject || (tur && tur.task && tur.task.subject) || '',
             description: call.input.description || '',
@@ -205,22 +236,110 @@ function readTaskScanLines(transcriptPath) {
 // Pure + fail-open by construction: existingPayload null/garbage => priorOpen
 // empty => result == this session's open tasks (never worse than the overwrite).
 //
-// FIELD-WISE fallback (fixes a data-loss bug found post-1c): "session touched
-// this id" only means the session is authoritative about what it actually
-// OBSERVED — typically status, via a TaskUpdate. It is NOT authoritative about
-// a subject/description it never saw. That happens whenever this task's
-// TaskCreate lies outside the scanned transcript window (a status-only
+// FIELD-WISE fallback, root-cause version (task #14 — supersedes the
+// FALLBACK_FIELDS list this comment used to describe). "Session touched this
+// id" only means the session is authoritative about the fields it actually
+// OBSERVED this run. It is NOT authoritative about a field it never saw —
+// that happens whenever this task's TaskCreate (or a prior TaskUpdate) lies
+// outside the scanned transcript window (a status-only or rename-only
 // TaskUpdate is the common trigger, but any long-lived task whose creation
-// scrolled out of the window hits it) — extractTaskSnapshot() then
-// default-initializes subject/description to '' for an id it never saw
-// created. Without this fallback, step 2's "session wins" wholesale-overwrites
-// a populated prior subject/description with those unobserved empty strings,
-// which is exactly the data capture-conventions.md's anti-brevity rule says
-// must survive a session boundary. So step 2 merges subject/description
-// field-wise: keep the session's value if it observed one (non-empty), else
-// fall back to the prior pointer's value. Never let an unobserved empty field
-// overwrite a populated prior one.
-function mergeOpenTasks(existingPayload, sessionOpenTasks, sessionTouchedIds, nowMs, maxAgeDays = 14) {
+// scrolled out of the window hits it). Before this fix, extractTaskSnapshot()
+// FABRICATED a concrete default for every such field (status:'pending',
+// activeForm:'', blockedBy:null, subject/description:''), and this function
+// protected exactly the two fields (`subject`, `description`) someone had
+// noticed going missing — FALLBACK_FIELDS was itself the vacuous-signal
+// defect (D047) expressed as a list: it enumerated what to protect instead
+// of fixing why anything needed protecting, and rotted the moment a THIRD
+// field (status/activeForm/blockedBy) needed the same protection.
+//
+// Root-cause fix: extractTaskSnapshot()'s upsert() (this file, above) no
+// longer fabricates — an unobserved field is simply ABSENT as a key on the
+// session's task object. So the question "which fields need protecting"
+// disappears: EVERY field is merged the same way, generically, off the UNION
+// of keys in either source rather than an allowlist (task #14 F2) —
+//   - key present on the session's record => session observed it => wins;
+//   - key absent + prior record has it    => fall back to the prior value
+//     (tagged carried_from, since a real field was sourced from there);
+//   - key absent + prior doesn't have it either => truly never observed
+//     anywhere => last-resort hard default for the DISPLAY fields only.
+// The fallback loop walks Object.keys(prior), so a prior field with a name no
+// list anticipated (a schema addition) is carried too — the allowlist cannot
+// rot because there is no allowlist.
+//
+// STATUS is the one field with NO hard default (task #14 F1). Its three-way
+// treatment is: observed-this-session => wins; unobserved but prior has it =>
+// fall back to prior (so a rename-only touch preserves a real prior status,
+// and a terminal prior status is carried into step 3 which then drops it);
+// unobserved AND prior-absent => stays UNKNOWN (undefined), which step 3's
+// isOpenStatus() excludes. That last branch is the reachable zombie PROBE H
+// exposed: fabricating 'pending' there asserted open-ness from zero evidence
+// and resurrected prior-session-completed tasks. UNKNOWN is not open.
+// ── Task #20 additions (carry-forward honesty), both minimal + additive ─────
+// DEFECT A (SURFACE, not drop): a prior-pointer open task the session did NOT
+// touch is CORRECTLY carried forward — it can be legitimately open across many
+// sessions without being touched in any one (the live #44/#53/#55/#56 case,
+// independently verified as real open work; dropping them would be a HIGH
+// data-loss regression). The defect is that a carried row survives
+// INDISTINGUISHABLY from a re-observed one, and the SHA-STAMP [CURRENT] tag
+// (git-position only) then hides it — D047's vacuous-signal class ([CURRENT]
+// collapsing "repo verified fresh" and "rows never re-checked" into one green).
+// `carried_from` cannot be that signal: it is itself conflated (step 1 sets it
+// on an untouched carry; step 2 sets it on a re-observed row that merely
+// back-filled ONE field from prior). So a NEW explicit key `carried_unverified:
+// true` is set ONLY on the step-1 carry path (never re-observed this session),
+// and MUST be cleared on re-observation (the step-2 back-fill loop skips it).
+// "Since when" already lives in carried_from.ts (sticky first-carry stamp).
+//
+// DEFECT B (DETECT + FLAG, not namespace): task ids are per-session-scoped and
+// two sessions can reuse one id for different tasks (measured live: id "19").
+// Namespacing the key (session_id,id) across the whole pipeline is a schema
+// migration for a harm that has only ever been survived by age-out timing, and
+// would not even resolve the core ambiguity (a genuine cross-session rename is
+// DATA-INDISTINGUISHABLE from a reuse, so namespacing produces a duplicate
+// zombie on a rename). The regression-free move is: DETECT the reuse signal and
+// FLAG it on an optional `meta.id_collisions` out-param WITHOUT changing the
+// merge (so #14's rename back-fill stays intact — suppressing it would regress
+// #14). The signal: a prior CARRIED cross-session row whose subject CONFLICTS
+// with the session's OWN observed subject for the same id. Mirrors the repair
+// tool's existing collidedIds/E3 detect-and-flag pattern.
+const FOLD_SKIP_KEYS = new Set(['id', 'carried_from', 'carried_unverified']);
+// Field-wise fold of two records for the SAME task id. `next` (later
+// observation) wins every field it actually OBSERVED (key PRESENT — even
+// empty-string, since the extractor only emits a key a tool_use observed);
+// a field `next` did NOT observe (key ABSENT) falls back to `prev`. Generic
+// over the key UNION — no allowlist (that is the FOLD_FALLBACK_FIELDS defect
+// this replaces). SINGLE OWNER of the field-wise carry rule: both
+// mergeOpenTasks step 2 and the repair tool's N-way transcript fold call it,
+// so they cannot diverge (D046 #4).
+function foldTaskRecords(prev, next) {
+  const merged = {...next};
+  let sourcedFromPrior = false;
+  for (const f of Object.keys(prev)) {
+    if (FOLD_SKIP_KEYS.has(f)) continue;
+    if (f in merged) continue;      // next observed it → next wins
+    merged[f] = prev[f];            // next never observed it → carry prev
+    sourcedFromPrior = true;
+  }
+  return {merged, sourcedFromPrior};
+}
+
+function mergeOpenTasks(existingPayload, sessionOpenTasks, sessionTouchedIds, nowMs, maxAgeDays = 14, meta = null) {
+  // Narrow schema hard-defaults for the DISPLAY fields only. STATUS is
+  // deliberately NOT in this set (task #14 F1): a task whose status was never
+  // observed this session AND has no prior record to source it from is
+  // UNKNOWN — fabricating 'pending' from zero evidence is D047's vacuous
+  // signal and resurrects a prior-session-completed task (verifier PROBE H:
+  // session A completes #99 → pointer omits it → session B rename-only touch
+  // → no prior record → 'pending' fabricated → #99 back from the dead).
+  // Leaving status absent lets step 3's isOpenStatus(undefined)===false
+  // exclude it. subject/description/activeForm/blockedBy DO get a concrete
+  // last-resort default: '' / null render identically to "unknown" for every
+  // downstream consumer and make no false claim about openness, so the
+  // schema-stability win (the persisted pointer has always carried these four
+  // keys concrete) is worth the narrow, justified allowlist.
+  const HARD_DEFAULTS = {subject: '', description: '', activeForm: '', blockedBy: null};
+  const isOpenStatus = (s) => s === 'pending' || s === 'in_progress';
+
   const merged = new Map();
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
   const priorOpen = (existingPayload && Array.isArray(existingPayload.open_tasks)) ? existingPayload.open_tasks : [];
@@ -236,34 +355,82 @@ function mergeOpenTasks(existingPayload, sessionOpenTasks, sessionTouchedIds, no
     const origin = t.carried_from || {session: existingPayload.session_id || null, ts: existingPayload.ts || null};
     const originTs = (origin && origin.ts) ? Date.parse(origin.ts) : NaN;
     if (Number.isFinite(originTs) && (nowMs - originTs) > maxAgeMs) continue; // age cap → drop zombie
-    merged.set(id, {...t, carried_from: origin});
+    // Task #20 Defect A: tag the untouched carry as carried_unverified — this
+    // row was NOT re-observed this session (it is not in sessionTouchedIds), so
+    // its status is last-known, not confirmed. Distinct from carried_from
+    // (field-provenance, conflated); cleared on re-observation by step 2.
+    merged.set(id, {...t, carried_from: origin, carried_unverified: true});
   }
-  // 2. this session's open tasks WIN (fresh state) — field-wise for
-  // subject/description (see comment above); everything else (status,
-  // activeForm, blockedBy) is taken as-is from the session's reconstruction.
-  const FALLBACK_FIELDS = ['subject', 'description'];
+  // 2. this session's open tasks WIN for every field it actually observed —
+  // generic key-presence merge, NO field allowlist (task #14 F2).
   for (const t of sessionOpenTasks) {
     if (!t || t.id == null) continue;
     const id = String(t.id);
-    const {carried_from, ...clean} = t;
+    const {carried_from, carried_unverified, ...clean} = t;
     const prior = priorById.get(id);
+    let sourcedFromPrior = false;
+    // Task #20 Defect B: cross-session id-reuse detection, evaluated on the
+    // session's OWN observed subject BEFORE the back-fill below can overwrite
+    // an absent one. Fire only when the prior record is a CARRIED cross-session
+    // row (prior.carried_from) AND the session observed its own, non-empty,
+    // CONFLICTING subject for the same id — the "two different tasks under one
+    // id" shape. Flag only; the merge is deliberately NOT suppressed (that
+    // would regress #14's rename back-fill, since a genuine rename is
+    // data-indistinguishable from a reuse). Skipped entirely when no `meta`
+    // out-param is passed (unit callers).
+    if (meta && prior && prior.carried_from && prior.carried_from.session) {
+      const priorSubj = String(prior.subject || '').trim();
+      const sessSubj = ('subject' in clean) ? String(clean.subject || '').trim() : '';
+      if (priorSubj && sessSubj && priorSubj !== sessSubj) {
+        (meta.id_collisions || (meta.id_collisions = [])).push({
+          id,
+          prior_session: prior.carried_from.session,
+          prior_subject: prior.subject,
+          session_subject: clean.subject,
+        });
+      }
+    }
+    // Generic prior-fallback: iterate the UNION of keys — every field the
+    // prior record carries that the session did NOT observe this run is
+    // carried over verbatim, whatever its name. An allowlist (the old
+    // FALLBACK_FIELDS/ALL_FIELDS) silently drops any prior field not on the
+    // list and rots the moment a new field is added (PROBE I); this does not.
     if (prior) {
-      let sourcedFromPrior = false;
-      for (const f of FALLBACK_FIELDS) {
-        if (!clean[f] && prior[f]) {
-          clean[f] = prior[f];
-          sourcedFromPrior = true;
-        }
-      }
-      // Tag carried_from only when at least one field was actually sourced
-      // from the prior record — a task the session fully observed gets no tag.
-      if (sourcedFromPrior) {
-        clean.carried_from = prior.carried_from || {session: existingPayload.session_id || null, ts: existingPayload.ts || null};
-      }
+      const folded = foldTaskRecords(prior, clean);
+      Object.assign(clean, folded.merged);
+      if (folded.sourcedFromPrior) sourcedFromPrior = true;
+    }
+    // Last-resort hard defaults for the DISPLAY fields only (status excluded —
+    // see HARD_DEFAULTS note: an unobserved+prior-absent status stays UNKNOWN
+    // so step 3 drops it rather than fabricating an open one).
+    for (const f of Object.keys(HARD_DEFAULTS)) {
+      if (!(f in clean)) clean[f] = HARD_DEFAULTS[f];
+    }
+    // Tag carried_from only when at least one field was actually sourced
+    // from the prior record — a task the session fully observed gets no tag.
+    if (sourcedFromPrior) {
+      clean.carried_from = prior.carried_from || {session: existingPayload.session_id || null, ts: existingPayload.ts || null};
     }
     merged.set(id, clean);
   }
-  return Array.from(merged.values());
+  // 3. Final candidacy filter over the WHOLE merged set. A row survives only
+  // with a POSITIVELY-OPEN status ('pending' | 'in_progress'). Three shapes
+  // are excluded here, and the third is the one the earlier "zombie guard"
+  // comment wrongly claimed to cover but did not (task #14 F1):
+  //   (a) a hand-edited / schema-migrated / foreign-tool prior pointer whose
+  //       open_tasks still lists a terminal task — step 1 carried it, step 3
+  //       drops it (defense-in-depth).
+  //   (b) step 2 falling an unobserved status back to a prior record that was
+  //       genuinely terminal — dropped.
+  //   (c) THE REACHABLE ZOMBIE (PROBE H): a task with NO prior record and NO
+  //       status observed this session. Step 2 no longer fabricates 'pending'
+  //       for it (status is not in HARD_DEFAULTS), so its status is UNDEFINED
+  //       and isOpenStatus(undefined) is false → excluded. UNKNOWN is not
+  //       open; asserting open from zero evidence is exactly the D047 defect.
+  //       (A louder surface — advisory-logging each such exclusion — could be
+  //       layered on top later; exclusion is what stops the resurrection, and
+  //       is kept minimal here.)
+  return Array.from(merged.values()).filter(t => isOpenStatus(t.status));
 }
 
-export {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks};
+export {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks, foldTaskRecords};

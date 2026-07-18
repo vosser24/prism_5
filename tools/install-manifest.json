@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prism_version": "6.5.0",
+  "prism_version": "6.5.2",
   "files": [
     {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
     {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
@@ -100,6 +100,7 @@
     {"src": "tools/prism-kb-sync.mjs", "dst": "tools/prism-kb-sync.mjs", "executable": true},
     {"src": "tools/prism-phase-1-5-verdicts.mjs", "dst": "tools/prism-phase-1-5-verdicts.mjs", "executable": true},
     {"src": "tools/prism-recall.mjs", "dst": "tools/prism-recall.mjs", "executable": true},
+    {"src": "tools/prism-repair-open-tasks.mjs", "dst": "tools/prism-repair-open-tasks.mjs", "executable": true},
     {"src": "tools/prism-rollup-weekly.mjs", "dst": "tools/prism-rollup-weekly.mjs", "executable": true},
     {"src": "tools/prism-roster.mjs", "dst": "tools/prism-roster.mjs", "executable": true},
     {"src": "tools/prism-state.mjs", "dst": "tools/prism-state.mjs", "executable": true},

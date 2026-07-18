@@ -346,5 +346,77 @@ await test('non-git cwd: pointer written with git_sha null; surfaced with no CUR
   }
 });
 
+// ─── Task #16 fix — near-miss check upstream of DOCS_PRISM_RE path gate ────
+// D047 vacuous-signal class: previously, a handoff-shaped file OUTSIDE
+// docs/prism/ hit the path gate first and returned 'no' — NOT EVEN a
+// near-miss. The near-miss ledger, the safety net for exactly this shape,
+// could not see it because it sat downstream of the same gate it was meant
+// to audit. This section proves: (a) an out-of-scope handoff-shaped file
+// now DOES hit the near-miss ledger; (b) in-scope canonical pointer-write
+// behavior is BYTE-IDENTICAL to before this fix (regression guard); (c) the
+// out-of-scope file never becomes a pointer-write target — detection only,
+// zero blast radius on what PRISM actually tracks or which handoff a
+// session resumes.
+
+await test('#16 (a): a handoff-shaped file OUTSIDE docs/prism/ (tasks/HANDOFF_foo.md) now hits the near-miss ledger', async () => {
+  const fx = makeFixture('outofscope-nearmiss');
+  try {
+    initGitRepo(fx.projectDir);
+    mkdirSync(join(fx.projectDir, 'tasks'), {recursive: true});
+    const rel = 'tasks/HANDOFF_foo.md';
+    const abs = join(fx.projectDir, rel);
+    writeFileSync(abs, '# a real external-project handoff, not under docs/prism/\n');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0, `exit ${r.exit}`);
+    assert(r.stdout.includes('NOT RECORDED') && r.stdout.includes(basename(abs)), `near-miss stdout note expected, got: ${r.stdout}`);
+    const lines = readLedgerLines(fx.home);
+    assert(lines.length === 1, `exactly one ledger line, got ${lines.length}: ${JSON.stringify(lines)}`);
+    assert(lines[0].event === 'handoff_pointer_near_miss', `ledger event: ${JSON.stringify(lines[0])}`);
+    assert(lines[0].basename === basename(abs), `ledger basename: ${JSON.stringify(lines[0])}`);
+    assert(lines[0].path === abs, `ledger records the full out-of-scope path: ${JSON.stringify(lines[0])}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('#16 (c): the out-of-scope near-miss NEVER becomes a pointer-write target', async () => {
+  const fx = makeFixture('outofscope-nopointer');
+  try {
+    initGitRepo(fx.projectDir);
+    mkdirSync(join(fx.projectDir, 'tasks'), {recursive: true});
+    const abs = join(fx.projectDir, 'tasks', 'HANDOFF_bar.md');
+    writeFileSync(abs, 'x');
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs));
+    assert(r.exit === 0, `exit ${r.exit}`);
+    assert(!existsSync(pointerPathOf(fx.projectDir)), 'no pointer sidecar written for an out-of-scope file — detection only, zero blast radius on pointer-write behavior');
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('#16 (b) REGRESSION GUARD: in-scope canonical pointer-write is BYTE-IDENTICAL to pre-fix behavior', async () => {
+  const fx = makeFixture('regression-guard');
+  try {
+    const sha = initGitRepo(fx.projectDir);
+    const {abs, rel} = writeHandoffDoc(fx.projectDir);
+    const r = await pointerRunSandboxed(fx, writePayload(fx.projectDir, abs, 'sess-regression'));
+    assert(r.exit === 0 && r.stdout.includes('latest-handoff pointer recorded'), `stdout: ${r.stdout}`);
+    const p = JSON.parse(readFileSync(pointerPathOf(fx.projectDir), 'utf-8'));
+    // Same fields, same values as pre-fix (mirrors test 1 above): project-
+    // relative path, real HEAD sha, carried session_id, stamped ts. Also
+    // asserts no new/removed fields snuck into the pointer shape.
+    assert(p.path === rel.replace(/\\/g, '/'), `path unchanged: ${p.path}`);
+    assert(p.git_sha === sha, `git_sha unchanged: ${p.git_sha}`);
+    assert(p.session_id === 'sess-regression', `session_id unchanged: ${p.session_id}`);
+    assert(typeof p.ts === 'string' && p.ts.length > 0, 'ts still stamped');
+    assert(Object.keys(p).sort().join(',') === 'git_sha,path,session_id,ts', `pointer shape unchanged (no new/removed fields): ${Object.keys(p).sort().join(',')}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

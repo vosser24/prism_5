@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_r_1","name":"TaskCreate","input":{"subject":"Original task A","description":"Created in the older session under id #42.","activeForm":"Doing original task A"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_r_1","content":"Created task #42"}]},"toolUseResult":{"task":{"id":"42","subject":"Original task A"}}}

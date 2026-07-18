@@ -1,6 +1,6 @@
 {
   "name": "prism",
-  "version": "6.5.0",
+  "version": "6.5.2",
   "description": "Cognitive-tier orchestration for Claude Code: classifies every prompt, routes to the cheapest viable model tier (Haiku/Sonnet/Opus), and enforces dispatch discipline through 25 hooks. Closes the gap between Claude Code as smart assistant and Claude Code as cost-disciplined orchestration framework.",
   "author": {
     "name": "vosser24",

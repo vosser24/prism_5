@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_5","name":"TaskUpdate","input":{"taskId":"99","subject":"Renamed zombie"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_5","content":"Updated task #99"}]},"toolUseResult":{"success":true,"taskId":"99","updatedFields":["subject"]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_z_6","name":"TaskUpdate","input":{"taskId":"88","subject":"Open task renamed"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_z_6","content":"Updated task #88"}]},"toolUseResult":{"success":true,"taskId":"88","updatedFields":["subject"]}}

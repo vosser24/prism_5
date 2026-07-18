@@ -640,6 +640,15 @@ try {
           const n = pointer.open_tasks.length;
           const tsLabel = pointer.ts || '(unknown time)';
 
+          // ── Task #20 Defect A/B recall-honesty signals ──────────────────
+          // carried_unverified: rows carried from a prior session and NOT
+          // re-observed since (mergeOpenTasks step-1 tag). id_collisions:
+          // cross-session id reuse flagged by mergeOpenTasks on pointer.meta.
+          // Both are surfaced below so a naked [CURRENT] (repo-position only)
+          // can no longer read as "every row verified fresh" (D047).
+          const carriedUnverifiedCount = pointer.open_tasks.filter((t) => t && t.carried_unverified).length;
+          const idCollisions = (pointer.meta && Array.isArray(pointer.meta.id_collisions)) ? pointer.meta.id_collisions : [];
+
           // ── SHA-STAMP-001: staleness label ──────────────────────────────
           // Only runs a git call at all when the pointer actually carries a
           // git_sha — older pointers written before this change have none,
@@ -652,7 +661,13 @@ try {
             const currentSha = await getGitHeadSha(process.cwd());
             if (currentSha) {
               if (currentSha === pointer.git_sha) {
-                staleTag = ' [CURRENT]';
+                // Task #20 Defect A: [CURRENT] means "repo HEAD unmoved" — a
+                // true but PARTIAL signal. When rows were carried but never
+                // re-observed, a naked [CURRENT] collapses "verified fresh"
+                // and "never re-checked" (D047). Qualify it instead of lying.
+                staleTag = carriedUnverifiedCount > 0
+                  ? ` [repo CURRENT · ${carriedUnverifiedCount} of ${n} carried, unverified since prior session]`
+                  : ' [CURRENT]';
               } else {
                 const dist = await getCommitDistance(process.cwd(), pointer.git_sha, currentSha);
                 staleTag = dist !== null
@@ -746,6 +761,31 @@ try {
               parsedClause + (integTailTrunc ? ', tail truncated' : '') +
               ` — if this looks wrong, run TaskList.`;
           }
+          // ── Task #20 Defect A SURFACE: carried-unverified honesty line ──
+          // Fires only when at least one row was carried from a prior session
+          // and never re-observed since. Orthogonal to the git sha tag (it also
+          // shows under [STALE]). Quiet when zero, so pointers with only
+          // re-observed (or legacy carried_from-without-marker) rows are
+          // unaffected — self-clearing state, no sticky flag.
+          let carriedUnverifiedLine = '';
+          if (carriedUnverifiedCount > 0) {
+            carriedUnverifiedLine =
+              `\nCARRIED-UNVERIFIED: ${carriedUnverifiedCount} of ${n} task(s) carried from a prior session and NOT re-observed since` +
+              ` — the status shown is last-known, not confirmed this session. Re-hydrate and reconcile against current repo state; run TaskList to confirm they are still open.`;
+          }
+          // ── Task #20 Defect B SURFACE: cross-session id collision warning ──
+          // Fires when mergeOpenTasks flagged a per-session id reused for what
+          // looks like a different task. Advisory — task ids are per-session
+          // scoped and cannot be auto-disambiguated from a rename.
+          let idCollisionLine = '';
+          if (idCollisions.length > 0) {
+            const ex = idCollisions.slice(0, 3).map((c) =>
+              `#${c.id} (was "${String(c.prior_subject || '').slice(0, 40)}" in session ${String(c.prior_session || '?').slice(0, 8)}, now "${String(c.session_subject || '').slice(0, 40)}")`
+            ).join('; ');
+            idCollisionLine =
+              `\nID-COLLISION: ${idCollisions.length} task id(s) reused across sessions for what looks like different tasks — VERIFY before trusting: ${ex}.` +
+              ` Task ids are per-session scoped (task #20); run TaskList to disambiguate.`;
+          }
           const recallDirective = deferredCount > 0
             ? `Full-fidelity detail below for ${fullSet.length} of ${n} (in-progress tasks are never deferred): ` +
               `re-hydrate via TaskCreate before proceeding, preserving each FULL description; ` +
@@ -759,6 +799,8 @@ try {
             taskLines.join('\n') +
             deferredLine +
             integrityLine +
+            carriedUnverifiedLine +
+            idCollisionLine +
             `\n</TASK-RECALL>`;
           notices.push(taskRecall);
         }

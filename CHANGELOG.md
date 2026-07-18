@@ -6,6 +6,28 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.5.2] - 2026-07-18
+
+### Fixed
+
+- **Repair-tool cross-transcript fold reconciled + un-held-back (D048, #24).** `tools/prism-repair-open-tasks.mjs` was held back from 6.5.0/6.5.1 because neither fold implementation satisfied both fold fixtures: main's `FOLD_FALLBACK_FIELDS=['subject','description']` allowlist carried only those two fields (so a rename-only later transcript dropped a genuinely-open task's `status` and could resurrect a completed one), while the branch alternative blanked `subject` on a status-only update. Both are now replaced by a single shared field-wise-union helper, `foldTaskRecords(prev, next)` in `hooks/lib/prism-task-snapshot.mjs`, used by BOTH the repair tool's N-way transcript fold AND `mergeOpenTasks` step 2 — one owner, no duplicate-logic divergence (D046 #4). The union rule (a field the later observation actually saw wins; an unobserved field falls back to the earlier one) satisfies the subject-survives-status-only fixture, terminal-status-stickiness (a completed task is not resurrected by a later rename), and fixes main's latent open-task-drop-on-rename bug — simultaneously.
+- **Repair-tool id-reuse flag is now provenance-based, not subject-diff.** The first version of the collision flag fired on any cross-transcript subject change, so it flagged every ordinary cross-session rename as an "id-collision" — a cry-wolf signal that would drown out the E3 markup/empty flags that matter. It now keys on create-vs-update provenance: `extractTaskSnapshot` takes an opt-in `createdIds` out-param (additive, non-breaking — `SessionEnd`/`mergeOpenTasks` are unaffected), and the fold flags id-reuse only when a later transcript independently `TaskCreate`d an id an earlier transcript already had (a genuine per-session-scoped id collision). A `TaskUpdate`-only rename never flags. The merge is not suppressed either way (a genuine rename is data-indistinguishable from a reuse). Re-added to `tools/install-manifest.json` and the `test-manifest-coverage` gate.
+
+### Verification
+
+- New `tests/v3/tools/test-repair-open-tasks-zombie-fold.mjs` (+ zombie and reuse fixtures) asserts flag *content*: a completed-then-renamed task is dropped, a genuinely-open renamed task survives with its status carried, no id-reuse flag fires on renames, and a real independent-recreate under one id does flag. Independently verified by a no-author reviewer (verbatim flag output + adversarial false-miss/false-fire probes); all repair-tool + `mergeOpenTasks`/`extractTaskSnapshot` suites and the manifest-coverage gate stay green.
+
+## [6.5.1] - 2026-07-18
+
+### Fixed
+
+- **Task-snapshot field-wise merge (#14)** (`hooks/lib/prism-task-snapshot.mjs`) — `mergeOpenTasks` now merges per-field instead of whole-object overwrite, so a partial observation no longer fabricates defaults for fields it didn't see and no-status tasks are dropped rather than resurrected with an invented status.
+- **Carry-forward surfaces `carried_unverified` instead of dropping it (#20)** (`hooks/prism-session-start.mjs`) — carried-forward tasks that couldn't be re-verified this session are now surfaced with a `carried_unverified` flag rather than silently dropped, plus a cross-session id-collision flag; SHA-STAMP qualified.
+- **Handoff near-miss reaches the ledger regardless of scope (#16)** (`hooks/prism-handoff-pointer.mjs`) — a near-miss handoff basename match now always reaches the near-miss ledger, not only when the candidate falls under `docs/prism/`.
+- **Knowledge-index shape-dispatch + corpus containment (#19)** (`tools/prism-knowledge-index.mjs`, `tools/lib/knowledge-delta.mjs`) — indexing now dispatches on entry shape and fails loud on a type/path mismatch instead of silently mis-indexing under the wrong corpus path.
+- **Same-date lesson eviction fixed (#21)** (`tools/lib/knowledge-delta.mjs`) — eviction now keys off the full lesson-file slug/ref instead of date alone, so same-date lessons no longer evict each other.
+- **Duplicate `parseLessonFilename` eliminated (#22)** (`tools/prism-knowledge-index.mjs`, `tools/lib/knowledge-delta.mjs`) — `knowledge-index` now imports the single canonical `parseLessonFilename` from `knowledge-delta` instead of carrying its own divergent copy, so a second implementation can no longer regress the #21 fix.
+
 ## [6.5.0] - 2026-07-17
 
 Recall-integrity release: PRISM's memory/handoff/task-carryover surfaces silently

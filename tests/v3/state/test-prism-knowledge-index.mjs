@@ -85,8 +85,8 @@ test('rebuild: produces knowledge-index.md with [[D001]], [[D002]]', () => {
     const idx = readIndex(root);
     assert(idx.includes('[[D001]]'), 'index should contain [[D001]]: ' + idx);
     assert(idx.includes('[[D002]]'), 'index should contain [[D002]]: ' + idx);
-    assert(idx.includes('[[lesson:2026-05-25]]'), 'index should contain [[lesson:2026-05-25]]: ' + idx);
-    assert(idx.includes('[[lesson:2026-06-01]]'), 'index should contain [[lesson:2026-06-01]]: ' + idx);
+    assert(idx.includes('[[lesson:2026-05-25-session]]'), 'index should contain [[lesson:2026-05-25-session]] (task #21: ref is now the full slug, not the bare date): ' + idx);
+    assert(idx.includes('[[lesson:2026-06-01-session]]'), 'index should contain [[lesson:2026-06-01-session]] (task #21: ref is now the full slug, not the bare date): ' + idx);
     assert(idx.includes('First Decision Title'), 'index should contain adjudication title');
     assert(idx.includes('Locked'), 'index should contain status Locked');
 
@@ -127,9 +127,9 @@ test('rebuild: lessons sorted by date descending', () => {
     assertEq(r.status, 0, r.stderr);
 
     const idx = readIndex(root);
-    const posNew = idx.indexOf('[[lesson:2026-06-01]]');
-    const posMid = idx.indexOf('[[lesson:2026-03-15]]');
-    const posOld = idx.indexOf('[[lesson:2026-01-01]]');
+    const posNew = idx.indexOf('[[lesson:2026-06-01-new]]');
+    const posMid = idx.indexOf('[[lesson:2026-03-15-mid]]');
+    const posOld = idx.indexOf('[[lesson:2026-01-01-old]]');
     assert(posNew < posMid && posMid < posOld, 'lessons should be sorted descending by date: ' + idx);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
@@ -184,7 +184,7 @@ test('rebuild: manifest has correct types and hashes', () => {
     assertEq(adjEntry[1].type, 'adjudication', 'adjudication type');
     assertEq(lessonEntry[1].type, 'lesson', 'lesson type');
     assertEq(adjEntry[1].ref, 'D001', 'adjudication ref');
-    assertEq(lessonEntry[1].ref, '2026-06-10', 'lesson ref');
+    assertEq(lessonEntry[1].ref, '2026-06-10-session', 'lesson ref (task #21: full-slug ref, not bare date)');
     assert(typeof adjEntry[1].hash === 'string' && adjEntry[1].hash.length > 0, 'hash present');
     assert(typeof lessonEntry[1].hash === 'string' && lessonEntry[1].hash.length > 0, 'hash present');
   } finally { rmSync(root, {recursive: true, force: true}); }
@@ -233,9 +233,9 @@ test('append: new lesson added to index + manifest', () => {
     assertEq(r.status, 0, 'append should exit 0\nstderr: ' + r.stderr);
 
     const idx = readIndex(root);
-    assert(idx.includes('[[lesson:2026-06-19]]'), 'new lesson ref present: ' + idx);
+    assert(idx.includes('[[lesson:2026-06-19-new]]'), 'new lesson ref present: ' + idx);
     assert(idx.includes('New Session'), 'new lesson title present: ' + idx);
-    assert(idx.includes('[[lesson:2026-05-25]]'), 'old lesson still present');
+    assert(idx.includes('[[lesson:2026-05-25-old]]'), 'old lesson still present');
 
     const manifest = readManifest(root);
     const lessons = Object.values(manifest.files).filter(f => f.type === 'lesson');
@@ -301,6 +301,57 @@ test('append: --file can be an absolute path', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// append: task #21 regression — same-date lessons must NOT evict each other
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('append: two same-date lessons with distinct slugs — BOTH survive (task #21)', () => {
+  const root = makeTestbed('append-same-date-collision');
+  try {
+    run(root, 'rebuild');
+
+    const lessonDir = join(root, 'docs', 'prism', 'lessons');
+    mkdirSync(lessonDir, {recursive: true});
+    writeFileSync(join(lessonDir, '2026-07-17-session.md'),
+      '# Session Lessons\n**Status:** Draft\nBody A.\n', 'utf8');
+    writeFileSync(join(lessonDir, '2026-07-17-session-addendum.md'),
+      '# Session Addendum\n**Status:** Draft\nBody B.\n', 'utf8');
+
+    const r1 = run(root, 'append', '--type', 'lesson', '--file', '2026-07-17-session.md');
+    assertEq(r1.status, 0, 'first append exit 0\nstderr: ' + r1.stderr);
+    const r2 = run(root, 'append', '--type', 'lesson', '--file', '2026-07-17-session-addendum.md');
+    assertEq(r2.status, 0, 'second append exit 0\nstderr: ' + r2.stderr);
+
+    const idx = readIndex(root);
+    assert(idx.includes('Session Lessons'), 'first same-date lesson survives: ' + idx);
+    assert(idx.includes('Session Addendum'),
+      'second same-date lesson survives (pre-fix: evicted by the first): ' + idx);
+
+    const manifest = readManifest(root);
+    const lessons = Object.values(manifest.files).filter(f => f.type === 'lesson');
+    assertEq(lessons.length, 2, 'manifest should retain both same-date lessons');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('append: same-date lessons get distinct refs (file-derived, not date-derived) (task #21)', () => {
+  const root = makeTestbed('append-same-date-ref-distinct');
+  try {
+    run(root, 'rebuild');
+    const lessonDir = join(root, 'docs', 'prism', 'lessons');
+    mkdirSync(lessonDir, {recursive: true});
+    writeFileSync(join(lessonDir, '2026-07-17-session.md'), '# A\n', 'utf8');
+    writeFileSync(join(lessonDir, '2026-07-17-session-addendum.md'), '# B\n', 'utf8');
+
+    run(root, 'append', '--type', 'lesson', '--file', '2026-07-17-session.md');
+    run(root, 'append', '--type', 'lesson', '--file', '2026-07-17-session-addendum.md');
+
+    const manifest = readManifest(root);
+    const refs = Object.values(manifest.files).filter(f => f.type === 'lesson').map(f => f.ref);
+    assertEq(new Set(refs).size, 2, 'two distinct files must get two distinct refs: ' + JSON.stringify(refs));
+    assert(!refs.includes('2026-07-17'), 'ref must not collapse to bare date: ' + JSON.stringify(refs));
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // delta: detect changes and update
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -324,9 +375,12 @@ test('delta: after rebuild, add new lesson → delta --json shows added[]', () =
     assert(Array.isArray(out.removed), 'removed should be an array');
     assert(out.added.some(e => e.includes('2026-06-19')), 'added should include new lesson: ' + JSON.stringify(out.added));
 
-    // Index should now contain the new lesson
+    // Index should now contain the new lesson. task #21/#22: the delta path
+    // (knowledge-delta.mjs) now shares the SAME parseLessonFilename as append,
+    // so the ref is the full slug (2026-06-19-new), NOT the bare date.
     const idx = readIndex(root);
-    assert(idx.includes('[[lesson:2026-06-19]]'), 'index updated by delta: ' + idx);
+    assert(idx.includes('[[lesson:2026-06-19-new]]'), 'index updated by delta with full-slug ref: ' + idx);
+    assert(!idx.includes('[[lesson:2026-06-19]]'), 'delta must not regress to bare-date ref: ' + idx);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 

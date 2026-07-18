@@ -37,10 +37,9 @@
 import {readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSync} from 'node:fs';
 import {join, dirname, basename, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks} from '../hooks/lib/prism-task-snapshot.mjs';
+import {extractTaskSnapshot, readTaskScanLines, foldTaskRecords} from '../hooks/lib/prism-task-snapshot.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-void mergeOpenTasks; // shared-lib import kept 1:1 with the hook's surface
 
 // ── args (Karpathy-minimal: no speculative options) ─────────────────────────
 const argv = process.argv.slice(2);
@@ -89,39 +88,48 @@ if (!transcripts.length) {
 }
 
 // ── replay the FIXED extractor over every transcript, newest wins per id ────
-// FIELD-WISE fold (mirrors mergeOpenTasks' field-wise fallback in
-// hooks/lib/prism-task-snapshot.mjs, commit d8bfe698b — same root cause, same
-// rule, applied N-way across transcripts instead of prior-payload+session):
-// extractTaskSnapshot() starts a FRESH per-transcript map, so a transcript
-// that only touches a task's status (e.g. a status-only TaskUpdate) returns
-// that task with subject/description default-initialized to '' — it never
-// observed them, it didn't clear them. A wholesale fold.set() per transcript
-// would let those unobserved empty strings overwrite a populated
-// subject/description an EARLIER transcript's TaskCreate established. So:
-// keep the newer transcript's subject/description only when it actually
-// observed a non-empty value; otherwise fall back to the running fold's
-// prior value. status/activeForm/blockedBy stay fully newest-transcript-
-// authoritative (unchanged) — those fields reflect real progression over
-// time, not an unobserved-vs-cleared ambiguity.
-const FOLD_FALLBACK_FIELDS = ['subject', 'description'];
-function foldMergeTask(prev, next) {
-  const merged = {...next};
-  for (const f of FOLD_FALLBACK_FIELDS) {
-    if (!merged[f] && prev[f]) merged[f] = prev[f];
-  }
-  return merged;
-}
+// FIELD-WISE fold, via the SAME shared helper mergeOpenTasks uses
+// (hooks/lib/prism-task-snapshot.mjs foldTaskRecords — single owner of the
+// field-wise carry rule, D046 #4): extractTaskSnapshot() starts a FRESH
+// per-transcript map, so a transcript that only touches a task's status
+// (e.g. a status-only TaskUpdate) returns that task with subject/description/
+// status/activeForm/blockedBy simply ABSENT for every field it never
+// observed — not cleared. A wholesale fold.set() per transcript would let an
+// unobserved-absent field silently blank a value an EARLIER transcript's
+// TaskCreate established. foldTaskRecords(prev, next) instead carries every
+// field `next` did not observe forward from `prev`, generic over the key
+// union — no allowlist.
 const fold = new Map(); // id -> task (final state, field-wise merged across transcripts)
+const collidedIds = [];
 const totals = {structured_hits: 0, regex_fallbacks: 0, unmatched_task_results: 0};
 let anyTruncated = false;
 for (const tx of transcripts) {
   const {lines, tail_truncated} = readTaskScanLines(tx);
   anyTruncated = anyTruncated || tail_truncated;
   const counters = {structured_hits: 0, regex_fallbacks: 0, unmatched_task_results: 0};
-  for (const t of extractTaskSnapshot(lines, counters)) {
+  // D048 (6.5.2): PROVENANCE, not a subject-diff heuristic. The prior
+  // subject-conflict trigger fired on any two-transcript subject difference —
+  // including an ordinary same-task rename, which is common and NOT a
+  // collision. `created` records which ids THIS transcript's extractor
+  // actually TaskCreate'd (see extractTaskSnapshot's createdIds out-param).
+  // A collision is an id this transcript INDEPENDENTLY CREATED that an
+  // earlier transcript's fold already populated — a rename (TaskUpdate only)
+  // never adds to `created`, so it never flags. Merge still NOT suppressed
+  // (foldTaskRecords unchanged) — a genuine cross-session rename is
+  // data-indistinguishable from reuse at the field level, so the field-wise
+  // carry stays intact either way; only the flag trigger is now precise.
+  const created = new Set();
+  for (const t of extractTaskSnapshot(lines, counters, created)) {
     const id = String(t.id);
     const prev = fold.get(id);
-    fold.set(id, prev ? foldMergeTask(prev, t) : t);
+    if (prev) {
+      if (created.has(id)) {
+        collidedIds.push({id, prev_subject: prev.subject, next_subject: t.subject});
+      }
+      fold.set(id, foldTaskRecords(prev, t).merged);
+    } else {
+      fold.set(id, t);
+    }
   }
   for (const k of Object.keys(totals)) totals[k] += counters[k];
 }
@@ -174,6 +182,9 @@ for (const t of reconstructed) {
   if (MARKUP_RE.test(t.description || '')) flags.push({id: t.id, what: 'markup in description', sample: (t.description || '').match(MARKUP_RE)[0]});
   if (!(t.subject || '').trim()) flags.push({id: t.id, what: 'empty subject'});
   if (!(t.description || '').trim()) flags.push({id: t.id, what: 'empty description'});
+}
+for (const c of collidedIds) {
+  flags.push({id: c.id, what: 'cross-session id-reuse (id independently created in ≥2 sessions — flagged, merge NOT suppressed)', sample: `${JSON.stringify(c.prev_subject)} vs ${JSON.stringify(c.next_subject)}`});
 }
 
 // ── diff existing vs reconstructed ───────────────────────────────────────────
