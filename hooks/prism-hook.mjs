@@ -114,27 +114,23 @@ export async function run(payload, ctx = {}) {
     // ─── TIER 1 — SUPERPOWERS ───
     const tdd_strong = /\b(test.?driven|\bTDD\b|red.?green|write tests? first|tests? first|with proper tests?|properly tested|test coverage|production.?ready)\b/i;
     if (tdd_strong.test(ownPrompt) && shouldSuggest('superpowers_tdd')) {
-      messages.push("PRISM: Test-driven work — superpowers is installed, invoke its test-driven-development skill.");
       recordSuggestion('superpowers_tdd'); matchedInvocation = true;
     }
 
     const debug_strong = /\b(debug(ging)?|root cause|systematic debug|can.?t figure (it )?out|don.?t know what.?s (wrong|happening)|why (is|isn.?t|won.?t) this|keeps (crashing|failing)|intermittent)\b/i;
     const debug_stuck = /\b(been (trying|stuck|debugging)|for (hours?|days?))\b/i;
     if ((debug_strong.test(ownPrompt) || debug_stuck.test(ownPrompt)) && shouldSuggest('superpowers_debug')) {
-      messages.push("PRISM: Debugging work — superpowers is installed, invoke its systematic-debugging skill (4-phase root cause).");
       recordSuggestion('superpowers_debug'); matchedInvocation = true;
     }
 
     const review_strong = /\b(code review|review (my|this) code|check my code|before (I )?(ship|commit|push|PR)|PR review|refactor this|clean (this )?up)\b/i;
     const review_lang = /\b(typescript|python|go\s+code|java|kotlin|rust|swift|php|perl|c\+\+|ruby)\b/i;
     if (review_strong.test(ownPrompt) && !review_lang.test(ownPrompt) && shouldSuggest('superpowers_review')) {
-      messages.push("PRISM: Code review — superpowers is installed, invoke its requesting-code-review skill.");
       recordSuggestion('superpowers_review'); matchedInvocation = true;
     }
 
     const worktree = /\b(git worktree|parallel branches?|isolate this branch|worktree)\b/i;
     if (worktree.test(ownPrompt) && shouldSuggest('superpowers_worktree')) {
-      messages.push("PRISM: Git worktree work — superpowers is installed, invoke its using-git-worktrees skill.");
       recordSuggestion('superpowers_worktree'); matchedInvocation = true;
     }
 

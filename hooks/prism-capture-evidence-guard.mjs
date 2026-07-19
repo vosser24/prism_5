@@ -73,6 +73,7 @@ const IN_SCOPE_RE = [
   /(^|\/)docs\/prism\/adjudications\//i,
   /(^|\/)docs\/prism\/lessons\//i,
   /(^|\/)tasks\/lessons-[^/]+\.md$/i,
+  /(^|\/)docs\/prism\/deviations\//i,
 ];
 
 // Verification-style factual-claim triggers. Deliberately keyword-based
@@ -81,7 +82,7 @@ const IN_SCOPE_RE = [
 // unrelated file never reaches this check (path-scope already excludes it),
 // and inside captured-knowledge files this vocabulary is exactly the
 // "it works" / "it's the root cause" claims the rule is about.
-const CLAIM_TRIGGER_RE = /\b(works|is fixed|are fixed|was fixed|resolves?|resolved|is broken|are broken|was broken|root[\s-]*cause|caused by|confirms?|confirmed|reproduces?|reproduced|no longer (fails|occurs)|now passes|passes now|is now working|bug is)\b/i;
+const CLAIM_TRIGGER_RE = /\b(works|is fixed|are fixed|was fixed|resolves?|resolved|is broken|are broken|was broken|root[\s-]*cause|caused by|confirms?|confirmed|reproduces?|reproduced|no longer (fails|occurs)|now passes|passes now|is now working|bug is|tests? pass(es|ed)?|(all |the )?tests? (are |were )?(green|passing)|suite (is )?green)\b/i;
 
 // The required evidence field. Presence-only check — content is NOT graded.
 const EVIDENCE_FIELD_RE = /\*\*Verified:\*\*/i;
@@ -137,6 +138,24 @@ export function resultingContent(toolName, toolInput) {
   return '';
 }
 
+// v6.6.0 FIX-4c: concatenated ADDED material (new_string values) for
+// Edit/MultiEdit — used ONLY by the per-new-entry ratchet in run() below.
+// Write has no "added vs existing" distinction (the whole file IS new), so
+// this is never called for Write.
+function addedMaterial(toolName, toolInput) {
+  const ti = toolInput || {};
+  if (toolName === 'Edit') return String(ti.new_string || '');
+  if (toolName === 'MultiEdit') {
+    const edits = Array.isArray(ti.edits) ? ti.edits : [];
+    return edits.map((e) => e.new_string || '').join('\n');
+  }
+  return '';
+}
+
+// A markdown heading in the added text signals a NEW entry (not a tweak
+// inside an existing one) — the ratchet gate below only fires on this class.
+const NEW_HEADING_RE = /^#{1,6}\s/m;
+
 function denyMessage(filePath, matched) {
   return [
     `PRISM CAPTURE-EVIDENCE GATE: this write to ${filePath} asserts a factual`,
@@ -185,15 +204,37 @@ export function run(input) {
     return done(0);
   }
 
-  if (EVIDENCE_FIELD_RE.test(content)) { // evidence field present — satisfied
-    appendLog({...logBase, blocked: false, outcome: 'evidence-present'});
-    return done(0);
+  // v6.6.0 FIX-4c: close the per-file ratchet for NEW entries. One historical
+  // **Verified:** field ANYWHERE in an append-only file previously immunized
+  // every future unverified entry (EVIDENCE_FIELD_RE.test(content) scans the
+  // whole resulting file). For Edit/MultiEdit, ALSO scan the added material
+  // alone (the concatenated new_strings): if it introduces a NEW markdown
+  // heading (a new entry, not a tweak inside an existing one) that asserts a
+  // claim but carries no evidence field of its own, the whole-file pass does
+  // NOT satisfy the gate. Write is unaffected — there is no "added vs
+  // existing" distinction on a fresh Write (whole-file scan is already
+  // correct there).
+  let ratchetClaim = null;
+  if (EVIDENCE_FIELD_RE.test(content)) {
+    if (toolName === 'Edit' || toolName === 'MultiEdit') {
+      const added = addedMaterial(toolName, ti);
+      const addedClaim = CLAIM_TRIGGER_RE.exec(added);
+      if (addedClaim && NEW_HEADING_RE.test(added) && !EVIDENCE_FIELD_RE.test(added)) {
+        ratchetClaim = addedClaim[0];
+      }
+    }
+    if (!ratchetClaim) { // evidence field present, no new-entry ratchet violation — satisfied
+      appendLog({...logBase, blocked: false, outcome: 'evidence-present'});
+      return done(0);
+    }
   }
 
-  const notice = denyMessage(filePath, claimMatch[0]);
+  const matchedClaim = ratchetClaim || claimMatch[0];
+  const notice = denyMessage(filePath, matchedClaim);
+  const ratchetField = ratchetClaim ? {ratchet: 'per-entry'} : {};
 
   if (mode === 'soft') {
-    appendLog({...logBase, blocked: false, outcome: 'soft-nudge', claim: claimMatch[0]});
+    appendLog({...logBase, blocked: false, outcome: 'soft-nudge', claim: matchedClaim, ...ratchetField});
     write(JSON.stringify({
       hookSpecificOutput: {hookEventName: 'PreToolUse', additionalContext: notice},
     }));
@@ -201,7 +242,7 @@ export function run(input) {
   }
 
   // hard (default)
-  appendLog({...logBase, blocked: true, outcome: 'deny', claim: claimMatch[0]});
+  appendLog({...logBase, blocked: true, outcome: 'deny', claim: matchedClaim, ...ratchetField});
   write(JSON.stringify({
     hookSpecificOutput: {hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: notice},
   }));

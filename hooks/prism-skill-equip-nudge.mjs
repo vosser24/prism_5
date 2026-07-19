@@ -11,6 +11,7 @@
 import {readFileSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {logAdvisory} from './lib/prism-advisory-log.mjs';
+import {classifyBuildVsRead} from './prism-specialist-routing-guard.mjs';
 
 const H = process.env.USERPROFILE || process.env.HOME || '';
 
@@ -125,6 +126,29 @@ export async function run(payload) {
 
   const rawPrompt = (payload.tool_input && payload.tool_input.prompt) || '';
   const prompt = rawPrompt.toLowerCase();
+
+  // FIX-5 (v6.6.0): suppress on read-dominant dispatches. Live routing log
+  // showed a 77% fire rate (132/172 evals) because this hook fires on ANY
+  // Agent dispatch regardless of build/read class — a read-only analysis/
+  // scan/extract worker gets the same equip nudge as a build worker, even
+  // though skill injection is skippable for pure reads. `readScore >
+  // buildScore` (not a hard isBuild-required gate) is the verified-safe
+  // subset: a hard build-only gate breaks precision-test Cases 4 and 10
+  // (neutral prompts, buildScore 0 / readScore 0, that must still nudge).
+  const cls = classifyBuildVsRead(rawPrompt);
+  if (cls.readScore > cls.buildScore) {
+    logAdvisory({
+      event: 'skill_equip_advisory',
+      session_id: payload.session_id || null,
+      matched: [],
+      scores: [],
+      candidate_count: 0,
+      suppressed: 'read-dominant',
+      build_score: cls.buildScore,
+      read_score: cls.readScore,
+    });
+    return allow('');
+  }
 
   // Read roster — fail-open on any error
   let roster = null;

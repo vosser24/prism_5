@@ -260,6 +260,38 @@ try {
       equipEvents.some(e => Array.isArray(e.matched) && e.matched.length === 0 && e.candidate_count === 0),
       `expected a matched:[] entry, got ${JSON.stringify(equipEvents)}`);
   }
+
+  // Case 12 (v6.6.0 FIX-5): read-dominant dispatch → suppressed. The prompt
+  // matches a specific domain term (postgres) that WOULD otherwise surface
+  // postgres-migration-expert (see Case 2), but "investigate"/"audit" push
+  // readScore (4) above buildScore (0) — the equip nudge must stay silent,
+  // and the routing log must record WHY (suppressed:'read-dominant'), not
+  // just fall through to the ordinary zero-candidate silent path.
+  {
+    const {ctx, skills} = await nudgeFor('investigate and audit the postgres schema layout, report only');
+    check('Case 12: read-dominant dispatch → empty nudge despite a matching domain term',
+      ctx === '' && skills.length === 0,
+      `expected empty nudge (suppressed), got ctx="${ctx}" skills=${JSON.stringify(skills)}`);
+
+    const routingLog = join(HOME, '.claude', '.prism-routing.jsonl');
+    const lines = existsSync(routingLog)
+      ? readFileSync(routingLog, 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+      : [];
+    const suppressedEvents = lines.filter(l => l.event === 'skill_equip_advisory' && l.suppressed === 'read-dominant');
+    check('Case 12: routing log records suppressed:\'read-dominant\' for this evaluation',
+      suppressedEvents.length > 0,
+      `expected a suppressed:'read-dominant' entry, got ${JSON.stringify(lines.filter(l => l.event === 'skill_equip_advisory'))}`);
+  }
+
+  // Case 13: existing Case 2 prompt re-asserted as still firing — guards the
+  // gate DIRECTION (build-dominant, buildScore=1 via "migrate" > readScore=0,
+  // must NOT be suppressed by the new read-dominant gate).
+  {
+    const {ctx, skills} = await nudgeFor('migrate the postgres schema to the new database');
+    check('Case 13: build-dominant prompt (Case 2, re-asserted) still surfaces postgres-migration-expert after FIX-5',
+      skills.includes('postgres-migration-expert'),
+      `expected postgres-migration-expert to still surface, got ${JSON.stringify(skills)} ctx="${ctx}"`);
+  }
 } finally {
   try { rmSync(HOME, {recursive: true, force: true}); } catch {}
 }

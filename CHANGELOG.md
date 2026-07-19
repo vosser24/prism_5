@@ -6,6 +6,30 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-07-19
+
+Guard-layer wiring release: the D049 investigation (skill-delivery taxonomy +
+"dormant-mechanism disease") found several guard mechanisms that were built,
+unit-tested green, and shipped — but never actually wired into the live path,
+the same defect class that made task-carryover a permanent no-op through
+v6.4.0 (D046/D047). This release wires each dormant mechanism with the
+smallest change that makes it fire, per `tasks/workspace/superpowers-absorption/08-wiring-fix-plan.md`.
+
+### Fixed
+
+- **FIX-1 — Phase-1.5 OOB reviewer armed for 0 of 18 roster agents.** `requires_phase_1_5` was `true` for zero live agents, so the out-of-band independent reviewer never fired for anyone. Tagged the two genuine high-stakes pilot candidates (`claude-master`, `software-architecture-expert`) via the existing `tools/prism-roster.mjs --tag-1-5` CLI (async mode only, no block-mode), and added a `/prism-health` bullet that reports the armed count and flags DORMANT if it ever returns to 0, so the gap can't silently reopen.
+- **FIX-2 — file-lease-guard doctrine gap closed.** The guard (`hooks/prism-file-lease-guard.mjs`) was fully wired into the dispatcher but fires only on an explicit `PRISM-LEASE: agent=… files=…` line, and no doctrine told the master to ever emit one. Added the one sentence to the DISPATCH CONTRACT (`skills/master-orchestrator/SKILL.md`) instructing parallel-fanout workers to declare their file ownership, plus a doctrine-presence test so a future SKILL.md rewrite can't silently re-orphan the guard.
+- **FIX-3 — agent-model-guard: dispatched-only downgrades to advisory instead of full bypass.** Of the three subagent-detection signals, `sentinel.dispatched` is a session-global boolean set by the parent's own first `Agent()` call of the turn (D043), so parent dispatches 2..N of every turn skipped model-checking entirely. `hooks/prism-agent-model-guard.mjs` now keeps the full-bypass passthrough only for the two strong per-call signals (`parent_tool_use_id`, `CLAUDE_CODE_ENTRYPOINT=subagent`); a dispatched-only match now falls through to classification with `shouldDeny` forced false (advisory nudge, never a deny) — mirroring the identical D043 precedent already shipped in the parent-dispatch-guard.
+- **FIX-4a — capture-evidence-guard: added "tests pass" claim vocabulary.** `CLAIM_TRIGGER_RE` previously matched "now passes/passes now" but not the far more common "tests pass(es)", "all tests are green/passing", "suite is green" phrasing, letting unverified capture claims through in that wording. Bare `done`/`complete` deliberately NOT added — both appear constantly in legitimate capture prose and would trigger a false-positive storm.
+- **FIX-4b — capture-evidence-guard: widened scope to `docs/prism/deviations/`.** Deviation reports are agent-authored factual claims — exactly the class the guard exists to check — but the in-scope path list omitted that bucket. `docs/prism/smoke/` deliberately stays out (imperative runbook prose false-fires by construction).
+- **FIX-4c — capture-evidence-guard: closed the per-file ratchet for NEW entries.** One historical `**Verified:**` line anywhere in an append-only lessons file previously immunized every future unverified entry, because the check scanned the whole resulting file rather than what was actually added. `Edit`/`MultiEdit` on in-scope files now also scans the added text and denies when it introduces a new heading (a genuinely new claim-bearing entry) with claim language and no evidence line — same-entry tweaks and typo fixes (no new heading in the diff) remain unaffected.
+- **FIX-5 — equip-nudge suppresses on read-dominant dispatches.** The skill-equip-nudge fired on 77% of live `Agent()` dispatches (132/172) regardless of whether the work was build or pure-read/analysis. `hooks/prism-skill-equip-nudge.mjs` now reuses the existing `classifyBuildVsRead` classifier and suppresses (with a `suppressed:'read-dominant'` telemetry record, not silent) whenever `readScore > buildScore`; neutral prompts with zero build/read signal still nudge, preserving the existing precision-test fixtures.
+- **FIX-6 — retired the superpowers nudge TEXT, kept the recognizer as a silent signal.** The four `PRISM: …superpowers…` message lines in `hooks/prism-hook.mjs` were redundant restatements of descriptions the harness's always-on skill list already surfaces, and the broad trigger patterns (`root cause`, `debug`, `worktree`) topic-collided on PRISM's own repo, producing noise. Removed only the four `messages.push(...)` lines; the regexes, `shouldSuggest`/`recordSuggestion` calls, and the `matchedInvocation = true` side effect are unchanged — so the trivial-streak reset and the KB-router fallback gate (both load-bearing on that flag) behave exactly as before.
+
+### Verification
+
+- Independent cross-model (Fable) no-author verification of all 8 fixes against the live code and roster (no rubber-stamp); full test suite green, including `tests/v3/hooks/test-agent-model-guard-lazy.mjs`, `tests/v3/capture-evidence-guard.test.mjs`, `tests/v3/skill-equip-nudge-precision.test.mjs`, `tests/v3/hooks/test-skill-equip-nudge.mjs`, `tests/v3/state/test-prism-phase-1-5-oob.mjs`, `tests/v3/hooks/test-file-lease-guard.mjs`, and `tests/v3/state/test-prism-hook-recognizer.mjs`.
+
 ## [6.5.2] - 2026-07-18
 
 ### Fixed

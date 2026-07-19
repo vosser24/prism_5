@@ -117,6 +117,7 @@ Read roster.json, count:
 - STALE (90-180 days) — flag
 - VERY STALE (180-365) — recommend upgrade
 - DEAD (> 365) — recommend retire
+- Report OOB Phase 1.5 arming: count roster agents with `requires_phase_1_5: true`. If 0, flag: "Phase-1.5 OOB reviewer is DORMANT — no agent tagged; see `node tools/prism-roster.mjs --tag-1-5 <agent>`."
 
 Top 5 most-used by task count.
 

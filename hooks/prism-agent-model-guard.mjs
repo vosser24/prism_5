@@ -116,7 +116,7 @@ export async function run(input) {
   const isSubagentByEnv = String(process.env.CLAUDE_CODE_ENTRYPOINT || '').toLowerCase() === 'subagent';
   const sentinelEarly = readSentinel(sessionId);
   const isSubagentByDispatched = !!(sentinelEarly && sentinelEarly.dispatched === true);
-  if (isSubagentById || isSubagentByEnv || isSubagentByDispatched) {
+  if (isSubagentById || isSubagentByEnv) {
     appendLog({
       event: 'agent_model_guard',
       ts: new Date().toISOString(),
@@ -124,11 +124,23 @@ export async function run(input) {
       tool: 'Agent',
       subagent_type: subagentType,
       action: 'passthrough-subagent-context',
-      reason: isSubagentById ? 'parent_tool_use_id' : isSubagentByEnv ? 'env' : 'sentinel.dispatched',
+      reason: isSubagentById ? 'parent_tool_use_id' : 'env',
       prompt_hash: sha256short(prompt),
     });
     return done(0);
   }
+  // v6.6.0 FIX-3: of the three subagent signals, parent_tool_use_id and
+  // CLAUDE_CODE_ENTRYPOINT=subagent are strong per-call evidence (handled
+  // above); sentinel.dispatched is a session-global boolean set by the
+  // parent's own FIRST dispatch (prism-parent-dispatch-guard.mjs:~280) and
+  // "cannot distinguish a legit dispatched worker from a false positive"
+  // (same D043 precedent already shipped in the parent-dispatch-guard) — so
+  // parent dispatches 2..N of every turn were skipping model checking
+  // entirely. Downgrade this signal alone to advisory-only: fall through to
+  // normal classification instead of an unconditional bypass, but force
+  // shouldDeny=false below so a dispatched-only signal can never trigger a
+  // NEW deny (the v2.9.0 no-false-deny guarantee is preserved).
+  const advisoryOnly = isSubagentByDispatched;
 
   // Master-orchestrator dispatch is always allowed without extra classification.
   if (String(subagentType).toLowerCase() === 'master-orchestrator') {
@@ -228,9 +240,9 @@ export async function run(input) {
   // "block silent Opus drift" (sonnet/haiku are cheap — nudging is enough);
   // the old hard behavior overshot by denying every non-opus dispatch even
   // when the tier classification wanted a cheaper model.
-  const shouldDeny =
+  const shouldDeny = !advisoryOnly && (
     (MODE === 'hard'   && tier === 'opus') ||
-    (MODE === 'strict' && tier !== 'opus');
+    (MODE === 'strict' && tier !== 'opus'));
   const action = shouldDeny ? 'deny' : (msg.length ? 'nudge' : 'passthrough');
 
   appendLog({
@@ -245,6 +257,7 @@ export async function run(input) {
     classifier_source: classifierSource,
     action,
     mode: MODE,
+    advisory_only: advisoryOnly,
     prompt_hash: sha256short(prompt),
   });
 

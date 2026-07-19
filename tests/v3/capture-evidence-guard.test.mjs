@@ -253,6 +253,86 @@ await test('A(m) non-mutation tool (Bash) -> always exit 0, no stdout', () => {
   assert(r.exit === 0 && r.stdout === '', `exit=${r.exit} stdout=${r.stdout}`);
 });
 
+// v6.6.0 FIX-4c: close the per-file ratchet for NEW entries. One historical
+// **Verified:** field anywhere in an append-only file previously immunized
+// every future unverified entry -- EVIDENCE_FIELD_RE.test(content) scans the
+// WHOLE resulting file, so any subsequent Edit appending a brand-new
+// claim-bearing entry sailed through on the file's pre-existing evidence.
+// The heading gate keeps typo fixes / same-entry amendments immune (no new
+// heading in the added text -> today's whole-file behavior still applies).
+await test('A(r) FIX-4c: Edit appending a NEW heading + unverified claim to an already-evidenced file -> deny', () => {
+  const filePath = seedFile('docs/prism/adjudications/D991-ratchet.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '## Diagnosis',
+      new_string: '## New lesson\nthe fix works\n\n## Diagnosis',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+await test('A(s) FIX-4c: Edit fixing a typo in that same already-evidenced file (no new heading) -> allow', () => {
+  const filePath = seedFile('docs/prism/adjudications/D991-ratchet.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: 'left behind by a crashed worker.',
+      new_string: 'left behind by a crashed background worker.',
+    },
+  });
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// v6.6.0 FIX-4a: CLAIM_TRIGGER_RE gained "tests pass" vocabulary — closes the
+// reported conversational gap where "the tests pass" asserted a verification
+// claim in prose but no existing alternative (works/fixed/confirmed/root
+// cause/now passes/passes now) matched it.
+await test('A(n) FIX-4a: "the tests pass" claim with no evidence field -> deny', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D992-testspass.md');
+  const r = run({
+    tool_name: 'Write',
+    tool_input: {file_path: filePath, content: '# A fix\n\n**Status:** Locked\n**Date:** 2026-07-19\n\nAfter the change, the tests pass.\n'},
+  });
+  assert(r.exit === 2, `exit=${r.exit}`);
+});
+
+await test('A(o) FIX-4a: "the tests pass" claim WITH **Verified:** field -> allow', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D992-testspass.md');
+  const r = run({
+    tool_name: 'Write',
+    tool_input: {file_path: filePath, content: '# A fix\n\n**Status:** Locked\n**Date:** 2026-07-19\n**Verified:** node tests/x.mjs -> 5/5 passed\n\nAfter the change, the tests pass.\n'},
+  });
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// v6.6.0 FIX-4b: IN_SCOPE_RE gained docs/prism/deviations/ — agent-authored
+// factual reports (capture-conventions bucket table) are exactly the
+// claim-bearing class this guard exists for. docs/prism/smoke/ is
+// deliberately NOT added (runbook imperative prose false-fires by
+// construction) — the second assertion below proves that exclusion holds.
+await test('A(p) FIX-4b: docs/prism/deviations/ claim with no evidence field -> deny', () => {
+  const filePath = scratchPath('docs', 'prism', 'deviations', '2026-07-19-x-deviation.md');
+  const r = run({
+    tool_name: 'Write',
+    tool_input: {file_path: filePath, content: '# Deviation report\n\n**Status:** Draft\n**Date:** 2026-07-19\n\nThe workaround confirmed the root cause and the issue is now fixed.\n'},
+  });
+  assert(r.exit === 2, `exit=${r.exit}`);
+});
+
+await test('A(q) FIX-4b: docs/prism/smoke/ with the same claim language -> allow (intentionally out of scope)', () => {
+  const filePath = scratchPath('docs', 'prism', 'smoke', 'smoke-x.md');
+  const r = run({
+    tool_name: 'Write',
+    tool_input: {file_path: filePath, content: '# Smoke procedure\n\n**Status:** Draft\n**Date:** 2026-07-19\n\nThe workaround confirmed the root cause and the issue is now fixed.\n'},
+  });
+  assert(r.exit === 0 && r.stdout === '', `exit=${r.exit} stdout=${r.stdout}`);
+});
+
 // =====================================================================
 // B. Integration through the real dispatcher (proves wiring + composition)
 // =====================================================================
