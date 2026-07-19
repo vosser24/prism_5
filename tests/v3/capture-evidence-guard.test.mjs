@@ -288,6 +288,153 @@ await test('A(s) FIX-4c: Edit fixing a typo in that same already-evidenced file 
   assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
 });
 
+// v6.6.1 FIX-4c-follow-up (UAT bypass): the append-to-end-of-file shape --
+// old_string anchors on the TRAILING text that already contains the
+// historical **Verified:** line, new_string reproduces that anchor verbatim
+// then appends a brand-new heading + unverified claim. The raw new_string
+// therefore CARRIES the old **Verified:** line even though the genuinely new
+// material has none of its own -- addedMaterial() must not be fooled by that
+// carried-over anchor.
+const VERIFIED_TAIL = '**Verified:** node tools/repro-lock.mjs -> reproduced the storm, confirmed clearing the lock fixes it (see run log 2026-07-14T10:02Z)\n\n## Diagnosis\nThe bug is caused by a stale lock file left behind by a crashed worker. This\nfix resolves the retry storm.\n';
+await test('A(t) FIX-4c-follow-up: Edit anchored on the Verified line, appending a NEW unverified entry -> deny (was: bypass)', () => {
+  const filePath = seedFile('docs/prism/adjudications/D990-anchor-bypass.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: VERIFIED_TAIL,
+      new_string: VERIFIED_TAIL + '\n## New finding\nthe fix works\n',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+// Companion: same anchor shape, but the delta itself carries no new heading
+// (pure typo fix appended inline via the same anchor pattern) -> still allow.
+await test('A(u) FIX-4c-follow-up: Edit anchored on the Verified line, delta has no new heading -> allow', () => {
+  const filePath = seedFile('docs/prism/adjudications/D990-anchor-typo.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: VERIFIED_TAIL,
+      new_string: VERIFIED_TAIL.replace('crashed worker', 'crashed background worker'),
+    },
+  });
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// Companion: same anchor shape, but the delta carries its OWN **Verified:**
+// line for the new entry -> allow (the new entry is itself evidenced).
+await test('A(v) FIX-4c-follow-up: Edit anchored on the Verified line, delta carries its OWN Verified field -> allow', () => {
+  const filePath = seedFile('docs/prism/adjudications/D990-anchor-ownverified.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: VERIFIED_TAIL,
+      new_string: VERIFIED_TAIL + '\n## New finding\nthe fix works\n**Verified:** node tools/repro-new.mjs -> confirmed\n',
+    },
+  });
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// v6.6.1 second-round regression (independent cross-model verification):
+// the char-level prefix/suffix stripping in addedRegion() absorbs shared
+// LEADING/TRAILING CHARACTERS (not whole lines) when a shallower heading is
+// inserted immediately above a deeper existing heading. "##" and "#" are
+// common characters that straddle the true insertion point, so they get
+// stripped as "common prefix"/"common suffix" even though they belong to
+// TWO DIFFERENT heading lines -- the delta comes out missing its leading
+// "#"s and NEW_HEADING_RE no longer matches. addedRegion must diff at LINE
+// granularity, not character granularity.
+const NESTED_VERIFIED_ADJUDICATION = `# The retry loop is caused by a stale lock file
+
+**Status:** Locked
+**Date:** 2026-07-14
+**Captured by:** manual
+**Rule:** Always clear the lock file before retrying.
+**Verified:** node tools/repro-lock.mjs -> reproduced the storm, confirmed clearing the lock fixes it (see run log 2026-07-14T10:02Z)
+
+## Diagnosis
+### Subsection
+The bug is caused by a stale lock file left behind by a crashed worker. This
+fix resolves the retry storm.
+`;
+
+await test('A(w) FIX-4c-follow-up round 2: middle-insert of a new ## heading between an existing ## and ### heading -> deny (was: char-strip bypass)', () => {
+  const filePath = seedFile('docs/prism/adjudications/D989-middle-insert.md', NESTED_VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '## Diagnosis\n### Subsection\n',
+      new_string: '## Diagnosis\n## New finding works\n### Subsection\n',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+await test('A(x) FIX-4c-follow-up round 2: prepend a shallower ## heading directly above an existing ### heading -> deny (was: char-strip bypass)', () => {
+  const filePath = seedFile('docs/prism/adjudications/D989-prepend-hh.md', NESTED_VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '### Subsection\n',
+      new_string: '## New finding works\n### Subsection\n',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+await test('A(y) FIX-4c-follow-up round 2: prepend a shallower # heading directly above an existing ## heading -> deny (was: char-strip bypass)', () => {
+  const filePath = seedFile('docs/prism/adjudications/D988-prepend-h.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '## Diagnosis\n',
+      new_string: '# X works\n## Diagnosis\n',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+// Sanity: equal-level heading prepended above another heading of the SAME
+// level still denies (not just the shallower-above-deeper shape).
+await test('A(z) FIX-4c-follow-up round 2: prepend an equal-level ## heading above another ## heading -> deny', () => {
+  const filePath = seedFile('docs/prism/adjudications/D987-equal-level.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '## Diagnosis\n',
+      new_string: '## New finding works\n## Diagnosis\n',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// Sanity: identical old_string/new_string (no-op edit) -> delta is empty,
+// no crash, no false deny.
+await test('A(aa) FIX-4c-follow-up round 2: no-op edit (old_string === new_string) -> allow, no crash', () => {
+  const filePath = seedFile('docs/prism/adjudications/D986-noop.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {file_path: filePath, old_string: '## Diagnosis\n', new_string: '## Diagnosis\n'},
+  });
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
 // v6.6.0 FIX-4a: CLAIM_TRIGGER_RE gained "tests pass" vocabulary — closes the
 // reported conversational gap where "the tests pass" asserted a verification
 // claim in prose but no existing alternative (works/fixed/confirmed/root

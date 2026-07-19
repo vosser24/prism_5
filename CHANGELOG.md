@@ -6,6 +6,23 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.1] - 2026-07-19
+
+Patch release: closes a UAT-discovered bypass in v6.6.0's FIX-4c capture-evidence
+ratchet, found before public mirror and fixed same-day.
+
+### Fixed
+
+- **FIX-4c-follow-up — capture-evidence ratchet now evaluates the genuine added region, not the raw `new_string`.** v6.6.0's per-new-entry ratchet scanned the literal `new_string` of an `Edit`/`MultiEdit` for a new heading + claim language + evidence line, but an `Edit` that anchors its `old_string` on a historical `**Verified:**` line elsewhere in the file could carry that unrelated evidence line into the `new_string` alongside a brand-new unverified claim, immunizing it — the exact per-file ratchet gap FIX-4c was meant to close, reopened via a different anchor shape. Fixed in two rounds: round one changed the check to diff `old_string` against `new_string` and evaluate only the genuinely added region (`fa42e52d3`); independent cross-model (Fable) review found that round one's character-level prefix/suffix stripping could itself misdetect a heading boundary (a new heading-detection bypass), so round two switched the diff to line-granularity stripping instead (`05c8e3d88`), closing the regression the first round introduced without reopening the original hole.
+
+### Known limitations
+
+- Four residual ALLOW shapes remain — all require deliberately perturbing the anchor or self-supplying evidence, and all were already present in v6.6.0 (not new regressions introduced by this release): the anchor re-encoded with `\r\n` line endings, a `**Verified:**` line self-supplied within the same added delta, and two `MultiEdit` cross-pair shapes where one pair's added region "immunizes" a sibling pair's new claim. Deferred; optional future hardening is to normalize `\r\n`→`\n` in the added-region diff and run the ratchet per `MultiEdit` pair rather than across the whole call.
+
+### Verification
+
+- Independent cross-model (Fable) no-author verification across both rounds — round one's own green tests missed the char-strip heading-detection regression that round two fixes; cross-model review caught it and forced the fix before this release, not after. No regressions in `tests/v3/capture-evidence-guard.test.mjs`.
+
 ## [6.6.0] - 2026-07-19
 
 Guard-layer wiring release: the D049 investigation (skill-delivery taxonomy +

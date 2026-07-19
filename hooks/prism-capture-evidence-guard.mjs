@@ -138,16 +138,46 @@ export function resultingContent(toolName, toolInput) {
   return '';
 }
 
-// v6.6.0 FIX-4c: concatenated ADDED material (new_string values) for
-// Edit/MultiEdit — used ONLY by the per-new-entry ratchet in run() below.
-// Write has no "added vs existing" distinction (the whole file IS new), so
-// this is never called for Write.
+// v6.6.1 FIX-4c-follow-up: the genuinely-added region of a single edit pair.
+// A raw new_string is NOT "what was added" — it commonly carries a verbatim
+// anchor (the old_string content reproduced so the edit can locate itself),
+// and when that anchor happens to include the file's historical
+// **Verified:** line, treating the whole new_string as "added" let that
+// carried-over evidence field satisfy the ratchet's "added text has no
+// Verified field" check even though the truly-new appended material had
+// none of its own (the UAT-discovered bypass). Strip the longest common
+// LEADING and TRAILING *lines* that new_string shares with old_string — what
+// remains is the actual delta the edit introduced. This must diff at LINE
+// granularity, not character granularity: a char-level strip absorbs shared
+// characters like "#" across two DIFFERENT heading lines (e.g. inserting
+// "## New finding" immediately above an existing "### Subsection" lets the
+// char-level stripper eat the leading "##" as "common prefix" and trailing
+// "# Subsection" as "common suffix", leaving a delta with no leading "#" at
+// all — NEW_HEADING_RE then misses a brand-new heading entirely). Diffing
+// whole lines keeps every delta line-aligned so the heading regex still
+// sees a complete line.
+function addedRegion(oldStr, newStr) {
+  const oLines = String(oldStr || '').split('\n');
+  const nLines = String(newStr || '').split('\n');
+  let prefix = 0;
+  const maxPrefix = Math.min(oLines.length, nLines.length);
+  while (prefix < maxPrefix && oLines[prefix] === nLines[prefix]) prefix++;
+  let suffix = 0;
+  const maxSuffix = Math.min(oLines.length, nLines.length) - prefix;
+  while (suffix < maxSuffix && oLines[oLines.length - 1 - suffix] === nLines[nLines.length - 1 - suffix]) suffix++;
+  return nLines.slice(prefix, nLines.length - suffix).join('\n');
+}
+
+// v6.6.0 FIX-4c: concatenated ADDED material for Edit/MultiEdit — used ONLY
+// by the per-new-entry ratchet in run() below. Write has no "added vs
+// existing" distinction (the whole file IS new), so this is never called
+// for Write.
 function addedMaterial(toolName, toolInput) {
   const ti = toolInput || {};
-  if (toolName === 'Edit') return String(ti.new_string || '');
+  if (toolName === 'Edit') return addedRegion(ti.old_string, ti.new_string);
   if (toolName === 'MultiEdit') {
     const edits = Array.isArray(ti.edits) ? ti.edits : [];
-    return edits.map((e) => e.new_string || '').join('\n');
+    return edits.map((e) => addedRegion(e.old_string, e.new_string)).join('\n');
   }
   return '';
 }
