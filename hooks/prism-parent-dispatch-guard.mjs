@@ -528,6 +528,7 @@ export function run(input) {
     const panelNotice = (sentinel.self_chair ? [
       `PRISM DISPATCH-GUARD: ${toolName} denied — PANEL-SUMMONING turn and you (${sentinel.active_master || 'the project-master'}) have not yet dispatched a panel member.${why}`,
       `You ARE the orchestrator (you load the master-orchestrator skill). Chair the panel yourself: dispatch your expert panel members directly as independent, parallel subagents, then synthesize. Do NOT dispatch a nested @master-orchestrator — as a subagent it cannot spawn the panel and would only role-play.`,
+      `A real panel is 3–5 seats each resolving to a rostered specialist or an @agent-factory-created one — NOT one generic general-purpose dispatch. Provenance is checked when you write panel.json.`,
       `Parent Write/Edit/Bash unblock once you have dispatched at least one panel member. Override: prefix the user prompt with !opus-force: or set PRISM_DISPATCH_GUARD=off.`,
     ] : [
       `PRISM DISPATCH-GUARD: ${toolName} denied — this is a PANEL-SUMMONING turn (opus tier, summon_panel=true).${why}`,

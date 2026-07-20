@@ -120,8 +120,11 @@ Schema:
   "positions": [
     {
       "position_id": "pos-1",
-      "expert_name": "Claude Code product expert",
-      "specialist": "@claude-master",
+      "expert_name": "Greek e-commerce conversion specialist",
+      "specialist": "@greek-ecommerce-conversion-specialist",  // roster key (or null if not yet known)
+      "vertical": true,                     // domain-expertise seat → provenance-enforced
+      "seat_source": "rostered",            // "rostered" | "factory-created" (omit for archetype seats)
+      "agent_type": "greek-ecommerce-conversion-specialist",   // the real subagent_type dispatched (NOT general-purpose)
       "dispatched_agent_id": "a168f7095456bfffc",  // real agentId from the seat's Agent() call (dispatch mode only; UNIQUE per seat)
       "challenges": [
         {
@@ -137,6 +140,8 @@ Schema:
 ```
 
 One position object per SURVIVING expert. `specialist` is the agent name that will be dispatched to fulfill the position (if not yet known, leave as `null` and OOB reviewer falls through to no-cross-link mode for that position). `dispatch_mode` records whether the panel ran as real per-seat dispatch or the opt-in role-play fast mode; in `"dispatch"` mode every position MUST carry a real, unique `dispatched_agent_id` (the guard blocks otherwise). Omitting `dispatch_mode` is treated as a legacy (pre-v5.x) panel and left unenforced.
+
+Tag every VERTICAL/domain-expertise seat `vertical:true` and give it a real `agent_type` + `seat_source`; leave cross-cutting archetype seats (Architect/Skeptic/Security/Performance) untagged. `hooks/prism-panel-guard.mjs` enforces provenance on tagged seats — a `general-purpose` `agent_type` or an unresolved `specialist` is flagged. This makes schema-shown == schema-enforced.
 
 Bash one-liner to write atomically:
 

@@ -212,6 +212,63 @@ function isKnownPersona(name, roster) {
   return false;
 }
 
+// ─── D054 round-2: vertical-signal seat classifier ─────────────────────────
+// Replaces the gameable part-wise ARCHETYPE_WHITELIST containment used by the
+// provenance detector. `isKnownPersona` (above) stays UNCHANGED — it still
+// serves the legacy persona-in-output path (line ~743). This classifier is the
+// provenance path's ONLY archetype-vs-domain judge.
+//
+// Rule (hard-to-game, defensible):
+//  1. A VERTICAL-SIGNAL word/phrase forces VERTICAL (provenance-required),
+//     regardless of any archetype token also present. Closes the under-fire
+//     "<domain> ... domain expert" escape — those titles carry `expert`/
+//     `domain expert` and are now flagged when filled generic.
+//  2. Otherwise the seat is archetype-EXEMPT iff it has NO vertical signal AND
+//     every significant token is an archetype word or a generic role-filler.
+//     A concrete domain noun with no vertical signal → treated as vertical
+//     (safer default in the flagging direction).
+// Bare archetype voices ("Security", "Skeptic", "Red-team", "Devil's advocate")
+// filled general-purpose are LEGITIMATELY exempt — archetypes need no roster
+// provenance; only seats asserting domain expertise require it.
+const VERTICAL_SIGNAL_WORDS = new Set([
+  'expert', 'specialist', 'engineer', 'analyst', 'strategist',
+  'authority', 'director',
+]);
+// Cross-cutting adversarial/role archetypes — need NO roster provenance.
+const ARCHETYPE_WORDS = new Set([
+  // canonical PRISM panel archetypes (from prism-chat SKILL.md)
+  'architect', 'security', 'performance', 'skeptic', 'domain',
+  'data', 'database', 'db', 'devops', 'sre', 'cost', 'product',
+  'ux', 'ml', 'ai', 'compliance', 'legal',
+  // round-2 additions (fix the Red-team over-fire class)
+  'red', 'team', 'redteam', 'devil', 'devils', 'advocate',
+  'adversary', 'contrarian', 'optimist', 'pessimist',
+  'integrator', 'generalist',
+]);
+// Generic role-fillers that carry no domain signal on their own.
+const ARCHETYPE_FILLERS = new Set([
+  'the', 'a', 'an', 'of', 'for', 'on', 'and', 'voice', 'seat', 'hawk',
+  'lens', 'chair', 'role', 'perspective', 'position', 'panelist',
+  'panellist', 'member', 'reviewer', 'critic', 'guardian', 'watchdog',
+]);
+
+// Returns true when a seat title asserts DOMAIN expertise (provenance-required),
+// false when it is a bare cross-cutting archetype (provenance-exempt).
+function seatRequiresProvenance(title) {
+  const n = normaliseName(title);
+  if (!n) return false; // empty title → treat as archetype (do not flag)
+  // 1. Vertical-signal phrases + words force VERTICAL regardless of archetype tokens.
+  if (/\bdomain expert\b/.test(n)) return true;
+  if (/\barchitect of\b/.test(n)) return true;
+  const tokens = n.split(/[\s/\-]+/).filter(Boolean);
+  if (tokens.some((t) => VERTICAL_SIGNAL_WORDS.has(t))) return true;
+  // 2. Archetype-exempt iff every significant token is archetype-or-filler.
+  const significant = tokens.filter((t) => !ARCHETYPE_FILLERS.has(t));
+  if (significant.length === 0) return false; // pure filler → archetype/quiet
+  const allArchetype = significant.every((t) => ARCHETYPE_WORDS.has(t));
+  return !allArchetype; // a concrete domain noun present → vertical
+}
+
 function extractPersonas(output) {
   if (!output) return [];
   const found = new Set();
@@ -428,6 +485,77 @@ function checkFactoryFirst(panel) {
   process.stderr.write(notice + '\n(advisory; set PRISM_PANEL_GUARD=hard to enforce)\n');
 }
 
+// v5.x (D054) — inference-based provenance detector. Unlike checkFactoryFirst it
+// does NOT require the explicit vertical:true tag (it INFERS vertical) and does
+// NOT require dispatch_mode==='dispatch' — closing the two silent-skip escapes.
+// Instrument-first: default 'observe' logs only, so the ad-hoc-seat rate is
+// measured before any hard flip. Own env gate PRISM_PANEL_PROVENANCE
+// (off|observe|soft|hard, DEFAULT observe). Reuses isKnownPersona/normaliseName/
+// loadRoster/appendLog/PanelGuardExit — no new imports.
+const GENERIC_AGENT_TYPES = new Set(['general-purpose', 'generic', 'claude', 'unknown', '']);
+function detectAdHocSeats(panel, panelPath) {
+  const raw = String(process.env.PRISM_PANEL_PROVENANCE || 'observe').toLowerCase().trim();
+  const mode = ['off', 'observe', 'soft', 'hard'].includes(raw) ? raw : 'observe';
+  if (mode === 'off' || process.env.PRISM_DISABLE_FACTORY_FIRST === '1') return;
+
+  const roster = loadRoster() || {agents: {}};
+  const rosterKeys = new Set(Object.keys(roster.agents || {}).map(normaliseName));
+  const resolvesToRoster = (s) =>
+    typeof s === 'string' && s.trim() !== '' && rosterKeys.has(normaliseName(s.replace(/^@/, '')));
+
+  const flagged = [];
+  for (const p of (panel.positions ?? [])) {
+    const who = p.title ?? p.expert_name ?? p.specialist ?? '(unnamed)';
+    const agentType = normaliseName(p.agent_type);
+    const seatSource = normaliseName(p.seat_source);
+    // Infer vertical: an explicit tag, a declared seat_source/agent_type, or a
+    // title that asserts domain expertise (seatRequiresProvenance — the
+    // vertical-signal rule, D054 round-2) all mark a seat as domain-expertise.
+    // A bare cross-cutting archetype (Architect/Skeptic/Red-team/Devil's
+    // advocate) is provenance-exempt and skipped.
+    const inferredVertical =
+      p.vertical === true ||
+      seatSource !== '' ||
+      (agentType !== '' && !GENERIC_AGENT_TYPES.has(agentType)) ||
+      seatRequiresProvenance(who);
+    if (!inferredVertical) continue; // genuine archetype seat → not domain-expertise
+    // Provenance OK when: real (non-generic) agent_type AND (declared factory/rostered
+    // source OR specialist resolves to the roster).
+    const hasRealType = agentType !== '' && !GENERIC_AGENT_TYPES.has(agentType);
+    const hasSource = seatSource === 'factory-created' || seatSource === 'rostered';
+    if (hasRealType && (hasSource || resolvesToRoster(p.specialist))) continue;
+    flagged.push({
+      seat: who,
+      agent_type: p.agent_type ?? null,
+      seat_source: p.seat_source ?? null,
+      specialist: p.specialist ?? null,
+      specialist_resolves: resolvesToRoster(p.specialist),
+      inferred_vertical: true,
+    });
+  }
+  if (flagged.length === 0) return;
+
+  const ts = new Date().toISOString();
+  const action = mode === 'hard' ? 'deny' : (mode === 'soft' ? 'nudge' : 'log');
+  for (const f of flagged) {
+    appendLog({
+      ts, event: 'panel_provenance_adhoc_seat', schema_version: 1,
+      panel_path: panelPath, task_id: panel.task_id ?? null,
+      dispatch_mode: panel.dispatch_mode ?? null,
+      mode, action, ...f,
+    });
+  }
+  if (mode === 'soft' || mode === 'hard') {
+    const lines = [
+      `PRISM PANEL-PROVENANCE: ${flagged.length} panel seat(s) look ad-hoc (generic agent_type or unresolved specialist, no factory/rostered provenance):`,
+      ...flagged.map(f => `  - "${f.seat}" (agent_type ${f.agent_type ?? 'unset'}, specialist ${f.specialist ?? 'unset'})`),
+      `A vertical seat must resolve to a rostered specialist or be @agent-factory-created (seat_source:"factory-created"). Roleplay panels: set dispatch_mode:"roleplay".`,
+    ].join('\n');
+    if (mode === 'hard') throw new PanelGuardExit(2, lines + '\n');
+    process.stderr.write(lines + '\n(advisory; PRISM_PANEL_PROVENANCE=hard to enforce)\n');
+  }
+}
+
 // ─── Path B: PostToolUse dropped-positions logger (v4.5 A3) ─────────────────
 
 // Returns the panel.json file path if the payload is a PostToolUse Write
@@ -513,6 +641,11 @@ export function runPostToolUse(payload) {
     // v5.x — FACTORY-FIRST seat-sourcing guard (adjacency-is-not-fitness, D009).
     // Runs after dispatch_mode is validated; enforces only vertical:true seats.
     checkFactoryFirst(panel);
+
+    // D054 — inference-based, instrument-first provenance detector. Broader than
+    // checkFactoryFirst (infers vertical, runs regardless of dispatch_mode);
+    // default 'observe' logs only so the ad-hoc-seat rate is measured first.
+    detectAdHocSeats(panel, panelPath);
 
     // T31 — D3 SCOPE GUARD (runs before A3 dropped-positions logging).
     checkScope(panel);

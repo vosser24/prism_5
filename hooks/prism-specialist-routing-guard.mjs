@@ -143,7 +143,7 @@ function matchDomain(text) {
 }
 
 // ── Roster specialist matcher ───────────────────────────────────────────────
-function loadRoster() {
+export function loadRoster() {
   try {
     const p = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
     if (!existsSync(p)) return null;
@@ -187,6 +187,29 @@ export function matchSpecialist(text, roster) {
     if (matched.size > bestScore) { bestScore = matched.size; best = name; }
   }
   return best ? {name: best, score: bestScore} : null;
+}
+
+// Returns up to `limit` {name,score} entries (score>=minScore), sorted desc.
+// Unlike matchSpecialist it does NOT drop build_class===false agents — panel seats
+// are frequently analysis/recon specialists. Reuses agentTerms so the term source
+// stays single-sourced with matchSpecialist.
+export function matchSpecialists(text, roster, {limit = 6, minScore = 1} = {}) {
+  if (!roster || !roster.agents || typeof roster.agents !== 'object') return [];
+  const t = String(text || '').toLowerCase();
+  const hits = [];
+  for (const [name, entry] of Object.entries(roster.agents)) {
+    if (!entry || entry.archived === true) continue;
+    if (entry.status && entry.status !== 'available') continue;
+    const terms = agentTerms(name, entry);
+    const matched = new Set();
+    for (const term of terms) {
+      const re = new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+      if (re.test(t)) matched.add(term);
+    }
+    if (matched.size >= minScore) hits.push({name, score: matched.size});
+  }
+  hits.sort((a, b) => b.score - a.score);
+  return hits.slice(0, limit);
 }
 
 function sentinelPath(sessionId) {

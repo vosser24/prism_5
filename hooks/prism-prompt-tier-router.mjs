@@ -32,6 +32,7 @@ import {join, dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {classifyPrompt, toSentinel} from './lib/prism-opus-classifier.mjs';
 import {EXPLICIT_PANEL_RE} from '../tools/lib/prism-tier-classify.mjs';
+import {matchSpecialists, loadRoster as loadInstalledRoster} from './prism-specialist-routing-guard.mjs';
 
 const H = process.env.HOME || process.env.USERPROFILE;
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
@@ -165,9 +166,22 @@ function buildOverrideDirective(tier, summonPanel, sessionId) {
 const PANEL_JSON_WRITE_CLAUSE =
   '\n  5. WRITE the panel to JSON at ~/.claude/.prism-task-<task-id>/panel.json BEFORE synthesis, using ONE direct Write tool call to that exact final path — ' +
   'NOT a tempfile+rename, NOT a Bash/PowerShell heredoc, NOT a .tmp path (those bypass the PostToolUse Write event and the Phase 0d reviewer silently never fires). ' +
-  'Schema: {"positions":[{"specialist":"...","title":"...","challenges":[{"text":"...","evidence_class":"..."}]}]}.';
+  'Schema: {"dispatch_mode":"dispatch","positions":[{"specialist":"<roster key>","title":"...","vertical":true,"seat_source":"rostered|factory-created","agent_type":"<subagent_type>","dispatched_agent_id":"...","challenges":[{"text":"...","evidence_class":"..."}]}]}.';
 
-function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, activeMaster, panelDisabled) {
+// Compact seat-sourcing discipline, force-injected on every panel-summon turn.
+// fitLine is the deterministic pre-match result (Fix 1b) or '' when none.
+function panelSeatSourcingBlock(fitLine) {
+  return (
+    `\n  1. READ the roster (~/.claude/skills/prism-plan/references/roster.json) and match EACH seat to a rostered specialist by core_domains — a STRONG fit on the seat's SPECIFIC sub-domain, not mere adjacency.` +
+    `\n  2. For any seat with NO strong-fit specialist, spawn @agent-factory (compose-first: check tools-registry first) to CREATE/UPGRADE a durable specialist. A bare general-purpose/persona subagent is NEVER a valid fill for a vertical/domain seat.` +
+    `\n  3. Dispatch the seats — 3–5, distinct opposed biases — as INDEPENDENT parallel subagents (one Agent() block each).` +
+    `\n  4. Tag each vertical/domain seat in panel.json: "vertical":true, "seat_source":"rostered"|"factory-created", "agent_type":"<real subagent_type>", "specialist":"<roster key>". Cross-cutting archetype seats (Architect/Skeptic/Security/Performance) stay untagged.` +
+    `\n  5. Chair adversarial review (≥2 substantive challenges per position), then synthesize the verdict yourself.` +
+    (fitLine ? `\n  ${fitLine}` : '')
+  );
+}
+
+function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, activeMaster, panelDisabled, panelFitLine = '') {
   // New format — intentionally simpler than v2.1.3 so LLMs don't need to
   // parse h=/s=/o= tokens. The old score fields are preserved in the
   // sentinel file for debugging but not echoed to the model context.
@@ -214,20 +228,23 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
     // independent panel members) instead of nesting a @master-orchestrator
     // subagent that the sole-dispatcher rule would reduce to role-play.
     advice += `\n\nPANEL-SUMMONING TURN. You are the active project-master (${activeMaster}) and you load the master-orchestrator skill — so YOU chair this panel directly in the main loop. Do NOT dispatch a nested @master-orchestrator (it would run as a subagent and PRISM's sole-dispatcher rule would stop it spawning the panel → role-play). Instead:`;
-    advice += `\n  1. Enumerate the rostered specialists relevant to this request.`;
-    advice += `\n  2. Dispatch your expert panel members — 3–5 of them — as INDEPENDENT, parallel subagents (one Agent() block each, different biases).`;
-    advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
-    advice += `\n  4. Synthesize the verdict yourself and relay it.`;
-    if (!/panel\.json/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
+    advice += panelSeatSourcingBlock(panelFitLine);
+    // Idempotency guard keys on the CLAUSE's own marker, not the bare
+    // "panel.json" string — the seat-sourcing block references panel.json (step
+    // 4), which would otherwise suppress the load-bearing write clause (D051).
+    if (!/WRITE the panel to JSON/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
     if (mode === 'hard') advice += `\nParent Write/Edit/Bash stay blocked until you have dispatched at least one panel member (so a real panel happens, not role-play). Override: !opus-force:.`;
     emittedDispatchAdvice = true;
   } else if (tier === 'opus' && effectiveSummonPanel) {
     advice += `\n\nPANEL-SUMMONING TURN. This is a novel architectural request. Spawn @master-orchestrator as your NEXT action — do NOT synthesize the plan yourself in parent context. The orchestrator will:`;
-    advice += `\n  1. Enumerate available skills, notebooks, and rostered specialists (PHASE 0a).`;
-    advice += `\n  2. Assemble a panel of 3–5 expert subagents with different biases.`;
+    advice += `\n  1. Assemble the panel with STRICT seat-sourcing (below); do NOT synthesize the plan in parent context.`;
+    advice += panelSeatSourcingBlock(panelFitLine);
     advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
     advice += `\n  4. Return a synthesized phased plan with explicit exclusions for you to relay.`;
-    if (!/panel\.json/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
+    // Idempotency guard keys on the CLAUSE's own marker, not the bare
+    // "panel.json" string — the seat-sourcing block references panel.json (step
+    // 4), which would otherwise suppress the load-bearing write clause (D051).
+    if (!/WRITE the panel to JSON/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
     advice += `\nUse: Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'})`;
     if (mode === 'hard') advice += `\nParent Write/Edit/Bash DENIED until orchestrator is dispatched. Override: !opus-force: (single-model Opus) or PRISM_DISPATCH_GUARD=off.`;
     emittedDispatchAdvice = true;
@@ -445,7 +462,20 @@ export async function run(payload) {
       phase_1_5: null,  // v4.4: extended by hooks/prism-phase-1-5-oob.mjs with {fired, variant, verdict_pre, verdict_post, agreement_rate}
     });
 
-    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, sentinel.summon_panel, classification.source, sessionId, sentinel.self_chair ? sentinel.active_master : null, panelDisabled);
+    // Fix 1b: deterministic "rostered specialists that fit" pre-injection.
+    // Computed ONLY on an explicit-panel opus turn (cost paid only on rare panel
+    // turns), then threaded into the seat-sourcing block via formatAdvice.
+    let panelFitLine = '';
+    if (sentinel.tier === 'opus' && sentinel.summon_panel === true) {
+      try {
+        const fits = matchSpecialists(prompt, loadInstalledRoster());
+        panelFitLine = fits.length
+          ? `Rostered specialists that fit THIS request: ${fits.map(f => f.name).join(', ')}. Reuse a strong fit; @agent-factory every gap.`
+          : `No rostered specialist strongly matches this request — expect to @agent-factory-create the vertical seats.`;
+      } catch { panelFitLine = ''; }
+    }
+
+    const advice = formatAdvice(sentinel.tier, classification.rationale, MODE, sentinel.summon_panel, classification.source, sessionId, sentinel.self_chair ? sentinel.active_master : null, panelDisabled, panelFitLine);
     const out = {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',

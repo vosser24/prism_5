@@ -6,6 +6,45 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.3] - 2026-07-20
+
+Panel governance release: closes the Team-Assembly enforcement gap that let a
+panel-summoning turn assemble anonymous ad-hoc `general-purpose` personas instead
+of rostered specialists + `@agent-factory` gap-fills. Built and validated through
+the same fable-design → build → fable-adversarial-validate pipeline as 6.6.2 —
+round-1 of the provenance detector FAILED independent validation (a gameable
+"`<domain> domain expert`" escape), was tightened to a vertical-signal classifier,
+and re-validated PASS with a narrow, disclosed residual.
+
+### Added
+
+- **#77 — panel seat-sourcing is force-injected AND provenance-instrumented (D054).**
+  The four-layer gap (a forensic probe found: underspecified injected prose, a
+  schema shown to the model that omitted the very fields the guard enforces, a
+  "≥1 dispatch" proxy gate, and a silently-skipped `vertical:true` check) let
+  ad-hoc panels pass unchallenged. Fixes:
+  - `prism-prompt-tier-router.mjs` now force-injects the roster-first → `@agent-factory`
+    gap-fill → tag-provenance discipline on `opus`+`summon_panel` turns, plus a
+    deterministic "rostered specialists that fit this request" line computed from
+    `roster.json` `core_domains` (reuses a new `matchSpecialists()` export). The
+    panel.json idempotency guard was retargeted so the D051 write clause survives.
+  - `phase-0d-adversarial.md` schema now shows `vertical`/`seat_source`/`agent_type`
+    (schema-shown == schema-enforced; a regression fence test guards the invariant).
+  - `prism-panel-guard.mjs` gains `detectAdHocSeats()` — env `PRISM_PANEL_PROVENANCE`
+    (`off|observe|soft|hard`, **default `observe`/log-only**), which infers a vertical
+    seat via a vertical-signal classifier, runs regardless of `dispatch_mode`, and
+    emits `panel_provenance_adhoc_seat` events. Ships observe-first per the
+    engagement-gate discipline — measure the ad-hoc-seat rate, confirm ~0
+    false-positives, then flip `observe→soft→hard`.
+
+### Verification
+
+- Independent no-author (Fable) adversarial validation across two rounds; round-1's
+  gameable boundary was caught by fresh fixtures the author didn't write, then the
+  tightened classifier re-validated with a narrow 2/22 residual (only archetype-noun
+  compositions escape, and only in observe mode). D042 tests T1–T4 (fire-on-bad +
+  quiet-on-good) all green; touched suites green; no routing-log leak. Adjudication D054.
+
 ## [6.6.2] - 2026-07-20
 
 Recall-precision + observability-honesty patch release. Built and shipped via a

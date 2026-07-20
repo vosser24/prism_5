@@ -88,9 +88,14 @@ const NOT_TEMPFILE_BASH_RE = /not.*(tempfile|rename|bash)/i;
     'opus', 'novel architectural request', 'hard',
     true, 'keyword-floor', 'test-sess', null, false,
   );
-  const occurrences = (advice.match(/panel\.json/gi) || []).length;
-  check('(fire) panel.json mentioned exactly once (idempotency guard did not double-append)',
-    occurrences === 1);
+  // D054/Fix 1: the seat-sourcing block legitimately references panel.json for
+  // the seat-tagging instruction ("Tag each vertical/domain seat in panel.json"),
+  // so the raw "panel.json" string now appears more than once by design. The real
+  // idempotency invariant — the one this case guards — is that the WRITE CLAUSE
+  // itself is appended exactly once (a double-append would still fail this).
+  const writeClauseCount = (advice.match(/WRITE the panel to JSON/gi) || []).length;
+  check('(fire) panel.json WRITE CLAUSE appended exactly once (idempotency guard did not double-append)',
+    writeClauseCount === 1);
 }
 
 // ── (quiet) formatAdvice — opus tier, summon_panel=false ────────────────────
