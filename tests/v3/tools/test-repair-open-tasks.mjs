@@ -50,7 +50,7 @@ const FX_FOLD_OLDER = join(HERE, 'fixtures', 'repair-open-tasks-fold-older.jsonl
 const FX_FOLD_NEWER = join(HERE, 'fixtures', 'repair-open-tasks-fold-newer.jsonl');
 
 // Same munging rule Claude Code uses for ~/.claude/projects/<dir> names
-// (verified against live dirs, e.g. Y--Documents-utilities-projects-prism-3).
+// (verified against live dirs, e.g. C--path-to-project-root).
 const munge = (p) => p.replace(/[^A-Za-z0-9]/g, '-');
 
 function run(args) {

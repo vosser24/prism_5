@@ -64,6 +64,52 @@ function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, {recursive: true});
 }
 
+// ─── keyword-token construction (single owner) ────────────────────────────────
+//
+// SINGLE OWNER (task #58/D053). buildEntryTokens (and its RULE_TOKEN_CAP /
+// DEV_STOP constants) used to live in tools/prism-knowledge-index.mjs and was
+// used by the rebuild + append writers there — but the THIRD keyword-map writer,
+// buildKeywordMap() in THIS file (the SessionStart self-heal), still used the
+// old seed-only text (title+slug+ref, NO rule tokens). Every SessionStart with a
+// corpus delta re-rendered the whole map from that old seed, silently dropping
+// every rule token — reverting round-1 recall AND stripping the DF=1 anchors the
+// D053 precision gate depends on. Centralizing here makes all three writers share
+// one definition, so the token set can never drift again.
+
+// F58/D052: cap on total keyword-map tokens per entry. Bounds the D023
+// keywordScore multiplier (kwSet.size/10) so appending rule tokens can never
+// re-inflate it the way F5 did (94-token kwSet -> 9.4x). 22 keeps the ceiling
+// at 2.2x (vs the pre-fix 1.8x) — see docs/prism/adjudications/D052.
+const RULE_TOKEN_CAP = 22;
+
+// Generic tokens that survive the base tokenizer (len>=3, not in router
+// STOPWORDS) yet are English/dev-generic — corpus-IDF cannot catch them because
+// they are rare-in-corpus but common in prompts. Stripped from RULE candidates
+// only (never from title/slug/ref seed). Load-bearing: without it, multi-word
+// generic prompts ("how do I use this code") over-fire at 0.20.
+const DEV_STOP = new Set([
+  'use','used','using','run','runs','running','build','builds','building',
+  'make','makes','making','get','gets','getting','set','sets','need','needs',
+  'want','wants','way','ways','thing','things','code','codes','file','files',
+  'test','tests','new','add','adds','one','two','per','via','also','every',
+  'any','all','into','onto','out','own','much','many','more','most','less',
+  'just','only','real','actually'
+]);
+
+// Build the capped keyword token list for one entry. seed = title+slug+ref
+// tokens (ALWAYS fully kept — precision-preserving, matches pre-fix behavior).
+// Then append rule tokens in document order, minus seed dups and DEV_STOP,
+// up to RULE_TOKEN_CAP total.
+export function buildEntryTokens(tokenize, title, slug, ref, rule) {
+  const seedSrc = (title || '') + ' ' + (slug || '') + ' ' + (ref || '');
+  const seed = [...new Set(tokenize(seedSrc))];
+  const seedSet = new Set(seed);
+  const ruleTokens = [...new Set(tokenize(rule || ''))]
+    .filter(t => !seedSet.has(t) && !DEV_STOP.has(t));
+  const budget = Math.max(0, RULE_TOKEN_CAP - seed.length);
+  return [...seed, ...ruleTokens.slice(0, budget)];
+}
+
 // ─── filename parsers ────────────────────────────────────────────────────────
 
 const ADJ_FILE_RE = /^D(\d{3,})-(.+)\.md$/;
@@ -251,8 +297,7 @@ async function buildKeywordMap(entries, keywordMapPath, now) {
     const tokenize = await getTokenize();
     const mapEntries = [];
     for (const e of entries) {
-      const seedText = (e.title || '') + ' ' + (e.slug || '') + ' ' + (e.ref || '');
-      const tokens = [...new Set(tokenize(seedText))];
+      const tokens = buildEntryTokens(tokenize, e.title, e.slug, e.ref, e.rule);
       const triggers = extractTriggers(e.content || '');
       mapEntries.push({
         ref: e.ref, type: e.type, title: e.title || '',

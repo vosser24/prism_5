@@ -117,7 +117,72 @@ Read roster.json, count:
 - STALE (90-180 days) — flag
 - VERY STALE (180-365) — recommend upgrade
 - DEAD (> 365) — recommend retire
-- Report OOB Phase 1.5 arming: count roster agents with `requires_phase_1_5: true`. If 0, flag: "Phase-1.5 OOB reviewer is DORMANT — no agent tagged; see `node tools/prism-roster.mjs --tag-1-5 <agent>`."
+- Report OOB arming as THREE separate, truthful lines — there are three
+  distinct mechanisms with different arming, and config presence is NOT
+  proof of a live mechanism (UAT #16: 2 tagged agents, zero live fires).
+  Never print the word "armed"/"firing" for a mechanism with no genuine
+  recent fire. All live-fire greps below reuse the SAME mock/synthetic
+  exclusion (F3 PASS-WITH-CONCERNS finding, follow-up #57): a raw line
+  count is NOT proof of a genuine fire — mock/synthetic fires
+  (`PRISM_OOB_TEST_MOCK_SDK`, `PRISM_PHASE_1_5_MOCK_VERDICT`, or a
+  synthetic/test-labeled `session_id`) can write the same lines and
+  previously produced a false GREEN with zero real fires. EXCLUDE any
+  line carrying `"mock":true` OR a synthetic/test-labeled `session_id`
+  via `| grep -v '"mock":true' | grep -viE '"session_id":"(synthetic|test|mock)[-_]'`
+  — older pre-marker lines that lack the field entirely still count as
+  genuine (the exclusion only strips lines *proven* mock/synthetic).
+
+  1. **Phase-1.5 tagged specialists (config-presence only):** count roster
+     agents with `requires_phase_1_5: true` → report
+     `Phase-1.5 tagged specialists: N (config-presence)`. If N=0, flag:
+     "Phase-1.5 OOB reviewer is DORMANT — no agent tagged; see
+     `node tools/prism-roster.mjs --tag-1-5 <agent>`." Config only — NEVER
+     call this "armed" or "firing" on its own.
+
+  2. **Phase-0d panel review (live-fire):** genuine adversarial-challenge
+     activity, emitted by `prism-phase-0d-challenges.mjs` on a real
+     panel.json write (`"event":"phase_0d_challenge"`). Run:
+     ```
+     grep '"event":"phase_0d_challenge"' ~/.claude/.prism-routing.jsonl | grep -v '"mock":true' | grep -viE '"session_id":"(synthetic|test|mock)[-_]' | grep -v '"task_sha":"20260604-pg01"'
+     ```
+     Read the most recent surviving line's `ts` and report
+     `Phase-0d panel review: on — last genuine fire YYYY-MM-DD` or, if none
+     survive, `Phase-0d panel review: NEVER fired`. NOTE (#75): the
+     `phase_0d_challenge` event now stamps every NEW line with
+     `mock`/`session_id` (mirrors the `#57` phase_1_5 marker) — lines
+     written before this fix landed lack the field entirely and still
+     count as genuine per the convention above, EXCEPT the explicit
+     `task_sha":"20260604-pg01"` exclusion above: 8 lines from a 2026-06-04
+     manual live-fire verification of D051-A (a deliberately malformed
+     smoke-test panel written by a dispatched agent to prove the injection
+     mechanism worked, not a genuine specialist panel) — excluded by name
+     since they pre-date the marker and would otherwise misreport as a
+     genuine fire.
+     **Verdict (mirrors F3):** Phase-1.5 tagged count >0 but this fire is
+     NEVER or >30 days old → **YELLOW: "built but not observed firing —
+     possible dormant mechanism; see Step 6b canary."** A genuine fire
+     within the last 30 days → GREEN. The phrase "NOT dormant" MUST NOT be
+     reported on config evidence (tag count) alone.
+
+  3. **panel-seat OOB (Phase-1.5, opt-in):** a distinct arming path where
+     the Phase-1.5 OOB reviewer is invoked via panel-seat participation
+     rather than roster tagging — opt-in via `PRISM_PANEL_SEAT_OOB`.
+     Grep `phase_1_5_oob` lines carrying the `arm_reason":"panel-seat"`
+     field, excluding mock/synthetic:
+     ```
+     grep '"event":"phase_1_5_oob"' ~/.claude/.prism-routing.jsonl | grep '"arm_reason":"panel-seat"' | grep -v '"mock":true' | grep -viE '"session_id":"(synthetic|test|mock)[-_]'
+     ```
+     If no surviving lines: report
+     `panel-seat OOB (Phase-1.5): off (opt-in via PRISM_PANEL_SEAT_OOB)` —
+     report this as an unused opt-in capability, NOT as a broken mechanism.
+     If lines survive, report
+     `panel-seat OOB (Phase-1.5): on — last fire YYYY-MM-DD` using the most
+     recent surviving line's `ts`.
+
+  Cross-ref: Step 6b's self-blindness canary is the deeper diagnostic for
+  the Phase-1.5 tag-based mechanism — if line 1 or 2 above reports
+  YELLOW/DORMANT, point the reader at Step 6b's output for corroborating
+  evidence.
 
 Top 5 most-used by task count.
 

@@ -34,7 +34,7 @@
 //
 // Env: PRISM_DISPATCH_PREAMBLE = on (default) | off.
 
-import {run as antiNestingRun} from './prism-anti-nesting-inject.mjs';
+import {run as antiNestingRun, HOLDING_STRING_BAN} from './prism-anti-nesting-inject.mjs';
 
 const MODE = String(process.env.PRISM_DISPATCH_PREAMBLE ?? 'on').toLowerCase();
 
@@ -90,11 +90,16 @@ function runSendMessage(input) {
   if (SM_STATUS_OPEN_RE.test(message)) return quiet;
   if (!SM_ASSIGN_RE.test(message.slice(0, 400))) return quiet;
   if (!SM_CRITERIA_RE.test(message)) return quiet;
+  // F1 Layer A: the holding-string ban previously reached only the Agent
+  // dispatch path (via prism-anti-nesting-inject's FOOTER/FORK_FOOTER). Append
+  // it here as clause 6 so SendMessage work assignments — ~half of agent-teams
+  // hand-offs — carry the same ban verbatim. Agent-path FOOTER usage is
+  // untouched (this addition is local to runSendMessage).
   const out = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      updatedInput: {...ti, message: message + '\n' + FOOTER},
-      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
+      updatedInput: {...ti, message: message + '\n' + FOOTER + '\n6. ' + HOLDING_STRING_BAN},
+      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, holding-string-is-a-failed-result). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
     },
   };
   return {exit: 0, stdout: JSON.stringify(out), stderr: ''};

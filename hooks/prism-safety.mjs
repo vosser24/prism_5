@@ -47,7 +47,7 @@ const blockedCmd=[
   [/dd\s+if=.*of=\/dev/i, 'dd to device blocked'],
   // v5.x FIX-D: pipe-to-shell (curl/wget … | bash) — a common remote-code-exec
   // footgun the gate previously missed (v5.0 stress-test finding SAF-002).
-  [/\b(curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(bash|sh|zsh|fish|dash|python[0-9.]*|node|perl|ruby)\b/i, 'pipe-to-shell (curl|bash) blocked by PRISM safety gate'],
+  [/\b(curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(bash|sh|zsh|fish|dash|python[0-9.]*|node|perl|ruby)\b/i, 'pipe-to-shell (curl|bash) blocked by PRISM safety gate (If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt — put the text in a file and pass it via stdin.)'],
 ];
 
 // An eval-wrapper makes quoted text executable → scan RAW so quoting can't hide
@@ -109,7 +109,7 @@ function rmRfDanger(s){
   return false;
 }
 if(rmRfDanger(cmdScan)){
-  ewrite('rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)');
+  ewrite('rm -rf blocked by PRISM safety gate (dangerous/unverifiable target) (If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt — put the text in a file and pass it via stdin.)');
   return done(2);
 }
 

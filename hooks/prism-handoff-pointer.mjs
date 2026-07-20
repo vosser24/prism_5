@@ -31,7 +31,7 @@
 // Off-switch: PRISM_DISABLE_HANDOFF_POINTER=1
 // Fail-open: any error returns exit 0 silently — never breaks PostToolUse.
 
-import {writeFileSync, renameSync, unlinkSync, mkdirSync} from 'node:fs';
+import {writeFileSync, renameSync, unlinkSync, mkdirSync, readFileSync} from 'node:fs';
 import {join, dirname, basename, isAbsolute, relative} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {logAdvisory} from './lib/prism-advisory-log.mjs';
@@ -172,4 +172,18 @@ export async function run(payload) {
   } catch {
     return ok;
   }
+}
+
+// Standalone CLI shim — lets tools/prism-audit-runner.mjs (spawn + stdin)
+// exercise this hook directly. Mirrors hooks/prism-anti-nesting-inject.mjs.
+// The basename guard keeps it INERT when the module is imported in-process by
+// hooks/prism-posttooluse-dispatcher.mjs (process.argv[1] is the dispatcher).
+if (process.argv[1] && basename(process.argv[1]) === 'prism-handoff-pointer.mjs') {
+  let input;
+  try { input = JSON.parse(readFileSync(0, 'utf-8') || '{}'); } catch { process.exit(0); }
+  try {
+    const r = await run(input);
+    if (r && r.stdout) process.stdout.write(r.stdout);
+    process.exit((r && r.exit) || 0);
+  } catch { process.exit(0); }
 }

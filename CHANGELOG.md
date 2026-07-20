@@ -6,6 +6,53 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.2] - 2026-07-20
+
+Recall-precision + observability-honesty patch release. Built and shipped via a
+fable-design → opus-build → fable-adversarial-validate pipeline; the #58 round-1
+design was FAILED by independent no-author validation (it caught a D050-class
+over-fire that round-1's own green ACs missed) before the round-2 gate passed.
+
+### Added
+
+- **#58 — corpus-distinctiveness (DF=1) anchor gate for lesson-match precision (D053).**
+  Round-1's rule-token seed (D052) restored the #48 recall gap but independent
+  no-author (Fable) validation found it reintroduced the D050 over-fire class — a
+  natural prompt ("does the session save the durable memory before clearing")
+  firing up to 9 topically-unrelated entries, and an off-topic adjudication hitting
+  0.254 (70% past the 0.15 gate). Round-2 adds a precision gate: a keyword-driven
+  lesson-match fire is admitted only if the prompt shares ≥1 token unique to the
+  matched entry (corpus document-frequency 1); generic high-DF tokens (does/session/
+  guard/cannot) raise the score but can never anchor a fire. The multi-entry generic
+  over-fire is eliminated *by construction* — a DF=1 token lives in exactly one
+  entry, so an N-entry fire needs N distinct corpus-unique tokens (held under 18
+  adversarial counterexample probes). Recall preserved (the reported bug fires at
+  0.157 on its distinctive `proof` anchor); the D023 score formula + `MATCH_THRESHOLD`
+  are byte-unchanged. Also closes a latent round-1 drift bug: a third keyword-map
+  writer (the SessionStart self-heal in `knowledge-delta.mjs`) still used the old
+  seed and would silently revert recall on the next start — all three writers now
+  share one `buildEntryTokens`.
+
+### Fixed
+
+- **#75 — `/prism-health` Phase-0d honesty.** `phase_0d_challenge` routing lines now
+  carry a `mock`/`session_id` marker (mirrors #57), and health excludes mock/synthetic
+  fires plus one named pre-marker smoke-test artifact, so the Phase-0d line honestly
+  reports NEVER instead of an optimistic last-fire date from a synthetic panel write.
+- **#71 — test-home leak.** The recursion-guard case in `test-subagentstop-dispatcher.mjs`
+  wrote a real line into the live `~/.claude/.prism-routing.jsonl` because
+  `prism-phase-1-5-oob.mjs` resolves its log base at module load; HOME is now isolated
+  before the dynamic import (D046 test-home-leak class).
+- **#76 — stale dispatcher test.** `test-userpromptsubmit-dispatcher.mjs` still asserted
+  superpowers-nudge text that v6.6.0 FIX-6 deliberately retired; assertions updated to
+  the current silent-recognizer behavior — no hook change (the hook was correct by design).
+
+### Verification
+
+- All affected suites green at the release tip (lesson-match 11/11, subagentstop 5/5,
+  userpromptsubmit 5/5, phase-0d-oob 3/3, panel-json-inject 14/14, verdict-log 10/10);
+  installed + verified 6.6.2.
+
 ## [6.6.1] - 2026-07-19
 
 Patch release: closes a UAT-discovered bypass in v6.6.0's FIX-4c capture-evidence

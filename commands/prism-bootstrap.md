@@ -44,6 +44,20 @@ git repo for worktree isolation). If they confirm: `git init`.
 
 If `--dry-run`: report "would init git" instead of running.
 
+## Headless note
+
+When running non-interactively (headless `claude -p`, no user able to
+answer), do NOT ask clarifying questions. Run Step 1 (state init + plan)
+and every deterministic / default-safe phase. For any step that requires
+a confirmation — the Step 0 git-guard prompt above, an `--interactive`
+phase-confirm, Phase 5's orphan-agent resolution choice, Phase 6's "slug
+needs user prompting" branch, or the Phase 7 telemetry/statusline/claude-mem
+offers — SKIP that step and RECORD it, then REPORT "needs interactive
+confirmation for X" in the final summary (Step N). Treat those
+confirmation-gated steps as interactive-only: this note does not change how
+a step decides it needs confirmation, it only tells you what to do when
+there is no one there to answer.
+
 ## Step 1 — load or initialize state
 
 Run: `node ~/.claude/tools/prism-bootstrap.mjs init-state-if-missing "<project-name>"`

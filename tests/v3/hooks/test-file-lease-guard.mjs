@@ -40,6 +40,14 @@ const advisoryOf = (r) => {
 const markRunning = (sid, id) =>
   appendRecord(HOME, sid, { agentId: id, agentType: id, status: 'running', startedAt: new Date().toISOString() });
 const leaseFile = (sid) => join(HOME, '.claude', `.prism-file-leases-${sid}.json`);
+const routingLog = () => join(HOME, '.claude', '.prism-routing.jsonl');
+// All file_lease_guard events logged for a given session (parsed).
+const leaseEvents = (sid) => {
+  let txt = '';
+  try { txt = readFileSync(routingLog(), 'utf-8'); } catch { return []; }
+  return txt.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(o => o && o.event === 'file_lease_guard' && o.session_id === sid);
+};
 
 const LEASE_A = 'Fix the summary renderer.\nPRISM-LEASE: agent=worker-A files=hooks/lib/prism-live-agents.mjs';
 const LEASE_B_SAME = 'Extend the ledger schema.\nPRISM-LEASE: agent=worker-B files=hooks\\lib\\prism-live-agents.mjs';
@@ -139,6 +147,47 @@ try {
     markRunning(sid, 'worker-B'); // both genuinely live
     const r = await run(send(sid, 'worker-B', LEASE_B_SAME));
     check('SendMessage-declared collision with 2 live agents → advisory', r.exit === 0 && /FILE-LEASE/.test(advisoryOf(r)));
+  }
+
+  // ── F4: observe the MISS — build-class fan-out with NO declaration ──────────
+  // FIRE: Agent build-class dispatch, ledger seeded with 2 running records, no
+  // lease line → no_declaration event logged + producer-nudge advisory on stdout.
+  {
+    const sid = 'sMissFire';
+    markRunning(sid, 'worker-A'); // seed 2 genuinely-live agents
+    markRunning(sid, 'worker-B');
+    const BUILD_NO_LEASE = 'Implement the new endpoint and build the component. Write the code.';
+    const r = await run(dispatch(sid, BUILD_NO_LEASE));
+    const adv = advisoryOf(r);
+    check('miss/fire: build-class + ≥2 concurrent + no lease → advisory FIRES',
+      r.exit === 0 && /FILE-LEASE/.test(adv) && /no file ownership/.test(adv) && /PRISM-LEASE: agent=/.test(adv));
+    const evs = leaseEvents(sid);
+    check('miss/fire: exactly one no_declaration event logged (declared:0, concurrent≥2)',
+      evs.length === 1 && evs[0].no_declaration === true && evs[0].declared === 0 &&
+      evs[0].advised === false && evs[0].concurrent >= 2 && evs[0].tool_name === 'Agent');
+  }
+
+  // QUIET-1: solo dispatch (no other live agent), no lease line → no event, no stdout.
+  {
+    const sid = 'sMissSolo';
+    const BUILD_NO_LEASE = 'Implement the new endpoint and build the component.';
+    const r = await run(dispatch(sid, BUILD_NO_LEASE));
+    check('miss/quiet-solo: solo build-class dispatch, no lease → quiet (no stdout)',
+      r.exit === 0 && !advisoryOf(r));
+    check('miss/quiet-solo: no file_lease_guard event logged for a solo session',
+      leaseEvents(sid).length === 0);
+  }
+
+  // QUIET-1b: read-class fan-out (≥2 concurrent) with no lease → miss logged but
+  // NO producer nudge (build-class gate holds — advisory stays silent).
+  {
+    const sid = 'sMissRead';
+    markRunning(sid, 'worker-A');
+    markRunning(sid, 'worker-B');
+    const READ_NO_LEASE = 'Investigate and audit the codebase; map out and read the modules.';
+    const r = await run(dispatch(sid, READ_NO_LEASE));
+    check('miss/quiet-read: read-class fan-out logs the miss but emits NO nudge',
+      r.exit === 0 && !advisoryOf(r) && leaseEvents(sid).length === 1 && leaseEvents(sid)[0].no_declaration === true);
   }
 
   // ── kill-switch ──────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import {readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync} from 'no
 import {spawn} from 'node:child_process';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {tmpdir} from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..');
@@ -99,6 +100,20 @@ function seedSentinel(sc) {
   catch { return null; }
 }
 
+// v3.11.1 #66 — portable scratch-cwd placeholder: a scenario's input_payload
+// may embed the literal token `{{TMP}}` anywhere a path string is needed
+// (e.g. `"cwd": "{{TMP}}/my-scratch-dir"`). Substituted here, at run time,
+// for a stable OS-temp-rooted directory shared by the whole audit run — this
+// keeps scenarios free of any machine-specific absolute path while still
+// isolating filesystem side effects (e.g. handoff-pointer writes) away from
+// the real repo. Forward-slash-normalized so it JSON-embeds safely on Windows.
+const RUN_SCRATCH_DIR = join(tmpdir(), 'prism-audit-scratch').replace(/\\/g, '/');
+
+function stdinPayload(sc) {
+  const raw = JSON.stringify(sc.input_payload || {});
+  return raw.includes('{{TMP}}') ? raw.split('{{TMP}}').join(RUN_SCRATCH_DIR) : raw;
+}
+
 function runScenario(targetPath, sc) {
   const seeded = seedSentinel(sc);
   return new Promise((resolve) => {
@@ -114,7 +129,7 @@ function runScenario(targetPath, sc) {
     proc.on('error', err => done({exit_code: -1, stdout, stderr, error: err.message}));
     proc.on('close', exit_code => done({exit_code, stdout, stderr}));
     try {
-      proc.stdin.write(JSON.stringify(sc.input_payload || {}));
+      proc.stdin.write(stdinPayload(sc));
       proc.stdin.end();
     } catch (err) {
       // stdin may be closed already; ignore

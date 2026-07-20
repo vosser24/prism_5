@@ -27,7 +27,7 @@
 // No npm dependencies. Uses spawnSync('claude', ['-p', ...]) via Claude Code
 // subscription auth (no separate ANTHROPIC_API_KEY required).
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync} from 'fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, statSync, openSync, readSync, closeSync} from 'fs';
 import {join, dirname, basename} from 'path';
 import {createHash} from 'crypto';
 import {pathToFileURL} from 'url';
@@ -70,6 +70,33 @@ function logEvent(event, extra) {
   });
 }
 
+// R2 F2: bounded tail-read of a transcript file, used as a last-resort output
+// source when no direct output field is present on the SubagentStop payload
+// (measured 2026-07-20: real payloads carry `last_assistant_message` and
+// `transcript_path`/`agent_transcript_path`, not `output`/`tool_response`/
+// `transcript`). Reads at most `maxBytes` from the END of the file. Fail-open:
+// any error (missing path, unreadable file, etc.) returns ''.
+function readTranscriptTail(path, maxBytes = 4096) {
+  if (!path || typeof path !== 'string') return '';
+  try {
+    if (!existsSync(path)) return '';
+    const {size} = statSync(path);
+    if (size <= 0) return '';
+    const start = Math.max(0, size - maxBytes);
+    const len = size - start;
+    const fd = openSync(path, 'r');
+    try {
+      const buf = Buffer.alloc(len);
+      readSync(fd, buf, 0, len, start);
+      return buf.toString('utf-8');
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return '';
+  }
+}
+
 // Exported pure function — SubagentStop OOB Phase 1.5 review.
 // Returns {exit, stdout, stderr}. Never calls process.exit().
 // R4: async mode returns {exit:0} IMMEDIATELY after spawn().unref() — never awaits child.
@@ -91,14 +118,14 @@ export async function run(payload) {
 
   const input = payload;
 
-  const agentName = String(input.agent_type || input.subagent_type || input.agent_name || input.agent || '').replace(/^@/, '');
+  const agentName = String(input.agent_type || input.subagent_type || input.agent_name || input.agent || input.agent_id || '').replace(/^@/, '');
   if (!agentName) {
     logEvent('no-agent-name');
     return { exit: 0, stdout: '', stderr: '' };
   }
 
   const sessionId = input.session_id || 'anon';
-  const output = input.output || (input.tool_response && (input.tool_response.output || input.tool_response.content)) || input.transcript || '';
+  const output = input.output || (input.tool_response && (input.tool_response.output || input.tool_response.content)) || input.transcript || input.last_assistant_message || readTranscriptTail(input.transcript_path || input.agent_transcript_path) || '';
   const taskBrief = input.task_brief || (input.tool_input && input.tool_input.prompt) || '';
 
   if (!output || typeof output !== 'string' || output.length < 10) {
@@ -117,13 +144,38 @@ export async function run(payload) {
   }
 
   const entry = roster.agents && roster.agents[agentName];
+  let armReason = 'tagged';
   if (!entry || entry.requires_phase_1_5 !== true) {
-    logEvent('agent-not-tagged', {agent: agentName});
-    return { exit: 0, stdout: '', stderr: '' };
+    // D051 Part B: GATED-OFF alternative arming path for live panel seats.
+    // Panel seats are ad-hoc general-purpose dispatches — never roster-tagged
+    // requires_phase_1_5 — so today they are never OOB-reviewed. Default OFF:
+    // with PRISM_PANEL_SEAT_OOB unset, behavior below is unchanged (bails
+    // agent-not-tagged). Only when BOTH the env opt-in is set AND the current
+    // session's turn-tier sentinel shows summon_panel:true do we arm the
+    // review for this untagged seat too (measurement-first, D028/D042).
+    let armedAsPanelSeat = false;
+    if (process.env.PRISM_PANEL_SEAT_OOB === '1') {
+      try {
+        const sentinelPath = join(H, '.claude', `.prism-turn-tier-${sessionId}.json`);
+        if (existsSync(sentinelPath)) {
+          const sentinel = JSON.parse(readFileSync(sentinelPath, 'utf-8'));
+          armedAsPanelSeat = sentinel.summon_panel === true;
+        }
+      } catch {}
+    }
+    if (!armedAsPanelSeat) {
+      logEvent('agent-not-tagged', {agent: agentName});
+      return { exit: 0, stdout: '', stderr: '' };
+    }
+    armReason = 'panel-seat';
   }
+  // Untagged panel-seat arming has no roster entry to read further tag-scoped
+  // fields (skip_next_oob / requires_phase_1_5_block / phase_1_5_lite_oob)
+  // from — fall back to a plain object so those all read as unset/false.
+  const effectiveEntry = entry || {};
 
   // V1 — one-shot skip
-  if (entry.skip_next_oob === true) {
+  if (effectiveEntry.skip_next_oob === true) {
     try {
       await withRosterLock(rosterPath, async () => {
         const r = JSON.parse(readFileSync(rosterPath, 'utf-8'));
@@ -140,7 +192,7 @@ export async function run(payload) {
     return { exit: 0, stdout: '', stderr: '' };
   }
 
-  const blockMode = entry.requires_phase_1_5_block === true;
+  const blockMode = effectiveEntry.requires_phase_1_5_block === true;
 
   // Compute per-dispatch SHA
   const sha = createHash('sha256')
@@ -194,7 +246,16 @@ export async function run(payload) {
     block_master: blockMode,
   });
 
-  logEvent('pending-written', {agent: agentName, sha, claims_count: claims.length, mode: blockMode ? 'block' : 'async'});
+  // R1 F57 — mock/synthetic marker: a same-day PRISM_OOB_TEST_MOCK_SDK or
+  // PRISM_PHASE_1_5_MOCK_VERDICT fire (or a session_id that is itself
+  // synthetic/test-labeled) must not be countable as a genuine live fire by
+  // /prism-health Step 2 (F3 PASS-WITH-CONCERNS finding — a same-day mock
+  // line flipped the verdict to a false GREEN with zero real fires). Additive
+  // fields only — existing fields (agent/sha/claims_count/mode) unchanged.
+  const isMockEnv = process.env.PRISM_OOB_TEST_MOCK_SDK === '1' || !!process.env.PRISM_PHASE_1_5_MOCK_VERDICT;
+  const isSyntheticSession = /^(synthetic|test|mock)[-_]/i.test(String(sessionId));
+  const mock = isMockEnv || isSyntheticSession;
+  logEvent('pending-written', {agent: agentName, sha, session_id: sessionId, mock, claims_count: claims.length, mode: blockMode ? 'block' : 'async', arm_reason: armReason});
 
   // Test-mode short-circuit (PRISM_OOB_TEST_MOCK_SDK path — preserved verbatim)
   if (process.env.PRISM_OOB_TEST_MOCK_SDK === '1') {
@@ -220,7 +281,7 @@ export async function run(payload) {
   }
 
   // Real invocation via claude -p (Claude Code subscription auth)
-  const useLite = entry.phase_1_5_lite_oob === true;
+  const useLite = effectiveEntry.phase_1_5_lite_oob === true;
   if (blockMode) {
     const verdict = await invokeReviewerInline(sha, flagLib, useLite);
     if (verdict && (verdict.summary.un_cited > 0 || verdict.summary.rejected > 0)) {

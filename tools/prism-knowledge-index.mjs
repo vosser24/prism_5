@@ -32,7 +32,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 // Shared delta module owns the SINGLE definition of parseLessonFilename
 // (task #22, anti-rot). Static import is safe: knowledge-delta.mjs has no
 // top-level side effects and does NOT import this file back (no import cycle).
-import {parseLessonFilename} from './lib/knowledge-delta.mjs';
+import {parseLessonFilename, buildEntryTokens} from './lib/knowledge-delta.mjs';
 
 // Shared delta module — also imported lazily in cmdDelta to avoid top-level
 // await on applyDelta. applyDelta(root) → {added, changed, removed}  (also
@@ -139,6 +139,12 @@ function parseAdjFilename(name) {
 // the top of this file) — so the append path here and the delta path there can
 // never diverge again. LESSON_DATE_RE is kept below (used only for sortDate).
 const LESSON_DATE_RE = /^(\d{4}-\d{2}-\d{2})/;
+
+// buildEntryTokens (+ its RULE_TOKEN_CAP / DEV_STOP constants) is now the SINGLE
+// OWNER pattern: it lives in tools/lib/knowledge-delta.mjs (imported statically
+// at the top of this file) so this rebuild/append path and the SessionStart
+// self-heal path there build byte-identical tokens — see D053. The two call
+// sites below (buildKeywordMap, upsertKeywordMapEntry) call it unchanged.
 
 // Extract first `# ` H1 line text from file content
 function extractTitle(content, fallback) {
@@ -254,8 +260,7 @@ async function buildKeywordMap(entries, refDir, keywordMapPath, now) {
     const tokenize = await getTokenize();
     const mapEntries = [];
     for (const e of entries) {
-      const seedText = (e.title || '') + ' ' + (e.slug || '') + ' ' + (e.ref || '');
-      const tokens = [...new Set(tokenize(seedText))];
+      const tokens = buildEntryTokens(tokenize, e.title, e.slug, e.ref, e.rule);
       const triggers = extractTriggers(e.content || '');
       mapEntries.push({
         ref: e.ref,
@@ -618,8 +623,7 @@ async function cmdAppend(root, type, filePath) {
 async function upsertKeywordMapEntry(entry, keywordMapPath, now) {
   try {
     const tokenize = await getTokenize();
-    const seedText = (entry.title || '') + ' ' + (entry.slug || '') + ' ' + (entry.ref || '');
-    const tokens = [...new Set(tokenize(seedText))];
+    const tokens = buildEntryTokens(tokenize, entry.title, entry.slug, entry.ref, entry.rule);
     const triggers = extractTriggers(entry.content || '');
     const newMapEntry = {
       ref: entry.ref,

@@ -39,9 +39,36 @@ function makeTestbed(label) {
   return root;
 }
 
+// Shared temp HOME for the generic runner so NO test writes prism_sync events
+// (F8) into the real ~/.claude/.prism-routing.jsonl. F8-specific tests use
+// runWithHome with their own isolated home to read back the exact lines.
+const SHARED_HOME = mkdtempSync(join(tmpdir(), 'prism-sync-home-shared-'));
+
 function run(cwd, ...args) {
-  const r = spawnSync(process.execPath, [HELPER, ...args, '--root', cwd], {encoding: 'utf8'});
+  const r = spawnSync(process.execPath, [HELPER, ...args, '--root', cwd],
+    {encoding: 'utf8', env: {...process.env, HOME: SHARED_HOME, USERPROFILE: SHARED_HOME}});
   return {stdout: r.stdout, stderr: r.stderr, status: r.status};
+}
+
+// F8: run with HOME/USERPROFILE redirected to a temp dir so the routing-log
+// append (~/.claude/.prism-routing.jsonl) lands in the testbed, never the real
+// user log. The helper resolves home as HOME || USERPROFILE || homedir().
+function runWithHome(cwd, home, ...args) {
+  const r = spawnSync(process.execPath, [HELPER, ...args, '--root', cwd],
+    {encoding: 'utf8', env: {...process.env, HOME: home, USERPROFILE: home}});
+  return {stdout: r.stdout, stderr: r.stderr, status: r.status};
+}
+
+function makeHome(label) {
+  return mkdtempSync(join(tmpdir(), `prism-sync-home-${label}-`));
+}
+
+function routingLines(home) {
+  const p = join(home, '.claude', '.prism-routing.jsonl');
+  if (!existsSync(p)) return [];
+  return readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => {
+    try { return JSON.parse(l); } catch { return {raw: l}; }
+  });
 }
 
 function bootstrap(cwd, ...args) {
@@ -213,6 +240,63 @@ test('crash safety: complete fails atomically — state stays valid on bad --met
     assertEq(after.checksum, before.checksum, 'checksum unchanged');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
+
+// ------------------------------ F8: routing-log observability ------------------------------
+
+test('F8 FIRE: plan on stateless root → exit 3 AND a prism_sync/no-state routing line', () => {
+  const root = makeTestbed('f8-fire');
+  const home = makeHome('f8-fire');
+  try {
+    const r = runWithHome(root, home, 'plan');
+    assertEq(r.status, 3, r.stderr);
+    assert(/no state file/.test(r.stderr), 'exit-3 STOP message preserved: ' + r.stderr);
+    const hits = routingLines(home).filter((l) => l.event === 'prism_sync' && l.action === 'no-state');
+    assertEq(hits.length, 1, 'exactly one no-state line: ' + JSON.stringify(routingLines(home)));
+    assertEq(hits[0].root, root, 'no-state line records the root');
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+    rmSync(home, {recursive: true, force: true});
+  }
+});
+
+test('F8 GOOD: complete on bootstrapped fixture → last_sync_at advances AND a prism_sync/complete line', () => {
+  const root = makeTestbed('f8-good');
+  const home = makeHome('f8-good');
+  try {
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const before = readStateFile(root);
+    assertEq(before.last_sync_at, null, 'fresh state has null last_sync_at');
+    const r = runWithHome(root, home, 'complete');
+    assertEq(r.status, 0, r.stderr);
+    const after = readStateFile(root);
+    assert(after.last_sync_at, 'last_sync_at advanced in the state file');
+    const hits = routingLines(home).filter((l) => l.event === 'prism_sync' && l.action === 'complete');
+    assertEq(hits.length, 1, 'exactly one complete line: ' + JSON.stringify(routingLines(home)));
+    assertEq(hits[0].last_sync_at, after.last_sync_at, 'logged last_sync_at matches the state stamp');
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+    rmSync(home, {recursive: true, force: true});
+  }
+});
+
+test('F8 QUIET: --help and --meta arg errors append NO routing lines', () => {
+  const root = makeTestbed('f8-quiet');
+  const home = makeHome('f8-quiet');
+  try {
+    const help = runWithHome(root, home, '--help');
+    assertEq(help.status, 0, 'help exits 0');
+    bootstrap(root, 'init-state-if-missing', 'tb');
+    const bad = runWithHome(root, home, 'complete', '--meta', '{not json');
+    assertEq(bad.status, 5, 'bad --meta exits 5: ' + bad.stderr);
+    const prismSync = routingLines(home).filter((l) => l.event === 'prism_sync');
+    assertEq(prismSync.length, 0, 'no prism_sync lines on help/arg errors: ' + JSON.stringify(routingLines(home)));
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+    rmSync(home, {recursive: true, force: true});
+  }
+});
+
+rmSync(SHARED_HOME, {recursive: true, force: true});
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -136,7 +136,7 @@ export async function run(payload) {
   // subset: a hard build-only gate breaks precision-test Cases 4 and 10
   // (neutral prompts, buildScore 0 / readScore 0, that must still nudge).
   const cls = classifyBuildVsRead(rawPrompt);
-  if (cls.readScore > cls.buildScore) {
+  if (cls.readScore > cls.buildScore && cls.buildScore < 2) {
     logAdvisory({
       event: 'skill_equip_advisory',
       session_id: payload.session_id || null,

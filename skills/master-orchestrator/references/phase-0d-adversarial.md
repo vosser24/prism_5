@@ -108,6 +108,8 @@ so a session-level master can chair a real dispatched panel.
 
 At end of PHASE 0d, BEFORE proceeding to tensions and synthesis, write the panel state to `~/.claude/.prism-task-<task-id>/panel.json` for downstream OOB PHASE 1.5 reviewer pickup. Atomic write (tempfile + rename); fail-open (if write fails, log to stderr but continue).
 
+**OOB activation caveat:** the tempfile+rename recipe below is for reference only — the Phase 0d/1.5 hooks fire on a PostToolUse **Write tool** event to a path ending exactly `panel.json`, so for the hooks to actually fire you must write it with a single direct Write tool call to that final path, not the Bash heredoc/rename shown here.
+
 Schema:
 
 ```jsonc

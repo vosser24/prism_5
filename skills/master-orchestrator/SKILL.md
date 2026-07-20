@@ -60,6 +60,7 @@ Detailed protocol references — read on-demand:
 | PHASE 0a — resource inventory | `references/phase-0a-inventory.md` |
 | PHASE 0 — stakes + team assembly + hiring + v4.4 workshop tagging | `references/phase-0-team-assembly.md` |
 | PHASE 0d — adversarial review + v4.4 panel.json write | `references/phase-0d-adversarial.md` |
+| _(D051) the panel.json write is what actually activates the phase-0d OOB reviewer / challenge logger / panel-guard — on a summoned panel your per-turn additionalContext already carries the write instruction (`hooks/prism-prompt-tier-router.mjs`); this doc row is the secondary/backup reminder, not the primary delivery._ | — |
 | Challenge patterns + ANTI-THEATER RULE | `references/adversarial-review.md` (long form: `~/.claude/skills/prism-plan/references/adversarial-review.md`) |
 | PHASE 1 — execution + v4.4 OOB timing rule | `references/phase-1-execution.md` |
 | Dispatch shapes (sequential/parallel/SAM/teams) | `references/dispatch-shapes.md` |

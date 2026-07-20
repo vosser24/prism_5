@@ -56,6 +56,20 @@ async function loadRouter() {
 // Module-level keyword map cache (loaded once per process)
 let _mapCache = null;
 let _mapLoaded = false;
+// D053: memoized corpus document-frequency map (token -> #entries containing it),
+// computed once over the loaded map's entries alongside _mapCache. Pure function
+// of map.entries[].tokens, so it is definitionally consistent with what the
+// scoring loop scores against — no stored field, no append drift.
+let _dfCache = null;
+
+// D053: count corpus document-frequency over the loaded entries.
+function computeDf(entries) {
+  const df = new Map();
+  for (const e of entries) {
+    for (const t of new Set(e.tokens || [])) df.set(t, (df.get(t) || 0) + 1);
+  }
+  return df;
+}
 
 function loadKeywordMap(root) {
   if (_mapLoaded) return _mapCache;
@@ -64,14 +78,24 @@ function loadKeywordMap(root) {
     const mapPath = join(root || H, '.claude', 'references', '.knowledge-keyword-map.json');
     if (!existsSync(mapPath)) { _mapCache = null; return null; }
     _mapCache = JSON.parse(readFileSync(mapPath, 'utf-8'));
+    _dfCache = computeDf((_mapCache && _mapCache.entries) || []);
   } catch {
     _mapCache = null;
+    _dfCache = null;
   }
   return _mapCache;
 }
 
 const DEDUP_TTL_TURNS = 10;
 const MATCH_THRESHOLD = 0.15;  // D023: raised from 0.04 to cut false-positive rate
+
+// D053: corpus-distinctiveness gate. A keyword-driven fire must be anchored by
+// >=ANCHOR_MIN shared token(s) unique to the matched entry (corpus DF<=ANCHOR_DF_MAX).
+// Generic tokens (does/session/guard/cannot/memory) raise the score but never
+// anchor a fire. DF is computed in-hook over the loaded map (no stored field,
+// no append drift). See docs/prism/adjudications/D053.
+const ANCHOR_DF_MAX = 1;   // "distinctive" == appears in exactly one corpus entry
+const ANCHOR_MIN = 1;      // K: min distinctive shared tokens to admit a fire
 // ~60-token cap on total injected text (≈2 lines of ~30 tokens each).
 // One line is roughly 180 chars at ~3 chars/token; cap at 2*180=360 chars total.
 const INJECT_CHAR_CAP = 360;
@@ -129,6 +153,8 @@ export async function run(payload) {
     const promptLC = userPrompt.toLowerCase();
     const promptTokens = _tokenize(userPrompt);
 
+    const promptSet = new Set(promptTokens);
+
     const scored = [];
     for (const entry of map.entries) {
       const kwScore = _keywordScore(promptTokens, entry.tokens || []);
@@ -143,7 +169,20 @@ export async function run(payload) {
 
       const score = kwScore + triggerBonus;
       if (score >= MATCH_THRESHOLD) {
-        scored.push({entry, score});
+        // D053 distinctiveness gate. Trigger-driven fires (author-configured exact
+        // phrases) bypass — high-precision by design. Keyword-driven fires require a
+        // distinctive (DF<=ANCHOR_DF_MAX) shared-token anchor.
+        let anchored = triggerBonus > 0;
+        if (!anchored) {
+          let hits = 0;
+          for (const t of (entry.tokens || [])) {
+            if (promptSet.has(t) && ((_dfCache && _dfCache.get(t)) || 0) <= ANCHOR_DF_MAX) {
+              if (++hits >= ANCHOR_MIN) break;
+            }
+          }
+          anchored = hits >= ANCHOR_MIN;
+        }
+        if (anchored) scored.push({entry, score});
       }
     }
 

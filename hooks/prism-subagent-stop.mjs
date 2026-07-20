@@ -43,6 +43,71 @@ const model=input.model||input.subagent_model||'';
 const usage=input.usage||{};
 const tokens=(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0);
 
+// ── F1 Layer C: SubagentStop telemetry event (the discovery instrument for F1-B/F2) ──
+// Previously run() updated roster/spend/live-agents but NEVER appended a routing
+// event, so worker-stall (#56) was unmeasurable and no SubagentStop telemetry
+// existed at all. Append ONE line per stop, reusing the appendFileSync pattern
+// below. When PRISM_DEBUG_SUBAGENT_PAYLOAD=1, also record the payload key NAMES
+// (Object.keys — names only, no values; bounded, no privacy leak) to discover the
+// real live payload shape for the identity/transcript plumbing R2 depends on.
+// Fail-open: a telemetry failure must never throw or disturb the logic below.
+try{
+  const ts=new Date().toISOString();
+  const ev={event:'subagent_stop',ts,session_id:sessionId,agent:rawName||'unknown',model:model||'unknown',tokens};
+  if(process.env.PRISM_DEBUG_SUBAGENT_PAYLOAD==='1')ev.payload_keys=Object.keys(input||{});
+  mk(j(H,'.claude'),{recursive:true});
+  ap(j(H,'.claude','.prism-routing.jsonl'),JSON.stringify(ev)+'\n');
+}catch{}
+
+// ── F1 Layer B: holding-string final-output DETECTOR (UAT #56) ──
+// A dispatched worker whose FINAL assistant message is a "holding string"
+// ("I'll hold here and wait for the background notification…", "verifying…
+// will report back", "the child is checking…") is a FAILED/orphaned result —
+// currently invisible. Primary source: input.last_assistant_message (the
+// measured live SubagentStop payload always carries this). Fallback: a
+// bounded tail of the transcript file, kept minimal and fail-open. Advisory
+// only — never throws, never disturbs roster/spend/live-agents logic below.
+try{
+  let finalMsg = typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '';
+  if (!finalMsg) {
+    // Minimal fail-open fallback: bounded tail read of the transcript.
+    try{
+      const tp = input.transcript_path || input.agent_transcript_path;
+      if (tp && e(tp)) {
+        const buf = r(tp, 'utf-8');
+        const tail = buf.length > 4096 ? buf.slice(-4096) : buf;
+        const lines = tail.split('\n').filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try{
+            const obj = JSON.parse(lines[i]);
+            const msg = obj && obj.message;
+            const content = msg && msg.content;
+            if (msg && msg.role === 'assistant' && content) {
+              if (typeof content === 'string') { finalMsg = content; break; }
+              if (Array.isArray(content)) {
+                const t = content.filter(c => c && c.type === 'text').map(c => c.text).join('\n');
+                if (t) { finalMsg = t; break; }
+              }
+            }
+          }catch{}
+        }
+      }
+    }catch{}
+  }
+  if (finalMsg && typeof finalMsg === 'string') {
+    const trimmed = finalMsg.trim();
+    const newlineCount = (trimmed.match(/\n/g) || []).length;
+    const HOLDING_RE = /\b(verifying|waiting for (?:the |a |an )?(?:background|notification|confirmation|response|reply|result|results|child|worker|subagent|agent|callback|signal|completion|it\b|them\b)|will (report|check) back|the child is|holding (here|until)|hold here|standing by|background notification)\b/i;
+    if (trimmed.length > 0 && trimmed.length < 400 && newlineCount < 3 && HOLDING_RE.test(trimmed)) {
+      const ts = new Date().toISOString();
+      const hev = { event: 'holding_string_final', ts, session_id: sessionId, agent: rawName || 'unknown' };
+      mk(j(H,'.claude'),{recursive:true});
+      ap(j(H,'.claude','.prism-routing.jsonl'), JSON.stringify(hev) + '\n');
+      process.stderr.write(`[prism-subagent-stop] HOLDING-STRING final message from '${rawName || 'unknown'}' — likely a stalled/orphaned worker; treat as FAILED result.\n`);
+    }
+  }
+}catch{}
+
 // ── Roster update (existing behavior, wrapped so its failure can't block ledger) ──
 const rp=j(H,'.claude','skills','prism-plan','references','roster.json');
 if(e(rp)&&agentName&&!['master-orchestrator','agent-factory','prism-updater'].includes(agentName)){

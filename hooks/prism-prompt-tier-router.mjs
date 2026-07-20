@@ -140,6 +140,33 @@ function buildOverrideDirective(tier, summonPanel, sessionId) {
   ].join('\n');
 }
 
+// D051 Part A: the phase-0d machinery (prism-phase-0d-oob.mjs,
+// prism-phase-0d-challenges.mjs, prism-panel-guard.mjs Path B) all fire on a
+// Write to a `.prism-task-<sha>/panel.json` path and are fully wired — but a
+// live panel never writes that file (it's an LLM-authored artifact, no
+// deterministic producer exists), so those hooks have never fired. The same
+// instruction already lives in
+// skills/master-orchestrator/references/phase-0d-adversarial.md but a
+// doc-only instruction has 0/14 real-world compliance (F4 finding); a clause
+// injected directly into the turn's additionalContext is the channel proven
+// to land. PRESENT_RE-style idempotency guard: only appended if the advice
+// doesn't already carry it (defensive — formatAdvice runs once per turn, so
+// this is belt-and-suspenders, not load-bearing).
+//
+// D051 Part A precision fix (no-author validator finding): the phase-0d
+// consumers ONLY fire on a PostToolUse Write event to a path matching
+// /\.prism-task-[^/\\]+[/\\]panel\.json$/. The doc this clause used to point
+// to ("for the full schema") teaches an ATOMIC tempfile+rename recipe
+// (bash heredoc → panel.json.tmp → mv) — following it writes via Bash (no
+// PostToolUse Write event) or to a .tmp path (fails the panel\.json$ regex),
+// so all three consumers would silently never fire. The clause below now
+// mandates the one delivery mechanism that actually trips the hooks: a
+// single direct Write tool call to the final panel.json path.
+const PANEL_JSON_WRITE_CLAUSE =
+  '\n  5. WRITE the panel to JSON at ~/.claude/.prism-task-<task-id>/panel.json BEFORE synthesis, using ONE direct Write tool call to that exact final path — ' +
+  'NOT a tempfile+rename, NOT a Bash/PowerShell heredoc, NOT a .tmp path (those bypass the PostToolUse Write event and the Phase 0d reviewer silently never fires). ' +
+  'Schema: {"positions":[{"specialist":"...","title":"...","challenges":[{"text":"...","evidence_class":"..."}]}]}.';
+
 function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, activeMaster, panelDisabled) {
   // New format — intentionally simpler than v2.1.3 so LLMs don't need to
   // parse h=/s=/o= tokens. The old score fields are preserved in the
@@ -191,6 +218,7 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
     advice += `\n  2. Dispatch your expert panel members — 3–5 of them — as INDEPENDENT, parallel subagents (one Agent() block each, different biases).`;
     advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
     advice += `\n  4. Synthesize the verdict yourself and relay it.`;
+    if (!/panel\.json/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
     if (mode === 'hard') advice += `\nParent Write/Edit/Bash stay blocked until you have dispatched at least one panel member (so a real panel happens, not role-play). Override: !opus-force:.`;
     emittedDispatchAdvice = true;
   } else if (tier === 'opus' && effectiveSummonPanel) {
@@ -199,6 +227,7 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
     advice += `\n  2. Assemble a panel of 3–5 expert subagents with different biases.`;
     advice += `\n  3. Chair adversarial review (≥2 substantive challenges per position).`;
     advice += `\n  4. Return a synthesized phased plan with explicit exclusions for you to relay.`;
+    if (!/panel\.json/i.test(advice)) advice += PANEL_JSON_WRITE_CLAUSE;
     advice += `\nUse: Agent({subagent_type:'master-orchestrator', model:'opus', prompt:'<original user request, verbatim>'})`;
     if (mode === 'hard') advice += `\nParent Write/Edit/Bash DENIED until orchestrator is dispatched. Override: !opus-force: (single-model Opus) or PRISM_DISPATCH_GUARD=off.`;
     emittedDispatchAdvice = true;

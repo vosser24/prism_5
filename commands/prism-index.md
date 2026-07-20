@@ -132,6 +132,8 @@ Update `roster.index_meta`:
 
 Write the file. Format with 2-space indent.
 
+**Verification artifact:** the authoritative stamp that `/prism-index` ran is the global `roster.json → index_meta.last_indexed` (at `~/.claude/skills/prism-plan/references/roster.json`). Audit that field's timestamp, not a knowledge-index mtime or the worktree state file.
+
 ### Step 7 — Report
 
 Print summary:

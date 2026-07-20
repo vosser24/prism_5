@@ -114,6 +114,15 @@ const ROSTER = {
       domains: [],
       keywords: ['ztiebreakalpha', 'ztiebreakbeta'],
     },
+    // Case 14 (#38 FIRE fixture) probe: a hyphenated phrase term ("dry-run")
+    // that appears verbatim in the reconstructed #38 dispatch prompt, so the
+    // FIRE case has a real matching specialist to surface once suppression
+    // no longer withholds it (hyphenated term → weight 3, clears floor alone).
+    'dry-run-audit-expert': {
+      description: 'dry-run audit tooling',
+      domains: ['dry-run'],
+      keywords: ['dry-run'],
+    },
   },
 };
 
@@ -291,6 +300,59 @@ try {
     check('Case 13: build-dominant prompt (Case 2, re-asserted) still surfaces postgres-migration-expert after FIX-5',
       skills.includes('postgres-migration-expert'),
       `expected postgres-migration-expert to still surface, got ${JSON.stringify(skills)} ctx="${ctx}"`);
+  }
+
+  // Case 14 (R3 F6 / #38 miscalibration fix — D042 FIRE case). Real live-UAT
+  // #38 dispatch (session 63ef55e2…, docs/prism/plans/uat-results/
+  // live-batch2-scorecard.md row #38) logged
+  // `skill_equip_advisory suppressed:"read-dominant" build_score:4 read_score:7`
+  // for a genuine "Add --dry-run flag to prism-audit-runner" BUILD dispatch —
+  // the raw dispatch prompt text itself was never persisted (only the
+  // description + a prompt hash exist in ~/.claude/.prism-routing.jsonl), so
+  // this fixture is a reconstruction that reproduces the EXACT logged
+  // classifier scores (buildScore=4, readScore=7 verified via
+  // classifyBuildVsRead in hooks/prism-specialist-routing-guard.mjs) against
+  // that same real task description, rather than the byte-for-byte original
+  // string. Pre-fix this suppressed (readScore 7 > buildScore 4, old
+  // condition). Post-fix (buildScore 4 >= 2) it must NOT suppress.
+  {
+    const fixture = 'Add --dry-run flag to prism-audit-runner. First read tools/prism-audit-runner.mjs to understand how it lists and runs each scenario today, then analyze the current argument parsing, identify where a --dry-run flag should short-circuit execution, note the existing test invocations, and document what you find before you implement the change and generate the flag.';
+    const {ctx, skills} = await nudgeFor(fixture);
+    check('Case 14 (FIRE): #38 build=4/read=7 fixture → advisory context IS emitted (not suppressed)',
+      ctx !== '' && skills.includes('dry-run-audit-expert'),
+      `expected non-empty advisory context surfacing dry-run-audit-expert, got ctx="${ctx}" skills=${JSON.stringify(skills)}`);
+
+    const routingLog = join(HOME, '.claude', '.prism-routing.jsonl');
+    const lines = existsSync(routingLog)
+      ? readFileSync(routingLog, 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+      : [];
+    const thisEval = lines.filter(l => l.event === 'skill_equip_advisory' && Array.isArray(l.matched) && l.matched.includes('dry-run-audit-expert'));
+    check('Case 14 (FIRE): routing log for this build=4/read=7 evaluation has NO suppressed field',
+      thisEval.length > 0 && thisEval.every(e => !('suppressed' in e)),
+      `expected a matched:[...,"dry-run-audit-expert"] entry with no 'suppressed' key, got ${JSON.stringify(thisEval)}`);
+  }
+
+  // Case 15 (R3 F6 — D042 QUIET case). The real #37-style pure read/review
+  // prompt (verbatim from tests/v3/audit-scenarios.json id UAT60-J37:
+  // "read hooks/prism-safety.mjs and summarize its regex list") scores
+  // buildScore=0 / readScore=3 (read > build, build < 2) — must STILL be
+  // suppressed as read-dominant after the fix (only the buildScore>=2 case is
+  // exempted from suppression).
+  {
+    const fixture = 'read hooks/prism-safety.mjs and summarize its regex list';
+    const {ctx, skills} = await nudgeFor(fixture);
+    check('Case 15 (QUIET): #37-style buildScore<2 read-dominant prompt → empty stdout',
+      ctx === '' && skills.length === 0,
+      `expected empty nudge, got ctx="${ctx}" skills=${JSON.stringify(skills)}`);
+
+    const routingLog = join(HOME, '.claude', '.prism-routing.jsonl');
+    const lines = existsSync(routingLog)
+      ? readFileSync(routingLog, 'utf-8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+      : [];
+    const suppressedEvents = lines.filter(l => l.event === 'skill_equip_advisory' && l.suppressed === 'read-dominant' && l.build_score === 0 && l.read_score === 3);
+    check('Case 15 (QUIET): routing log records suppressed:\'read-dominant\' for build=0/read=3',
+      suppressedEvents.length > 0,
+      `expected a suppressed:'read-dominant' build_score:0/read_score:3 entry, got ${JSON.stringify(lines.filter(l => l.event === 'skill_equip_advisory'))}`);
   }
 } finally {
   try { rmSync(HOME, {recursive: true, force: true}); } catch {}

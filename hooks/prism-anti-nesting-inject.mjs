@@ -22,6 +22,15 @@ const MODE = String(process.env.PRISM_ANTI_NESTING_INJECT ?? 'on').toLowerCase()
 
 const PRESENT_RE = /main-loop-only|do NOT spawn|don't spawn|MUST NOT spawn|compute your own result|report YOUR OWN result|dispatch is main-loop|you cannot dispatch/i;
 
+// Single source of truth for the holding-string ban clause (F1 Layer A).
+// Referenced by BOTH FOOTER and FORK_FOOTER here, and imported by
+// prism-dispatch-preamble.mjs so the SendMessage work-assignment path carries
+// the SAME ban verbatim (previously it only reached the Agent dispatch path).
+// Wording is byte-identical to the prior FOOTER/FORK_FOOTER text; only the
+// intra-sentence line-wrapping is normalized to one line so a single const can
+// feed all three emit sites without drift.
+export const HOLDING_STRING_BAN = "A final message that is only a holding/status string (e.g. 'verifying...', 'the child is checking...') is a FAILED result.";
+
 const FOOTER = [
   '',
   '---',
@@ -29,8 +38,7 @@ const FOOTER = [
   'you CANNOT and MUST NOT spawn sub-agents (no Agent/Task dispatch, no `claude -p`).',
   'Do the work YOURSELF with the tools you have and report YOUR OWN result. Do not delegate',
   'by re-describing this task to another agent. If you genuinely need parallel help, return a',
-  'short dispatch plan to the main loop and let IT fan out. A final message that is only a',
-  "holding/status string (e.g. 'verifying...', 'the child is checking...') is a FAILED result.",
+  'short dispatch plan to the main loop and let IT fan out. ' + HOLDING_STRING_BAN,
 ].join('\n');
 
 // Fork-aware variant (D039 follow-up): a `subagent_type: 'fork'` dispatch is a
@@ -47,9 +55,7 @@ const FORK_FOOTER = [
   'no `claude -p`).',
   'Do the work YOURSELF with the tools you have and report YOUR OWN result. Do not delegate',
   'by re-describing this task to another agent. If you genuinely need parallel help, hand it',
-  'back to the dispatching agent so IT can fan out — a fork cannot fan out itself. A final',
-  "message that is only a holding/status string (e.g. 'verifying...', 'the child is",
-  "checking...') is a FAILED result.",
+  'back to the dispatching agent so IT can fan out — a fork cannot fan out itself. ' + HOLDING_STRING_BAN,
 ].join('\n');
 
 export function run(input) {

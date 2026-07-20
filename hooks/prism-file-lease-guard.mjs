@@ -44,6 +44,7 @@ import { join, dirname, basename } from 'node:path';
 import { prismHome } from './lib/prism-home.mjs';
 import { extractAgentId, reconcile } from './lib/prism-live-agents.mjs';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
+import { classifyBuildVsRead } from './prism-specialist-routing-guard.mjs';
 
 // Declaration line. agent= is the DECLARED identity (the agent writes its own
 // agentId); files= is a comma-separated path list terminated by end-of-line.
@@ -153,10 +154,44 @@ export async function run(payload, env = process.env) {
     const text = tool === 'Agent'
       ? `${String(ti.description || '')}\n${String(ti.prompt || '')}`
       : (typeof ti.message === 'string' ? ti.message : '');
-    const declared = parseLeases(text);
-    if (!declared.length) return quiet;
-
     const sessionId = (payload && payload.session_id) || 'anon';
+    const declared = parseLeases(text);
+    if (!declared.length) {
+      // No lease declared. Observe the MISS (F4) so a fan-out that declares
+      // nothing is distinguishable from the hook not running at all — the
+      // original early-return left zero trace here. NO inference of ownership,
+      // NO deny path. Gate on ≥2 genuinely concurrent agents so solo sessions
+      // produce no log spam.
+      const concurrent = concurrentCount(sessionId, tool === 'Agent');
+      if (concurrent >= 2) {
+        appendLog({
+          event: 'file_lease_guard',
+          ts: new Date().toISOString(),
+          session_id: sessionId,
+          tool_name: tool,
+          declared: 0,
+          concurrent,
+          advised: false,
+          no_declaration: true,
+        });
+        // Producer nudge: only when this write-capable (build-class) dispatch
+        // could actually clobber. Advisory only — exit 0, additionalContext.
+        if (classifyBuildVsRead(text).isBuild) {
+          const notice =
+            'PRISM FILE-LEASE: ≥2 concurrent agents and this write-capable dispatch declares no file ownership. '
+            + 'Add `PRISM-LEASE: agent=<id> files=<paths>` to the dispatch prompt (see master-orchestrator SKILL.md).';
+          return {
+            exit: 0,
+            stdout: JSON.stringify({
+              hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: notice },
+            }),
+            stderr: '',
+          };
+        }
+      }
+      return quiet;
+    }
+
     const now = Date.now();
     const p = leasePath(sessionId);
     const collisions = [];

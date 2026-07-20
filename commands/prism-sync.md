@@ -110,6 +110,8 @@ Run: `node ~/.claude/tools/prism-sync.mjs complete --meta '<json>'`
 
 This stamps `last_sync_at = now` and `next_sync_recommended = now + 7d`.
 
+**Verification artifact:** the authoritative stamp is `<project>/.claude/.prism-state.json → last_sync_at` (NOT the roster). A completed sync also appends a `{"event":"prism_sync","action":"complete"}` line to `~/.claude/.prism-routing.jsonl`; a declined sync in an unbootstrapped worktree appends `{"event":"prism_sync","action":"no-state"}`. Audit those, not the roster.
+
 Then summarize for the user:
 
 - ✅ Phases re-scanned: <list>

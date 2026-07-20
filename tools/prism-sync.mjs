@@ -12,8 +12,9 @@
 //
 // All subcommands accept --root <path> and refuse to run without .git/ unless --no-git-guard.
 
-import {existsSync, statSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {existsSync, statSync, appendFileSync, mkdirSync} from 'node:fs';
+import {homedir} from 'node:os';
+import {dirname, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
 
 import {
@@ -68,11 +69,28 @@ function die(msg, code = 1) {
   exit(code);
 }
 
+// Fail-open routing-log append (mirrors the hooks' one-liner pattern, e.g.
+// hooks/prism-file-lease-guard.mjs appendLog). Gives the exit-3/no-op and
+// completion decision points an observable trace so "correctly declined" and
+// "silently broken" are distinguishable after the fact (F8). Telemetry must
+// never break the sync it records — swallow every error.
+function appendRouting(obj) {
+  try {
+    const home = process.env.HOME || process.env.USERPROFILE || homedir();
+    const p = join(home, '.claude', '.prism-routing.jsonl');
+    mkdirSync(dirname(p), {recursive: true});
+    appendFileSync(p, JSON.stringify({ts: new Date().toISOString(), ...obj}) + '\n');
+  } catch { /* fail-open */ }
+}
+
 // ------------------------------ phase planning ------------------------------
 
 function loadStateOrDie() {
   const r = readState(opts.root);
   if (r.status === 'missing') {
+    // Observability for the correct-by-design decline in an unbootstrapped
+    // worktree: the exit-3 STOP contract is unchanged, we only leave a trace.
+    if (cmd === 'plan') appendRouting({event: 'prism_sync', action: 'no-state', root: opts.root});
     die('no state file. Run: /prism-bootstrap first.', 3);
   }
   if (r.status !== 'ok') {
@@ -167,6 +185,7 @@ try {
       }
 
       writeStateAtomic(opts.root, next);
+      appendRouting({event: 'prism_sync', action: 'complete', last_sync_at: now});
       stdout.write(`sync complete: last_sync_at=${now}, next_sync_recommended=${nextRecommended}\n`);
       break;
     }

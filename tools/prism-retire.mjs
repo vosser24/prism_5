@@ -14,14 +14,26 @@
 // only the dangerous roster + filesystem mutation.
 //
 // Usage:
-//   node tools/prism-retire.mjs <agent-name> [--dry-run] [--home <path>]
+//   node tools/prism-retire.mjs <agent-name> [--dry-run] [--home <path>] [--project]
 //   (a leading '@' on the name is accepted and stripped)
+//
+// --project (R3 F7 / UAT #43): retires a PROJECT-scoped agent instead of the
+// global one. A project agent lives at <cwd>/.claude/agents/<name>.md with its
+// own roster at <cwd>/.claude/agents/roster.json (archived to
+// <cwd>/.claude/agents-archive/). This is opt-in ONLY — no auto-guessing
+// between global and project scope, so the ambiguity is always surfaced to
+// the caller explicitly. Without --project, behavior is byte-for-byte
+// identical to before (global paths under HOME). All existing safety (name
+// validation, parse-before-touch, withRosterLock atomic write, --dry-run)
+// applies unchanged to the project paths — same code, just different dirs.
 //
 // Exit codes:
 //   0  ok
 //   1  unexpected error
 //   2  invalid args / unsafe name / HOME unresolved
-//   3  agent not found (absent from roster AND from disk)
+//   3  agent not found (absent from roster AND from disk). If found instead at
+//      the project-scoped paths (and --project was not passed), the message
+//      hints to re-run with --project.
 //   13 roster.json missing or unparseable
 
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
@@ -29,13 +41,14 @@ import { join } from 'node:path';
 import { withRosterLock } from './lib/prism-roster-lock.mjs';
 
 const args = process.argv.slice(2);
-const opts = { name: null, dryRun: false, home: null };
+const opts = { name: null, dryRun: false, home: null, project: false };
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--dry-run') opts.dryRun = true;
+  else if (a === '--project') opts.project = true;
   else if (a === '--home') opts.home = args[++i];
   else if (a === '-h' || a === '--help') {
-    process.stdout.write('Usage: prism-retire <agent-name> [--dry-run] [--home <path>]\n');
+    process.stdout.write('Usage: prism-retire <agent-name> [--dry-run] [--home <path>] [--project]\n');
     process.exit(0);
   } else if (a.startsWith('-')) {
     process.stderr.write(`error: unknown arg "${a}"\n`);
@@ -64,9 +77,21 @@ if (!HOME) {
   process.exit(2);
 }
 
-const ROSTER = join(HOME, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
-const AGENTS_DIR = join(HOME, '.claude', 'agents');
-const ARCHIVE_DIR = join(HOME, '.claude', 'agents-archive');
+const CWD = process.cwd();
+const GLOBAL_ROSTER = join(HOME, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+const GLOBAL_AGENTS_DIR = join(HOME, '.claude', 'agents');
+const GLOBAL_ARCHIVE_DIR = join(HOME, '.claude', 'agents-archive');
+// Project-scoped paths (R3 F7 / UAT #43): a project agent lives at
+// <cwd>/.claude/agents/<name>.md with its own roster.json alongside it.
+const PROJECT_ROSTER = join(CWD, '.claude', 'agents', 'roster.json');
+const PROJECT_AGENTS_DIR = join(CWD, '.claude', 'agents');
+const PROJECT_ARCHIVE_DIR = join(CWD, '.claude', 'agents-archive');
+
+// --project selects the project-scoped triad; default (no flag) is IDENTICAL
+// to pre-F7 behavior — no auto-guessing between scopes.
+const ROSTER = opts.project ? PROJECT_ROSTER : GLOBAL_ROSTER;
+const AGENTS_DIR = opts.project ? PROJECT_AGENTS_DIR : GLOBAL_AGENTS_DIR;
+const ARCHIVE_DIR = opts.project ? PROJECT_ARCHIVE_DIR : GLOBAL_ARCHIVE_DIR;
 
 async function main() {
   // 1. roster must exist + parse BEFORE we touch any file (fail-safe: a corrupt
@@ -91,6 +116,26 @@ async function main() {
   const flatExists = existsSync(flat);
 
   if (!inRoster && !dirExists && !flatExists) {
+    // R3 F7 / UAT #43: before giving up, check whether the name is actually a
+    // PROJECT-scoped agent (only relevant when we were looking at the GLOBAL
+    // paths — i.e. --project was not passed). No auto-guessing/auto-retry —
+    // just surface the hint so the caller can explicitly re-run with --project.
+    if (!opts.project) {
+      let projectAgents = {};
+      try {
+        const projectRoster = JSON.parse(readFileSync(PROJECT_ROSTER, 'utf8'));
+        projectAgents = (projectRoster && projectRoster.agents) || {};
+      } catch {}
+      const inProjectRoster = Object.prototype.hasOwnProperty.call(projectAgents, name);
+      const projectDirExists = existsSync(join(PROJECT_AGENTS_DIR, name));
+      const projectFlatExists = existsSync(join(PROJECT_AGENTS_DIR, name + '.md'));
+      if (inProjectRoster || projectDirExists || projectFlatExists) {
+        process.stderr.write(
+          `error: agent "${name}" not found in the global roster, but found in the PROJECT roster at ${PROJECT_ROSTER} — re-run with --project\n`
+        );
+        process.exit(3);
+      }
+    }
     process.stderr.write(`error: agent "${name}" not found (absent from roster and from ${AGENTS_DIR})\n`);
     process.exit(3);
   }

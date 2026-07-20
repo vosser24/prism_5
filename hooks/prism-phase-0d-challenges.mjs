@@ -39,6 +39,19 @@ export async function run(payload) {
 
   const taskSha = extractTaskSha(panelPath);
   const ts = new Date().toISOString();
+
+  // #75 (mirrors #57's phase_1_5 pending-written marker) — a same-day
+  // PRISM_PHASE_0D_MOCK_VERDICT fire or a synthetic/test-labeled session_id
+  // must not be countable as a genuine live fire by /prism-health Step 2
+  // (health would otherwise report an optimistic "Phase-0d: last fire ..."
+  // from a mock/synthetic panel.json write instead of NEVER). Additive
+  // fields only — existing fields (task_sha/position/challenge_n/...)
+  // unchanged.
+  const sessionId = payload?.session_id || 'anon';
+  const isMockEnv = !!process.env.PRISM_PHASE_0D_MOCK_VERDICT;
+  const isSyntheticSession = /^(synthetic|test|mock)[-_]/i.test(String(sessionId));
+  const mock = isMockEnv || isSyntheticSession;
+
   for (const position of panel.positions ?? []) {
     const challenges = position.challenges ?? [];
     for (let i = 0; i < challenges.length; i++) {
@@ -52,6 +65,8 @@ export async function run(payload) {
         challenge_n: i + 1,
         evidence_class: c.evidence_class ?? 'UNCLASSIFIED',
         challenge_substance: c.substance_score ?? null,
+        session_id: sessionId,
+        mock,
       };
       try { appendFileSync(ROUTING_LOG, JSON.stringify(entry) + '\n'); }
       catch (e) { process.stderr.write(`[phase-0d-challenges] log write failed: ${e.message}\n`); }

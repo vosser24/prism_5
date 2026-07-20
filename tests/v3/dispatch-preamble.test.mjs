@@ -28,6 +28,7 @@ import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {HOLDING_STRING_BAN} from '../../hooks/prism-anti-nesting-inject.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(__dirname, '..', '..', 'hooks');
@@ -63,6 +64,7 @@ function runHook(payload, env = {}) {
     exit: r.status,
     stdout: (r.stdout || '').trim(),
     prompt: hso && hso.updatedInput && hso.updatedInput.prompt,
+    message: hso && hso.updatedInput && hso.updatedInput.message,
   };
 }
 
@@ -243,6 +245,91 @@ function runDispatcher(payload, envOverrides = {}) {
       || ((second.prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1
           && (second.prompt.match(/\[PRISM anti-nesting\]/g) || []).length === 1),
     `first.prompt=${first.prompt}\nsecond.prompt=${second.prompt}`);
+}
+
+// ---------------------------------------------------------------------------
+// Part 3 (F1 Layer A) — SendMessage work-assignment path carries the
+// holding-string ban. Before the fix, the ban reached only the Agent dispatch
+// path (prism-anti-nesting-inject FOOTER/FORK_FOOTER); SendMessage assignments
+// — ~half of agent-teams hand-offs — never received it. D042 fire/quiet pair.
+// ---------------------------------------------------------------------------
+
+// 3a. FIRE — a SendMessage payload that passes ALL 5 gating heuristics
+// (plain string; ≥200 chars; no status-open marker; assignment marker in the
+// first 400 chars; completion-criteria marker present) → the ban text lands in
+// updatedInput.message.
+{
+  const assignment = [
+    'Your task: implement the exponential-backoff retry helper in src/net/retry.mjs.',
+    'You are the worker for this unit. Read the existing HTTP client, add retry with',
+    'jitter, and cap attempts at five before surfacing the last error to the caller.',
+    'Acceptance: the unit tests cover the backoff sequence and the attempt cap.',
+    'Deliverables: the helper plus its tests. Done when node tests/net-retry.test.mjs',
+    'passes with zero failures and the existing client call sites remain unchanged.',
+  ].join(' ');
+  const payload = {
+    tool_name: 'SendMessage',
+    tool_input: {to: 'worker-1', message: assignment},
+    session_id: 'sendmessage-fire-test',
+  };
+  const r = runHook(payload);
+  check('3a SendMessage assignment passes all gates → updatedInput.message present',
+    typeof r.message === 'string' && r.message.length > 0, `stdout=${r.stdout}`);
+  check('3a original assignment text preserved at the start',
+    typeof r.message === 'string' && r.message.startsWith(assignment), `message=${r.message}`);
+  check('3a dispatch-preamble tag present (idempotency anchor)',
+    typeof r.message === 'string' && r.message.includes('[PRISM dispatch-preamble]'), `message=${r.message}`);
+  check('3a holding-string ban text present in the assignment',
+    typeof r.message === 'string' && r.message.includes(HOLDING_STRING_BAN), `message=${r.message}`);
+  check('3a ban text is byte-identical to the anti-nesting export (single source of truth)',
+    r.message.includes("holding/status string (e.g. 'verifying...', 'the child is checking...') is a FAILED result."),
+    `message=${r.message}`);
+}
+
+// 3b. QUIET — a short status ping → all gates fail (length < 200 AND opens with
+// a status marker) → no rewrite, empty stdout.
+{
+  const payload = {
+    tool_name: 'SendMessage',
+    tool_input: {to: 'main', message: 'status: phase 1 done, all green — verifying now.'},
+    session_id: 'sendmessage-quiet-ping',
+  };
+  const r = runHook(payload);
+  check('3b short status ping → no rewrite (empty stdout)',
+    r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// 3c. QUIET — a structured (non-string) protocol message is never touched.
+{
+  const payload = {
+    tool_name: 'SendMessage',
+    tool_input: {to: 'main', message: {type: 'shutdown', reason: 'complete'}},
+    session_id: 'sendmessage-quiet-struct',
+  };
+  const r = runHook(payload);
+  check('3c structured (non-string) message → no rewrite (empty stdout)',
+    r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// 3d. QUIET — a long report ABOUT work (no assignment/criteria markers) stays
+// untouched: proves the ban rides only on genuine work assignments, not on
+// teammate chatter that merely happens to be long.
+{
+  const chatter = [
+    'I finished tracing the failing checkout path and confirmed the root cause is',
+    'a stale cache key in the pricing module. I have not changed anything yet — just',
+    'wanted to share the findings so we can decide the next step together whenever',
+    'you have a moment. The relevant code is in src/pricing/cache.mjs, right around',
+    'the memoization wrapper that keys on the raw request instead of the normalized one.',
+  ].join(' ');
+  const payload = {
+    tool_name: 'SendMessage',
+    tool_input: {to: 'main', message: chatter},
+    session_id: 'sendmessage-quiet-chatter',
+  };
+  const r = runHook(payload);
+  check('3d long status report (no assignment/criteria markers) → no rewrite (empty stdout)',
+    r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

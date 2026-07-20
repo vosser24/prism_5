@@ -46,15 +46,28 @@ await test('panel-guard runSubagentStop() no-ops on non-panel subagent_type, exi
 // ─── Task 3.3: prism-phase-1-5-oob ──────────────────────────────────────────
 
 await test('phase-1-5-oob run() exits 0 fast under recursion guard', async () => {
-  const mod = await import(pathToFileURL(join(HOOKS, 'prism-phase-1-5-oob.mjs')).href);
-  assert(typeof mod.run === 'function', 'phase-1-5-oob must export run()');
-  const t0 = Date.now();
-  const prev = process.env.PRISM_OOB_REVIEWER_PROCESS; process.env.PRISM_OOB_REVIEWER_PROCESS = '1';
+  // D046 test-home-leak: prism-phase-1-5-oob.mjs resolves H (its routing-log
+  // and roster-path base) as a MODULE-LEVEL const at import time, not lazily
+  // per-call. HOME/USERPROFILE must be pointed at an isolated temp dir BEFORE
+  // the dynamic import below, or logEvent('recursion-guard') writes straight
+  // into the real ~/.claude/.prism-routing.jsonl.
+  const home = fakeHome('oob-recursion');
+  const prevH = process.env.HOME, prevU = process.env.USERPROFILE;
+  process.env.HOME = home; process.env.USERPROFILE = home;
   try {
-    const res = await mod.run({agent_name: 'x', session_id: 's'});
-    assert(res.exit === 0, 'exit 0');
-    assert(Date.now() - t0 < 3000, 'returns fast (does not await reviewer)');
-  } finally { if (prev === undefined) delete process.env.PRISM_OOB_REVIEWER_PROCESS; else process.env.PRISM_OOB_REVIEWER_PROCESS = prev; }
+    const mod = await import(pathToFileURL(join(HOOKS, 'prism-phase-1-5-oob.mjs')).href);
+    assert(typeof mod.run === 'function', 'phase-1-5-oob must export run()');
+    const t0 = Date.now();
+    const prev = process.env.PRISM_OOB_REVIEWER_PROCESS; process.env.PRISM_OOB_REVIEWER_PROCESS = '1';
+    try {
+      const res = await mod.run({agent_name: 'x', session_id: 's'});
+      assert(res.exit === 0, 'exit 0');
+      assert(Date.now() - t0 < 3000, 'returns fast (does not await reviewer)');
+    } finally { if (prev === undefined) delete process.env.PRISM_OOB_REVIEWER_PROCESS; else process.env.PRISM_OOB_REVIEWER_PROCESS = prev; }
+  } finally {
+    process.env.HOME = prevH; process.env.USERPROFILE = prevU;
+    rmSync(home, {recursive: true, force: true});
+  }
 });
 
 await test('SubagentStop dispatcher: fans to 3, panel-guard hard mode propagates exit 2', async () => {
