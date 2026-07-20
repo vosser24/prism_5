@@ -7,7 +7,7 @@ import{pathToFileURL}from'url';
 import{basename}from'path';
 import{withRosterLock}from'../tools/lib/prism-roster-lock.mjs';
 import{prismHome}from'./lib/prism-home.mjs';
-import{appendRecord as appendLiveAgentRecord}from'./lib/prism-live-agents.mjs';
+import{appendRecord as appendLiveAgentRecord,extractAgentKey}from'./lib/prism-live-agents.mjs';
 
 export async function run(payload) {
 const input = payload;
@@ -182,15 +182,19 @@ try{
 
 // ── Package E: live-agents ledger — record completion (anti-confabulation) ──
 // ADDITIVE (does not disturb roster/spend behavior above): append a
-// {agentId, status:'completed'} record to the session-scoped ledger, keyed on
-// the SAME identity resolution used above (rawName: agent_type → subagent_type →
-// agent_name → agent), so this Stop record reconciles against the SubagentStart
-// `running` record for the same agent. Fail-open: no session_id / no id / any
-// error → skip silently.
+// {agentId, status:'completed'} record to the session-scoped ledger. The ledger
+// key is now the shared per-instance extractAgentKey(input) (agent_id when the
+// payload carries one, else the type — same resolver SubagentStart uses), so
+// this Stop record reconciles against the SubagentStart `running` record for the
+// SAME instance rather than colliding with other concurrent agents of the same
+// type. rawName (the type) is preserved separately as agentType. Fail-open: no
+// session_id / no rawName / any error → skip silently.
 try{
   if(sessionId&&rawName){
+    const liveKey = extractAgentKey(input);
     appendLiveAgentRecord(H, sessionId, {
-      agentId: rawName,
+      agentId: liveKey,
+      agentType: rawName,
       status: 'completed',
       completedAt: new Date().toISOString(),
     });

@@ -6,6 +6,18 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.4] - 2026-07-20
+
+### Fixed
+
+- **fix(live-agents): #86 — key the ledger on per-instance `agent_id`, not
+  agent type (D055).** Fixes same-type dispatch collision (N general-purpose
+  agents collapsing into one flickering slot → both stale-running
+  false-positive and collision-hidden completed false-negative). Adds a
+  60-min running-entry age-cap (`PRISM_LIVE_AGENTS_RUNNING_TTL_MS`) backstop
+  for crashed instances. `collectLiveWork` bridges type-keyed `taskText` to
+  agent_id-keyed status so the live-work dedup does not regress.
+
 ## [6.6.3] - 2026-07-20
 
 Panel governance release: closes the Team-Assembly enforcement gap that let a

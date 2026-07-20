@@ -20,6 +20,13 @@ import { join } from 'node:path';
 // resolution EXACTLY (agent_type → subagent_type → agent_name → agent, @-stripped
 // and trimmed) so a SubagentStart record and its SubagentStop record key on the
 // SAME id and reconcile together. Do not "improve" this in isolation.
+//
+// NOTE: extractAgentId/extractAgentType below are the TYPE-only resolvers, still
+// used where a stable type-level key is required (roster, spend, telemetry). The
+// live-agents ledger itself keys on extractAgentKey (below), which prefers the
+// per-instance `agent_id` the SubagentStart/SubagentStop payloads carry and falls
+// back to extractAgentType only when agent_id is absent (legacy/provider paths).
+// The type→per-instance switch lives ONLY in extractAgentKey — do not duplicate it.
 export function extractAgentId(payload) {
   if (!payload || typeof payload !== 'object') return '';
   const raw = (payload.agent_type || payload.subagent_type || payload.agent_name || payload.agent || '');
@@ -32,6 +39,34 @@ export function extractAgentType(payload) {
   if (!payload || typeof payload !== 'object') return '';
   const t = (payload.agent_type || payload.subagent_type || payload.agent_name || payload.agent || '');
   return (typeof t === 'string' ? t : '').trim().replace(/^@/, '');
+}
+
+// Per-instance ledger key. SubagentStart/SubagentStop payloads both carry a
+// per-instance `agent_id` (format `a<agent_type>-<16hex>`), identical for the
+// same instance — prefer it so two concurrent agents of the same TYPE don't
+// collide on one ledger key. Falls back to extractAgentType(payload) when
+// agent_id is absent (legacy/provider paths). THIS is the single place the
+// type→per-instance switch lives; extractAgentId/extractAgentType stay
+// type-only and unchanged for their existing (roster/spend/telemetry) callers.
+export function extractAgentKey(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const id = typeof payload.agent_id === 'string' ? payload.agent_id.trim() : '';
+  if (id) return id;
+  return extractAgentType(payload);
+}
+
+// Running-entry age cap for renderSummary: PRISM_LIVE_AGENTS_RUNNING_TTL_MS,
+// integer ms, clamped 60s..24h, default 60 min. Mirrors the clamp style of
+// ttlMs() in hooks/prism-live-work-dedup.mjs (same shape, different env var /
+// window — that one bounds orphan-task liveness, this one bounds how long a
+// `running` ledger entry is trusted before renderSummary stops showing it).
+export function runningTtlMs(env = process.env) {
+  const raw = env.PRISM_LIVE_AGENTS_RUNNING_TTL_MS;
+  if (raw != null && /^\d+$/.test(String(raw).trim())) {
+    const n = parseInt(String(raw).trim(), 10);
+    if (n >= 60000 && n <= 86400000) return n;
+  }
+  return 3600000;
 }
 
 // Session-scoped ledger path: ~/.claude/.prism-live-agents-<session_id>.jsonl
@@ -123,8 +158,9 @@ export function collectLiveWork(home, sessionId, ttlMs = 15 * 60000, now = Date.
       if (!rec || typeof rec !== 'object') continue;
       const id = typeof rec.agentId === 'string' ? rec.agentId.trim() : '';
       if (!id) continue;
-      const a = agents.get(id) || { status: '', texts: [], lastTaskTs: 0 };
+      const a = agents.get(id) || { status: '', texts: [], lastTaskTs: 0, agentType: '' };
       if (typeof rec.status === 'string' && rec.status) a.status = rec.status;
+      if (rec.agentType && !a.agentType) a.agentType = rec.agentType;
       if (typeof rec.taskText === 'string' && rec.taskText) {
         a.texts.push(rec.taskText);
         if (a.texts.length > TASK_TEXTS_PER_AGENT) a.texts.shift();
@@ -136,11 +172,24 @@ export function collectLiveWork(home, sessionId, ttlMs = 15 * 60000, now = Date.
   } catch {
     return new Map();
   }
+  // Status records now key on the per-instance agentId (extractAgentKey), while
+  // taskText records (from Agent/SendMessage dispatch — see prism-live-work-dedup.mjs)
+  // still key on the agent TYPE string. So a texted entry's map key can no longer be
+  // matched directly against a status entry's key. Bridge them via agentType:
+  // runningTypes/seenTypes are built from status-bearing (agent_id-keyed) entries'
+  // final (last-write-wins) status + agentType.
+  const runningTypes = new Set();
+  const seenTypes = new Set();
+  for (const a of agents.values()) {
+    if (!a.status || !a.agentType) continue;
+    seenTypes.add(a.agentType);
+    if (a.status === 'running') runningTypes.add(a.agentType);
+  }
   const live = new Map();
   for (const [id, a] of agents) {
     if (a.texts.length === 0) continue;
-    const isLive = a.status === 'running'
-      || (!a.status && a.lastTaskTs > 0 && (now - a.lastTaskTs) < ttlMs);
+    const isLive = runningTypes.has(id)
+      || (!seenTypes.has(id) && a.lastTaskTs > 0 && (now - a.lastTaskTs) < ttlMs);
     if (isLive) live.set(id, a);
   }
   return live;
@@ -195,24 +244,48 @@ export function taskOverlap(aSet, bSet) {
 }
 
 // Render the one-line summary from a reconciled Map. Empty / non-Map → ''.
-// Format: `Live agents (session): N running [id:type,...], M completed [id:type,...].`
-export function renderSummary(map) {
+// Format: `Live agents (session): N running [label,...], M completed [label,...].`
+// `now`/`ttlMs` are backward-compatible options (default Date.now() /
+// runningTtlMs()) — existing callers that pass renderSummary(map) are unaffected.
+//
+// Running entries are age-capped: a `running` record older than ttlMs (measured
+// from startedAt) is dropped — a crashed/orphaned agent shouldn't claim to be
+// live forever. Missing/unparseable startedAt is conservative: SHOW it rather
+// than hide a genuinely-running agent because of a bad timestamp. Completed
+// entries are always shown (no age cap — they are a settled fact, not a claim).
+//
+// Labels are the agentType by default (clean, human-readable); only when ≥2
+// rendered entries (running+completed together) share the same type does the
+// label disambiguate to `${type}#${last4ofAgentId}` — the raw per-instance
+// a<type>-<hex> id is never shown directly.
+export function renderSummary(map, { now = Date.now(), ttlMs = runningTtlMs() } = {}) {
   try {
     if (!map || typeof map.values !== 'function') return '';
-    const running = [];
-    const completed = [];
+    const runningEntries = [];
+    const completedEntries = [];
     for (const rec of map.values()) {
       if (!rec || typeof rec !== 'object') continue;
       const id = rec.agentId || '';
       if (!id) continue;
       const type = (rec.agentType && String(rec.agentType).trim()) ? String(rec.agentType).trim() : id;
-      const tag = `${id}:${type}`;
-      if (rec.status === 'running') running.push(tag);
-      else if (rec.status === 'completed') completed.push(tag);
+      if (rec.status === 'running') {
+        const startedAt = typeof rec.startedAt === 'string' ? rec.startedAt : '';
+        const parsed = startedAt ? Date.parse(startedAt) : NaN;
+        const withinCap = Number.isNaN(parsed) || (now - parsed) < ttlMs;
+        if (withinCap) runningEntries.push({ id, type });
+      } else if (rec.status === 'completed') {
+        completedEntries.push({ id, type });
+      }
     }
-    if (running.length === 0 && completed.length === 0) return '';
-    running.sort();
-    completed.sort();
+    if (runningEntries.length === 0 && completedEntries.length === 0) return '';
+    // First pass: count agentType occurrences among entries that will actually
+    // be rendered (running + completed, post age-cap). Second pass builds labels.
+    const typeCounts = new Map();
+    for (const e of runningEntries) typeCounts.set(e.type, (typeCounts.get(e.type) || 0) + 1);
+    for (const e of completedEntries) typeCounts.set(e.type, (typeCounts.get(e.type) || 0) + 1);
+    const label = (e) => (typeCounts.get(e.type) >= 2 ? `${e.type}#${e.id.slice(-4)}` : e.type);
+    const running = runningEntries.map(label).sort();
+    const completed = completedEntries.map(label).sort();
     return `Live agents (session): ${running.length} running [${running.join(',')}], ${completed.length} completed [${completed.join(',')}].`;
   } catch {
     return '';

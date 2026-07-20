@@ -79,12 +79,14 @@ try {
       JSON.stringify({ agentId: 'b2', status: 'completed', completedAt: '2026-07-06T00:01:00Z' }),
     ].join('\n') + '\n');
     const map = lib.reconcile(TMP_HOME, SESSION2);
-    const line = lib.renderSummary(map);
-    const expected = 'Live agents (session): 1 running [a1:coffee-ledger-expert], 1 completed [b2:software-architecture-expert].';
+    const line = lib.renderSummary(map, { now: Date.parse('2026-07-06T00:05:00Z'), ttlMs: 3600000 });
+    const expected = 'Live agents (session): 1 running [coffee-ledger-expert], 1 completed [software-architecture-expert].';
     ok('(3) renderSummary exact one-line format', line === expected, line);
-    // module run() returns the same line as stdout.
+    // module run() uses live Date.now() internally — a1's startedAt is a fixed
+    // 2026-07-06 date, far outside the default running-TTL cap by the time this
+    // suite actually executes, so only assert the completed entry's shape here.
     const res = await summaryMod.run({ session_id: SESSION2 });
-    ok('(3) summary module run() emits the line as stdout', res && res.stdout === expected && res.exit === 0, res && res.stdout);
+    ok('(3) summary module run() includes the completed entry', !!(res && typeof res.stdout === 'string' && res.stdout.includes('1 completed [software-architecture-expert]') && res.exit === 0), res && res.stdout);
   }
 
   // ── (4) fail-open on missing / malformed ledger ─────────────────────────────
@@ -109,7 +111,7 @@ try {
     try { map3 = lib.reconcile(TMP_HOME, SESSION3); line3 = lib.renderSummary(map3); } catch { threw2 = true; }
     ok('(4b) malformed ledger: no throw', !threw2);
     ok('(4b) malformed ledger: only the valid record survives', map3 && map3.size === 1 && map3.has('good'), map3 && `size=${map3.size}`);
-    ok('(4b) malformed ledger: renders valid record', line3 === 'Live agents (session): 1 running [good:x], 0 completed [].', line3);
+    ok('(4b) malformed ledger: renders valid record', line3 === 'Live agents (session): 1 running [x], 0 completed [].', line3);
 
     // defensive: renderSummary(null / non-map) → '' no throw; extractAgentId bad input.
     let threw3 = false;
@@ -133,6 +135,108 @@ try {
       !existsSync(join(TMP_HOME, '.claude', '.prism-live-agents-undefined.jsonl')));
     ok('(4d) start hook missing agent id → no ledger for that session',
       !existsSync(join(TMP_HOME, '.claude', '.prism-live-agents-sess-NOID.jsonl')));
+  }
+
+  // ── (5) FIRE — two concurrent same-type agents don't collide on one key ─────
+  {
+    const SESSION5 = 'sess-FIRE';
+    const idA = 'ageneral-purpose-aaaa000000000001';
+    const idB = 'ageneral-purpose-bbbb000000000002';
+    await startHook.run({ session_id: SESSION5, agent_type: 'general-purpose', agent_id: idA });
+    await startHook.run({ session_id: SESSION5, agent_type: 'general-purpose', agent_id: idB });
+    await stopHook.run({ session_id: SESSION5, agent_type: 'general-purpose', agent_id: idA });
+    const map = lib.reconcile(TMP_HOME, SESSION5);
+    ok('(5) FIRE: two per-instance ledger entries (no collision)', map.size === 2, `size=${map.size}`);
+    const line = lib.renderSummary(map, { now: Date.now() + 60000, ttlMs: 3600000 });
+    ok('(5) FIRE: shows 1 running', /1 running/.test(line), line);
+    ok('(5) FIRE: shows 1 completed', /1 completed/.test(line), line);
+    ok('(5) FIRE: does not collapse to 2 completed', !/2 completed/.test(line), line);
+    const runningCount = Number((line.match(/(\d+) running/) || [])[1] || 0);
+    ok('(5) FIRE: running count is nonzero', runningCount !== 0, line);
+    ok('(5) FIRE: running label disambiguated with #-suffix (last4 of idB)', /general-purpose#0002/.test(line), line);
+  }
+
+  // ── (6) QUIET — different types never disambiguate, no raw id ever shown ────
+  {
+    const SESSION6 = 'sess-QUIET';
+    const idDb = 'adb-expert-1111111111111111';
+    const idApi = 'aapi-expert-2222222222222222';
+    await startHook.run({ session_id: SESSION6, agent_type: 'db-expert', agent_id: idDb });
+    await startHook.run({ session_id: SESSION6, agent_type: 'api-expert', agent_id: idApi });
+    await stopHook.run({ session_id: SESSION6, agent_type: 'db-expert', agent_id: idDb });
+    const map = lib.reconcile(TMP_HOME, SESSION6);
+    const line = lib.renderSummary(map, { now: Date.now() + 60000, ttlMs: 3600000 });
+    const expected = 'Live agents (session): 1 running [api-expert], 1 completed [db-expert].';
+    ok('(6) QUIET: exact plain-type-label line, no #, no raw a<type>-<hex> id', line === expected, line);
+  }
+
+  // ── (7) TTL — a stale `running` entry is age-capped out, a fresh one isn't ──
+  {
+    const SESSION7 = 'sess-TTL';
+    const f7 = join(TMP_HOME, '.claude', `.prism-live-agents-${SESSION7}.jsonl`);
+    const oldStarted = new Date(Date.now() - 20 * 3600000).toISOString();
+    const freshStarted = new Date(Date.now() - 60000).toISOString();
+    writeFileSync(f7, [
+      JSON.stringify({ agentId: 'idA', agentType: 'typeA', status: 'running', startedAt: oldStarted }),
+      JSON.stringify({ agentId: 'idB', agentType: 'typeB', status: 'running', startedAt: freshStarted }),
+    ].join('\n') + '\n');
+    const map = lib.reconcile(TMP_HOME, SESSION7);
+    const now = Date.now();
+    const line1 = lib.renderSummary(map, { now, ttlMs: 3600000 });
+    ok('(7) TTL: shows fresh typeB running', /typeB/.test(line1), line1);
+    ok('(7) TTL: excludes stale typeA (20h > 1h cap)', !/typeA/.test(line1), line1);
+    const line2 = lib.renderSummary(map, { now, ttlMs: 21 * 3600000 });
+    ok('(7) TTL: wider ttl shows both', /typeA/.test(line2) && /typeB/.test(line2), line2);
+  }
+
+  // ── (8) extractAgentKey — per-instance preferred, type fallback for legacy ──
+  {
+    const payload8a = { agent_type: 'general-purpose', agent_id: 'ageneral-purpose-deadbeefdeadbeef' };
+    ok('(8a) extractAgentKey prefers agent_id', lib.extractAgentKey(payload8a) === 'ageneral-purpose-deadbeefdeadbeef', lib.extractAgentKey(payload8a));
+    const SESSION8A = 'sess-KEY8A';
+    await startHook.run({ session_id: SESSION8A, ...payload8a });
+    await stopHook.run({ session_id: SESSION8A, ...payload8a });
+    const raw8a = readFileSync(join(TMP_HOME, '.claude', `.prism-live-agents-${SESSION8A}.jsonl`), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    ok('(8a) both raw records keyed byte-identical to agent_id', raw8a.length === 2 && raw8a.every(r => r.agentId === payload8a.agent_id), JSON.stringify(raw8a));
+
+    const SESSION8B = 'sess-KEY8B';
+    await startHook.run({ session_id: SESSION8B, agent_type: 'legacy' });
+    await stopHook.run({ session_id: SESSION8B, agent_type: 'legacy' });
+    const raw8b = readFileSync(join(TMP_HOME, '.claude', `.prism-live-agents-${SESSION8B}.jsonl`), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    ok('(8b) legacy payload (no agent_id): both records keyed on type', raw8b.length === 2 && raw8b.every(r => r.agentId === 'legacy'), JSON.stringify(raw8b));
+    const map8b = lib.reconcile(TMP_HOME, SESSION8B);
+    ok('(8b) reconcile size 1', map8b.size === 1, `size=${map8b.size}`);
+  }
+
+  // ── (9) dedup no-regression — MUST fail on a naive extractAgentKey-only fix ──
+  // (taskText records still key on the TYPE string; status records now key on
+  // the per-instance id — collectLiveWork must bridge them via agentType or a
+  // completed agent's texted entry stays falsely "live" forever within TTL.)
+  {
+    const SESSION9 = 'sess-DEDUP9';
+    lib.appendTaskSummary(TMP_HOME, SESSION9, 'coffee-expert', 'reconcile the ledger balances across accounts');
+    const startPayload9 = { session_id: SESSION9, agent_type: 'coffee-expert', agent_id: 'acoffee-expert-1111111111111111' };
+    await startHook.run(startPayload9);
+    const live9a = lib.collectLiveWork(TMP_HOME, SESSION9);
+    ok('(9) dedup: live entry keyed by type present after Start', live9a.has('coffee-expert'), [...live9a.keys()].join(','));
+    await stopHook.run(startPayload9);
+    const live9b = lib.collectLiveWork(TMP_HOME, SESSION9);
+    ok('(9) dedup: no-regression — live entry gone after Stop despite fresh taskTs', !live9b.has('coffee-expert'), [...live9b.keys()].join(','));
+  }
+
+  // ── (10) resume — Start→Stop→Start on the same agent_id reconciles to one ───
+  {
+    const SESSION10 = 'sess-RESUME10';
+    const payload10 = { session_id: SESSION10, agent_type: 'resumable-agent', agent_id: 'aresumable-agent-9999999999999999' };
+    await startHook.run(payload10);
+    await stopHook.run(payload10);
+    await startHook.run(payload10);
+    const map10 = lib.reconcile(TMP_HOME, SESSION10);
+    ok('(10) resume: reconcile size 1', map10.size === 1, `size=${map10.size}`);
+    const rec10 = map10.get(payload10.agent_id);
+    ok('(10) resume: final status running', rec10 && rec10.status === 'running', rec10 && rec10.status);
   }
 } finally {
   // Restore env + clean temp.

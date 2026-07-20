@@ -43,6 +43,7 @@ check (a missing signal is not evidence of "none" — D047).
 - [[D051]] OOB reviewer arming — induce the panel.json write, keep Phase-1.5 tag-only, gate+measure panel-seat
 - [[D052]] Bounded rule-token seed for lesson-match recall — retained as recall layer; precision claim WITHDRAWN by D053
 - [[D053]] Corpus-distinctiveness DF=1 anchor gate — kills the D050 lesson-match over-fire class by construction; D023 formula/threshold untouched
+- [[D054]] Panel seat-sourcing is force-injected AND provenance-instrumented at panel.json write-time; schema-shown must equal schema-enforced; ships observe-first (PRISM_PANEL_PROVENANCE) — measure before flip
 
 ## Recent lessons (last 10, pointer-only)
 
@@ -74,11 +75,13 @@ check (a missing signal is not evidence of "none" — D047).
 - [2026-07-19] Committed R1 as 8 per-fix commits on branch prism-r1-observability (79856c859..529fa0859, guards green); NOT merged/pushed/installed — next: merge to main + installer install to activate global hooks
 - [2026-07-20] Merged R1+R2+R3 to main + installed; shipped follow-ups #57/#66; built D051 OOB-arming (phase-0d panel.json-write injection + gated panel-seat arming + /prism-health honesty), fable-e2e verified, on branch prism-followups-57-58-66 (unmerged); #58 2nd approach (distinctive-token) failed fable battery via kwSet inflation and was reverted (top-N next); filed #71/#75/#76
 - [2026-07-20] Resumed handoff → SHIPPED #58 lesson-match recall gap as corpus-distinctiveness DF=1 anchor gate (D053) after round-1 rule-token seed (D052) FAILED independent fable validation (D050 over-fire class: 9-entry fire on a natural prompt); structural guarantee held under 18 counterexample probes; caught+fixed a 3rd-writer (knowledge-delta.mjs self-heal) drift bug. +#71/#75/#76 hygiene (test-home leak, phase_0d health-honesty marker, stale dispatcher test). Released 6.6.2 (dfaaf0b36), installed+verified, pushed origin (0/0). Workflow: fable-design→opus/sonnet-build→fable-adversarial-validate. Then ran D044 PII scan → 2 machine-local leaks found (scan caught 1, orchestrator ground-truth re-grep caught the 2nd in test-repair-open-tasks.mjs) + scrubbed (a2331b96c); PUBLISHED prism5 snapshot v6.6.2 (364eae008), tree==main verified. Nothing pending — origin + prism5 both current.
+- [2026-07-20] User caught the orchestrator improvising ad-hoc general-purpose panelists instead of roster+@agent-factory assembly → diagnosed PRISM's OWN panel governance as un-validated (forensic probe: 4-layer D046/D049 gap — underspecified force-inject, schema-shown≠enforced, ≥1-dispatch proxy, silent vertical-tag skip). SHIPPED #77/D054 via fable-design→opus-build→fable-adversarial-validate: force-inject seat-sourcing discipline + deterministic roster fit-list (prism-prompt-tier-router), align shown==enforced schema, observe-first provenance detector (prism-panel-guard detectAdHocSeats, PRISM_PANEL_PROVENANCE=observe default). Round-1 FAILED independent validation (gameable "<domain> domain expert" escape) → tightened to vertical-signal classifier, re-validated PASS (narrow 2/22 residual). Released 6.6.3 (9190eaf18), installed+verified, pushed origin (0/0), D044-scanned clean + PUBLISHED prism5 v6.6.3 (d53e7d2c8), tree==main. NEXT-PHASE (future, measured): flip PRISM_PANEL_PROVENANCE observe→soft→hard after confirming ~0 false-positives on live panels.
 
 ## Recent lessons (new pointer)
 
 - [[lessons#2026-06-23-6.0.0-engagement-gate]] verify-what-fired; red-team-before-design; monotonic-bool > RMW counter; 1.8x orchestration floor = dont-orchestrate-routine; soft-default + measure before enforce-flip; prove wiring with E2E test.
 - [[lessons#2026-07-20-addendum]] #58 DF=1 recall gate (D053) after round-1 (D052) FAILED independent fable validation; structural-guarantee > tuning; grep-ALL-writers drift catch; verify-the-handed-premise (#75); proportional rigor; 6.6.2 shipped.
+- [[lessons#2026-07-20-addendum-2]] #77 panel-governance fix (D054): PRISM's OWN Team-Assembly shipped un-validated (4-layer D046/D049 gap) → force-inject discipline + align schema-shown==enforced + observe-first provenance gate; no-author validator caught a gameable boundary round-1; 6.6.3 shipped + mirrored.
 
 ## Standing rules
 

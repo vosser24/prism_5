@@ -12,19 +12,19 @@
 import { readFileSync as r } from 'node:fs';
 import { basename } from 'node:path';
 import { prismHome } from './lib/prism-home.mjs';
-import { extractAgentId, extractAgentType, appendRecord } from './lib/prism-live-agents.mjs';
+import { extractAgentKey, extractAgentType, appendRecord } from './lib/prism-live-agents.mjs';
 
 export async function run(payload) {
   try {
     const input = payload || {};
     const sessionId = input.session_id || '';
-    const agentId = extractAgentId(input);
+    const agentId = extractAgentKey(input);
     // Missing fields → skip (fail-open). Nothing to key on / nowhere to key it.
     if (!sessionId || !agentId) return { exit: 0, stdout: '', stderr: '' };
     const H = prismHome();
     appendRecord(H, sessionId, {
       agentId,
-      agentType: extractAgentType(input) || agentId,
+      agentType: extractAgentType(input),
       status: 'running',
       startedAt: new Date().toISOString(),
     });
