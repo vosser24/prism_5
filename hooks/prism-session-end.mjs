@@ -12,6 +12,7 @@ import {logAdvisory} from './lib/prism-advisory-log.mjs';
 // lib so tools/prism-repair-open-tasks.mjs runs the EXACT same extractor —
 // tool/hook divergence is structurally impossible. Behavior unchanged.
 import {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks} from './lib/prism-task-snapshot.mjs';
+import {probeTaskApiTranscript} from './lib/prism-task-api-probe.mjs';
 
 // ATOMIC-WRITE-001: tempfile + renameSync with direct-write fallback.
 // Matches hooks/prism-session-start.mjs:121-136 canonical pattern.
@@ -262,6 +263,36 @@ try {
       if (meta.degraded || tail_truncated) {
         logAdvisory({hook: 'prism-session-end', event: 'task_snapshot_integrity', session_id: sessionId, ...meta});
       }
+      // DETECTION GAP (2026-07-21): the `degraded` flag above CANNOT see a
+      // harness-level Task refusal ("No such tool available: TaskCreate.
+      // TaskCreate exists but is not enabled in this context."), because the
+      // refusal row's `toolUseResult` sibling is the error STRING — non-null,
+      // so lib/prism-task-snapshot.mjs:176 counts it as a structured_hit and
+      // degraded stays false. Measured on real transcripts, see
+      // docs/prism/plans/2026-07-21-task-api-detection-gap-FIX-PLAN.md §1b.
+      // Separate, additive probe, same LEDGER leg (D046 DETECT->LEDGER->SURFACE).
+      // Advisory only — blocks nothing.
+      //
+      // It deliberately re-reads the transcript through its OWN scan instead of
+      // reusing `taskScanLines`: readTaskScanLines' prefilter (/Task|task/ AND
+      // /tool_use|toolUseResult/) drops success rows whose payload lacks the
+      // substring "task" while ALWAYS keeping refusal rows (their error text
+      // names the tool), which biases the verdict toward "unavailable" — a
+      // false positive in the dangerous direction. Same 20MB cap; bounded cost.
+      //
+      // BLAST-RADIUS ISOLATION (validation FINDING 1, 2026-07-21): its OWN
+      // try/catch. The probe sits BEFORE the snapshot/pointer writes below and
+      // inside the same outer try; without this, a throw here would skip every
+      // remaining statement — destroying the task-carryover pointer and sidecar
+      // SILENTLY (hook still exits 0, session .md still written). A probe built
+      // to DETECT silent task loss must never CAUSE it. Regression:
+      // tests/v3/state/test-prism-session-end-probe-isolation.mjs.
+      try {
+        const apiProbe = probeTaskApiTranscript(transcriptPath);
+        if (apiProbe.status === 'unavailable' || apiProbe.status === 'mixed') {
+          logAdvisory({hook: 'prism-session-end', event: 'task_api_unavailable', session_id: sessionId, ...apiProbe});
+        }
+      } catch {}
       sessionTouchedIds = new Set(allTasks.map(t => String(t.id)));
       if (allTasks.length) {
         // ROOT-CAUSE FIX (task #14): candidacy is now "not explicitly closed

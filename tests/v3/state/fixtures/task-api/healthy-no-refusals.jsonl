@@ -1,0 +1,9 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01MhMbMKFHciLniSZfAqaFK2","name":"TaskCreate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01MhMbMKFHciLniSZfAqaFK2"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_012Ur6RP6S1gntHPkL8mMVWW","name":"TaskCreate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_012Ur6RP6S1gntHPkL8mMVWW"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01584FrJn9GQi7fE151wY7se","name":"TaskUpdate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01584FrJn9GQi7fE151wY7se"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01UP9HSposZYWYn89aNNgGa5","name":"TaskUpdate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01UP9HSposZYWYn89aNNgGa5"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"For the record the failure text was: Error: No such tool available: TaskCreate. TaskCreate exists but is not enabled in this context. Use one of the available tools instead. -- quoted in prose only, this session was healthy."}]}}

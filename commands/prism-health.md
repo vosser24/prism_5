@@ -186,6 +186,24 @@ Read roster.json, count:
 
 Top 5 most-used by task count.
 
+### Step 2c — Task-API availability (added 2026-07-21)
+
+The Task tools (`TaskCreate`/`TaskUpdate`/`TaskList`/`TaskGet`) can be refused
+by the harness even when an agent's frontmatter grants them; when they are,
+PRISM's task carryover silently no-ops. Report the verdict **with its
+denominator**:
+
+```
+node ~/.claude/tools/prism-task-api-probe.mjs
+```
+
+- `available`   → GREEN.
+- `unavailable` / `mixed` → RED. Point at `/prism-doctor` symptom #12. Do NOT
+  assert a cause — it is unproven (`docs/prism/plans/2026-07-21-task-api-detection-gap-FIX-PLAN.md` §7).
+- `unknown`     → **UNKNOWN, not green.** No Task call occurred in the scanned
+  window, so nothing was measured. Print `task_calls_observed: 0` next to it.
+  Never render this as a pass.
+
 ### Step 3 — External tools status (v6.0.0)
 
 Read tools-registry.md. For each entry, check install status:

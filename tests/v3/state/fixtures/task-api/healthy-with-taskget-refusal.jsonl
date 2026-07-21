@@ -1,0 +1,10 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01VQicr8LUqBT2UNW275dTHe","name":"TaskGet","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"<tool_use_error>Error: No such tool available: TaskGet. TaskGet exists but is not enabled in this context. Use one of the available tools instead.</tool_use_error>","is_error":true,"tool_use_id":"toolu_01VQicr8LUqBT2UNW275dTHe"}]},"toolUseResult":"Error: No such tool available: TaskGet. TaskGet exists but is not enabled in this context. Use one of the available tools instead."}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_018bGkCvj5W4NMKc9UcWALwq","name":"TaskCreate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_018bGkCvj5W4NMKc9UcWALwq"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01MuC8KCt9nnKyXuKc4WjxBQ","name":"TaskCreate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01MuC8KCt9nnKyXuKc4WjxBQ"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01L6nubRDt9i42F2FDVWFi2B","name":"TaskCreate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01L6nubRDt9i42F2FDVWFi2B"}]},"toolUseResult":{"ok":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01JVfgWgcw8V7rGnRCJDRjCb","name":"TaskUpdate","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_01JVfgWgcw8V7rGnRCJDRjCb"}]},"toolUseResult":{"ok":true}}

@@ -6,6 +6,45 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.6] - 2026-07-21
+
+### Added
+
+- **Task-API availability probe (`hooks/lib/prism-task-api-probe.mjs`,
+  `tools/prism-task-api-probe.mjs`).** Post-hoc, attempt-gated: it reads the
+  evidence real Task-tool calls left behind in a session transcript and reports
+  `available` / `unavailable` / `mixed` / `unknown`. It does NOT and CANNOT call
+  the Task API itself. `unknown` means nothing was measured and is never a pass
+  (CLI exits 2). Scores only `{TaskCreate, TaskUpdate, TaskList}`; `TaskGet` and
+  `TodoWrite` refusals are bucketed as `expected_unavailable` because the
+  interactive CLI never exposes them.
+- **SessionEnd ledger wiring** — the probe result is appended to the routing
+  ledger as `task_api_unavailable` on `unavailable`/`mixed` only, and surfaced
+  through `/prism-doctor` (signal 14, symptom #12) and `/prism-health` (step 2c).
+
+### Fixed
+
+- **A throwing probe can no longer silently destroy task carryover.** The probe
+  call in `hooks/prism-session-end.mjs` now has its own `try/catch`; previously
+  it sat inside — and before — the snapshot construction, so a probe exception
+  left teardown looking healthy (exit 0, session summary written) while the
+  `.prism-open-tasks.json` pointer and sidecar were never written. Pinned by
+  `tests/v3/state/test-prism-session-end-probe-isolation.mjs` (12 checks).
+
+### Notes
+
+- Diagnostic only: nothing here denies a tool, exits non-zero from a hook, or
+  gates a mutation.
+- The Task-API failure's ROOT CAUSE remains **UNKNOWN**. The agent-teams
+  hypothesis is REFUTED by counter-example (session `f128de77` shows 18
+  successes and 1 refusal in a single session; a session-global env var cannot
+  produce both). Do not state a cause anywhere.
+- Known limitations, measured and accepted: a UTF-8 BOM swallows transcript
+  line 1 (degrades to `unknown`, never to a false `available`); auto-discovery
+  over a nonexistent project dir reports `no_transcript_path`; a refusal-texted
+  `tool_result` lacking `is_error:true` scores as a success (wire shape never
+  observed).
+
 ## [6.6.5] - 2026-07-21
 
 ### Fixed

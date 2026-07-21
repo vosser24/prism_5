@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"what is the flexbox centering syntax?"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"display:flex; align-items:center; justify-content:center;"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_readonly1","name":"Read","input":{}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok","is_error":false,"tool_use_id":"toolu_readonly1"}]},"toolUseResult":{"ok":true}}

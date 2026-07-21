@@ -99,6 +99,20 @@ Run these in parallel where possible:
     is NOT a symptom; skip it (do not run `validate`, which reports
     `invalid_schema` for a missing file).
 
+14. **Task-API availability** — the Task tools (`TaskCreate`/`TaskUpdate`/
+    `TaskList`/`TaskGet`) can be refused by the harness even when an agent's
+    frontmatter grants them. Nothing else in PRISM detects this. Run:
+    ```
+    node ~/.claude/tools/prism-task-api-probe.mjs
+    ```
+    Verdict is one of `available` / `unavailable` / `mixed` / `unknown`.
+    **`unknown` is not a pass** — it means no Task call happened in the scanned
+    window, so nothing was measured. Only `unavailable` / `mixed` is a symptom
+    (see #12). Also check the ledger for prior sessions:
+    ```
+    grep '"event":"task_api_unavailable"' ~/.claude/.prism-routing.jsonl | tail -n 5
+    ```
+
 ### Step 2 — Symptom → fix mapping
 
 For each detected symptom, emit ONE proposal in this exact format:
@@ -282,6 +296,48 @@ node ~/.claude/tools/prism-state.mjs validate   # expect status: ok
 (`reset` only removes `.prism-state.json`; `adopt` immediately rebuilds it
 from the project's identity / structure / discovery / roster / health
 evidence. Pass `--root <path>` to operate on a project other than the cwd.)
+
+#### 12. Task API refused in this context (detection added 2026-07-21)
+**Detect:** `node ~/.claude/tools/prism-task-api-probe.mjs` exits `1` with
+verdict `unavailable` or `mixed` — i.e. a real `Task*` call was observed in the
+transcript receiving `Error: No such tool available: <Tool>. <Tool> exists but
+is not enabled in this context.` Equivalent ledger signal: a
+`"event":"task_api_unavailable"` line in `~/.claude/.prism-routing.jsonl`.
+A verdict of `unknown` is **not** this symptom and **not** a clean bill of
+health — it means nothing was measured; report it as INFO with its
+`task_calls_observed` denominator.
+**Cause:** **UNPROVEN — and the obvious suspects are RULED OUT.** Do not state
+a cause as fact, and do not "fix" it by changing settings. Ruled out with
+evidence (2026-07-21): `CLAUDE_CODE_ENABLE_TASKS` (absent from every settings
+and env layer — D018); PRISM's own dispatch guard
+(`hooks/prism-parent-dispatch-guard.mjs` `ALWAYS_ALLOW`s every Task tool); and
+**agent-teams mode** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) — refuted by
+direct counter-example: one session recorded 18 Task successes *and* a refusal
+under a single constant environment, which no session-global flag can produce.
+The failure is **intermittent**, not systemic: corpus-wide the Task API
+succeeds far more often than it fails. The real gating logic lives inside the
+closed-source `claude` binary. Full analysis:
+`docs/prism/plans/2026-07-21-task-api-detection-gap-FIX-PLAN.md` §7.
+**Not this symptom:** a refusal of `TaskGet` or `TodoWrite`. Neither is exposed
+by the interactive CLI (zero successes corpus-wide), so refusing them is normal;
+the probe reports them under `expected_unavailable` and never scores them.
+**Impact:** PRISM's task carryover silently no-ops for the affected session —
+`hooks/prism-session-end.mjs` only writes `.claude/.prism-open-tasks.json` when
+`allTasks.length > 0`, so a total Task failure skips the write. Existing carried
+tasks are **not** destroyed (`mergeOpenTasks()` merges, never wholesale-overwrites).
+**Fix:** There is **no verified fix** — this is a diagnostic finding, not a
+repairable misconfiguration. Propose only these non-mutating next steps, and do
+not offer to edit `settings.fragment.json` or unset the agent-teams flag on the
+strength of an unproven hypothesis:
+```
+# 1. Confirm the carryover file is intact (expect your open tasks, untouched):
+cat .claude/.prism-open-tasks.json
+
+# 2. Record the occurrence with its full context for the open investigation:
+node ~/.claude/tools/prism-task-api-probe.mjs --json
+```
+Use a plain markdown checklist for the current session's work until the Task
+tools return.
 
 ### Step 4 — Report format
 
