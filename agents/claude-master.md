@@ -51,6 +51,7 @@ maxTurns: 40
 memory: project
 effort: high
 color: cyan
+core_domains: [hooks, subagents, mcp, plugins, permissions, settings, sessions, powershell]
 ---
 
 # Claude Code Master — Windows-first authoritative consultant
