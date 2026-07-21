@@ -6,6 +6,35 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.5] - 2026-07-21
+
+### Fixed
+
+- **specialist-routing guard no longer false-matches on ambient agent-NAME
+  tokens (D056).** `agentTerms()` now stoplists repo-ambient segments
+  (`claude`, `prism`, `code`, `agent`, `expert`, `engineer`, `specialist`,
+  `master`, `updater`, `assistant`), eliminating the ~52% name-collision
+  false-positive rate (e.g. `claude-master` / `prism-updater` matching off
+  their own name).
+
+### Changed
+
+- **Nudge floor raised to `score>=2`** (was implicit `>=1`), dropping ~78%
+  weak single-token noise; the enforce/deny bar is unchanged. Adds a new
+  silent-weak-match case so a sub-threshold match stays silent instead of
+  misfiring the "hire a specialist" nudge.
+
+### Added
+
+- **Nudge-outcome instrumentation** — routing-log events gain additive
+  `matched_terms` + `subagent_type` fields so post-nudge compliance is
+  computable (the log-observation D020 parked on).
+
+### Ref
+
+- `docs/prism/adjudications/D056-specialist-routing-guard-precision.md`.
+  Not a regression — behavior original to v5.12.0/D020.
+
 ## [6.6.4] - 2026-07-20
 
 ### Fixed

@@ -231,5 +231,81 @@ await test('E. build_class:false specialist → not recommended for build (no de
   assert(r.decision !== 'deny', `build_class:false must not trigger a block, got ${r.decision}`);
 });
 
+// ── D055/D056 ambient-token + weak-match regression (2026-07-21) ────────────
+// agentTerms() mints match-terms by splitting the SPECIALIST NAME on '-'/':'.
+// Ambient repo tokens like "claude" and "prism" are common in nearly every
+// task description in THIS repo, so 'claude-master' / 'prism-updater' false-
+// match on those bare tokens alone (score=1) — nothing to do with their real
+// domain. Mirrors the real roster.json shapes for these two agents.
+const AMBIENT_ROSTER = {
+  version: '3.1.0',
+  agents: {
+    'claude-master': {
+      core_domains: ['uncategorized'], // real placeholder value, never matches real text
+      status: 'available',
+      archived: false,
+    },
+    'prism-updater': {
+      core_domains: ['prism-infrastructure', 'self-update'], // real value, compound slugs
+      status: 'available',
+      archived: false,
+    },
+    'html-email-esp-engineer': {
+      core_domains: ['bulletproof-responsive-html-email', 'mso-conditional-comments-ghost-tables'],
+      status: 'available',
+      build_class: true,
+      archived: false,
+    },
+  },
+  skills: {}, tools: {}, mcps: {},
+};
+
+// F — name-collision false-positive: "claude" ambient token must not surface
+// claude-master as a routing suggestion for an unrelated hook-refactor task.
+await test('F. ambient "claude" token → must NOT nudge toward claude-master', () => {
+  const r = runDispatcher(
+    {tool_name: 'Agent', session_id: 'f', tool_input: {subagent_type: 'general-purpose', model: 'sonnet', prompt: 'refactor the claude code hook'}},
+    {roster: AMBIENT_ROSTER, env: {PRISM_SPECIALIST_GUARD: 'advisory'}}
+  );
+  assert(r.exit === 0, `exit ${r.exit}`);
+  assert(!/claude-master/.test(r.additionalContext || ''), `must not suggest claude-master on ambient token alone, got: ${r.additionalContext}`);
+});
+
+// G — name-collision false-positive: "prism" ambient token must not surface
+// prism-updater as a routing suggestion for an unrelated classifier task.
+await test('G. ambient "prism" token → must NOT nudge toward prism-updater', () => {
+  const r = runDispatcher(
+    {tool_name: 'Agent', session_id: 'g', tool_input: {subagent_type: 'general-purpose', model: 'sonnet', prompt: 'refactor the prism classifier scoring'}},
+    {roster: AMBIENT_ROSTER, env: {PRISM_SPECIALIST_GUARD: 'advisory'}}
+  );
+  assert(r.exit === 0, `exit ${r.exit}`);
+  assert(!/prism-updater/.test(r.additionalContext || ''), `must not suggest prism-updater on ambient token alone, got: ${r.additionalContext}`);
+});
+
+// H — weak single-token match (score=1, post-stoplist) must not nudge: the
+// raised threshold (nudge requires score>=2) suppresses noise even for a
+// genuine (non-ambient) but single-term match.
+await test('H. genuine but weak (score=1) single-term match → no nudge', () => {
+  const r = runDispatcher(
+    {tool_name: 'Agent', session_id: 'h', tool_input: {subagent_type: 'general-purpose', model: 'sonnet', prompt: 'build the tailwind utility classes for the page'}},
+    {roster: ROSTER, env: {PRISM_SPECIALIST_GUARD: 'advisory'}}
+  );
+  // Only 'tailwind' (a single core_domains term) is present — 'frontend',
+  // 'ui', 'design system', 'component' are all absent from this text.
+  assert(r.exit === 0, `exit ${r.exit}`);
+  assert(!/SPECIALIST-ROUTING/.test(r.additionalContext || ''), `score=1 match must not nudge post-fix, got: ${r.additionalContext}`);
+});
+
+// I — recall preserved: a genuine multi-term domain match (score>=2) still
+// nudges toward the real specialist even after the stoplist + threshold fix.
+await test('I. genuine strong match (score>=2) → still nudges (recall preserved)', () => {
+  const r = runDispatcher(
+    {tool_name: 'Agent', session_id: 'i', tool_input: {subagent_type: 'general-purpose', model: 'sonnet', prompt: 'build a bulletproof responsive HTML email template'}},
+    {roster: AMBIENT_ROSTER, env: {PRISM_SPECIALIST_GUARD: 'advisory'}}
+  );
+  assert(r.exit === 0, `exit ${r.exit}`);
+  assert(/html-email-esp-engineer/.test(r.additionalContext || ''), `strong match should still nudge, got: ${r.additionalContext}`);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

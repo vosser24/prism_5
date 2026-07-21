@@ -151,6 +151,29 @@ export function loadRoster() {
   } catch { return null; }
 }
 
+// D056 (2026-07-21): ambient/generic name-segment tokens that are NEVER
+// a domain signal, dropped when mining match-terms out of a specialist's own
+// NAME (agentTerms below). Two classes:
+//   - Repo-ambient nouns: this repo is literally "prism" tooling for "claude"
+//     code — those two words appear in the majority of task descriptions
+//     regardless of domain, so a name segment 'claude' or 'prism' (e.g.
+//     'claude-master', 'prism-updater') false-matches almost everything.
+//     'code' is the same story — near-universal in a coding-tool repo,
+//     carries no domain signal on its own.
+//   - Generic agent-role nouns: describe WHAT KIND of agent it is, not what
+//     DOMAIN it owns (any specialist could be an -engineer/-expert/-updater).
+//     'agent'/'expert'/'engineer'/'specialist'/'master' were already filtered
+//     pre-D056; 'updater' and 'assistant' are the same category, added now.
+// Deliberately NOT included: 'pro' — never reaches this filter in practice
+// (the name-segment path already requires length>=4 before this check, and
+// no live roster name segments to a bare 'pro'), so adding it here would be
+// a no-op; and genuinely domain-bearing short/common words (html, email,
+// django, greek, security, ...) are kept OUT of this list on purpose.
+const STOPLIST = new Set([
+  'claude', 'prism', 'code',
+  'agent', 'expert', 'engineer', 'specialist', 'master', 'updater', 'assistant',
+]);
+
 function agentTerms(name, entry) {
   const terms = [];
   if (Array.isArray(entry.core_domains)) terms.push(...entry.core_domains);
@@ -159,20 +182,22 @@ function agentTerms(name, entry) {
   if (Array.isArray(entry.domain_keywords)) terms.push(...entry.domain_keywords);
   // Name segments (split on - and :), drop short/noise tokens.
   for (const seg of String(name).split(/[:\-]/)) {
-    if (seg.length >= 4 && !['agent', 'expert', 'engineer', 'specialist', 'master'].includes(seg.toLowerCase())) {
+    if (seg.length >= 4 && !STOPLIST.has(seg.toLowerCase())) {
       terms.push(seg);
     }
   }
   return terms.map(t => String(t || '').toLowerCase()).filter(t => t.length >= 3);
 }
 
-// Returns {name, score} of the best non-archived, available specialist whose
-// domain terms appear in the task text, or null. score = count of distinct
-// matched terms (a multi-word term counts as one strong hit).
+// Returns {name, score, matchedTerms} of the best non-archived, available
+// specialist whose domain terms appear in the task text, or null. score =
+// count of distinct matched terms (a multi-word term counts as one strong
+// hit). matchedTerms is the actual list of terms that matched, for
+// post-hoc log inspection (D056 instrumentation) — not used for scoring.
 export function matchSpecialist(text, roster) {
   if (!roster || !roster.agents || typeof roster.agents !== 'object') return null;
   const t = String(text || '').toLowerCase();
-  let best = null, bestScore = 0;
+  let best = null, bestScore = 0, bestMatched = [];
   for (const [name, entry] of Object.entries(roster.agents)) {
     if (!entry || entry.archived === true) continue;
     if (entry.status && entry.status !== 'available') continue;
@@ -184,9 +209,9 @@ export function matchSpecialist(text, roster) {
       const re = new RegExp(`(^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
       if (re.test(t)) matched.add(term);
     }
-    if (matched.size > bestScore) { bestScore = matched.size; best = name; }
+    if (matched.size > bestScore) { bestScore = matched.size; best = name; bestMatched = [...matched]; }
   }
-  return best ? {name: best, score: bestScore} : null;
+  return best ? {name: best, score: bestScore, matchedTerms: bestMatched} : null;
 }
 
 // Returns up to `limit` {name,score} entries (score>=minScore), sorted desc.
@@ -304,18 +329,36 @@ export async function run(input) {
     const specialist = matchSpecialist(text, roster);
     const domain = matchDomain(text);
 
-    // Case A — a matching specialist EXISTS. High-value signal.
-    if (specialist) {
-      // Confident = >=2 distinct domain terms matched (avoids blocking on a
-      // single generic keyword). Weak single-term matches only ever nudge.
-      const confident = specialist.score >= 2;
+    // Case A — a matching specialist EXISTS AND clears the nudge floor.
+    // D056 (2026-07-21): the nudge floor was previously score>=1 (any single
+    // matched term), which — combined with the pre-D056 agentTerms() name-
+    // segment fallback — made a bare ambient token (e.g. 'claude', 'prism')
+    // enough to nudge on its own; 78% of live fires were weak score=1
+    // matches. Raised to score>=2 (NUDGE_MIN_SCORE), matching the existing
+    // enforce/"confident" bar (ENFORCE_MIN_SCORE) so nudge and block are now
+    // the SAME bar rather than nudge being looser than enforce. A specialist
+    // that matches on only one weak term is treated as no-match here (falls
+    // through to silence, not to the "no specialist exists" hire-nudge in
+    // Case B — one DOES exist, it just didn't clear the bar).
+    const NUDGE_MIN_SCORE = 2;
+    const ENFORCE_MIN_SCORE = 2;
+    if (specialist && specialist.score >= NUDGE_MIN_SCORE) {
+      const confident = specialist.score >= ENFORCE_MIN_SCORE;
       const base = `PRISM SPECIALIST-ROUTING: this is BUILD-class work (build=${cls.buildScore}/read=${cls.readScore}) routed to '${subagentType || 'general-purpose'}', but roster specialist '${specialist.name}' covers this domain. Generic agents drift from the design system / domain conventions and keep no durable knowledge — re-dispatch with subagent_type:'${specialist.name}'.`;
       if (MODE === 'enforce' && confident) {
-        appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'block', specialist: specialist.name, score: specialist.score, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+        appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'block', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
         return deny(`${base} Override: prefix the user prompt with !gp-force: (or set PRISM_SPECIALIST_GUARD=off / advisory).`);
       }
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-specialist', specialist: specialist.name, score: specialist.score, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-specialist', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
       return allow(`${base} (advisory — dispatch proceeds. Override: !gp-force:.)`);
+    }
+
+    // Case A2 — a specialist matched but only on a weak (<2) term count.
+    // Do NOT fall through to the "no specialist exists" hire-nudge below —
+    // one does exist, it just didn't clear the bar. Stay silent.
+    if (specialist) {
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-weak-match', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+      return allow('');
     }
 
     // Case B — known build domain, but NO specialist exists yet. Never blocks.
