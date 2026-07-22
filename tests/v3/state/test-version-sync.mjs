@@ -36,5 +36,24 @@ ok(
   `no "[${plugin.version}]" heading found in CHANGELOG.md`
 );
 
+// tools/lib/prism-state.mjs exports its own PRISM_VERSION constant — a THIRD
+// canonical version source that the two checks above never touch. It drifted
+// stuck at 6.1.0 through the 6.6.6 release even while plugin.json and the
+// manifest agreed with each other. Deliberately does NOT check SCHEMA_VERSION
+// (also exported from that file) — SCHEMA_VERSION is an independent
+// state-schema version (currently 2) that must NOT track the release version.
+const statePath = join(ROOT, 'tools', 'lib', 'prism-state.mjs');
+const stateSrc = readFileSync(statePath, 'utf-8');
+const PRISM_VERSION_RE = /^export const PRISM_VERSION = '([^']+)';\s*$/m;
+const stateVersionMatch = stateSrc.match(PRISM_VERSION_RE);
+const stateVersion = stateVersionMatch ? stateVersionMatch[1] : null;
+ok(
+  'tools/lib/prism-state.mjs PRISM_VERSION === install-manifest prism_version',
+  stateVersion !== null && stateVersion === manifest.prism_version,
+  stateVersion === null
+    ? `could not find "export const PRISM_VERSION = '...';" in ${statePath} — regex out of date? (this must FAIL, not silently pass, when the constant can't be located)`
+    : `tools/lib/prism-state.mjs PRISM_VERSION=${stateVersion} but install-manifest.prism_version=${manifest.prism_version} — bump BOTH on every release (this exact constant was stuck at 6.1.0 through the 6.6.6 release)`
+);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

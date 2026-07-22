@@ -82,7 +82,7 @@ const IN_SCOPE_RE = [
 // unrelated file never reaches this check (path-scope already excludes it),
 // and inside captured-knowledge files this vocabulary is exactly the
 // "it works" / "it's the root cause" claims the rule is about.
-const CLAIM_TRIGGER_RE = /\b(works|is fixed|are fixed|was fixed|resolves?|resolved|is broken|are broken|was broken|root[\s-]*cause|caused by|confirms?|confirmed|reproduces?|reproduced|no longer (fails|occurs)|now passes|passes now|is now working|bug is|tests? pass(es|ed)?|(all |the )?tests? (are |were )?(green|passing)|suite (is )?green)\b/i;
+export const CLAIM_TRIGGER_RE = /\b(works|is fixed|are fixed|was fixed|resolves?|resolved|is broken|are broken|was broken|root[\s-]*cause|caused by|confirms?|confirmed|reproduces?|reproduced|no longer (fails|occurs)|now passes|passes now|is now working|bug is|tests? pass(es|ed)?|(all |the )?tests? (are |were )?(green|passing)|suite (is )?green|ha(?:s|ve|d) no [`"'*_]{0,2}(?!side[\s-]?effects?\b|effect\b|impact\b|bearing\b)(?![A-Z]\b)[a-z_][\w-]*|(?<!\b[A-Z] )(is|are|was|were) empty(?! by (?:design|default))|(?<!\b[A-Z] )(is|are|was|were) missing)\b/i;
 
 // The required evidence field. Presence-only check — content is NOT graded.
 const EVIDENCE_FIELD_RE = /\*\*Verified:\*\*/i;

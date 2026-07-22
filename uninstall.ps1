@@ -1,4 +1,4 @@
-# PRISM v4.4.0 uninstaller — Windows PowerShell 5.1+ wrapper
+# PRISM uninstaller — Windows PowerShell 5.1+ wrapper
 #
 # Usage:
 #   pwsh .\uninstall.ps1 [options]
@@ -21,10 +21,17 @@ param(
     [string]$Home = ''
 )
 
-$PrismVersion = '4.4.0'
 $ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $Installer    = Join-Path $ScriptDir 'tools\prism-installer.mjs'
+$ManifestPath = Join-Path $ScriptDir 'tools\install-manifest.json'
 $InstallDest  = Join-Path $env:USERPROFILE '.claude'
+
+# Read the canonical version from the manifest so the banner never drifts
+# (mirrors install.ps1's existing fix for this same class of stale-banner bug).
+$PrismVersion = 'unknown'
+if (Test-Path $ManifestPath) {
+    try { $PrismVersion = (Get-Content $ManifestPath -Raw | ConvertFrom-Json).prism_version } catch {}
+}
 
 # ─── Banner ────────────────────────────────────────────────────────────────────
 Write-Host '+--------------------------------------------------+' -ForegroundColor Yellow

@@ -50,7 +50,7 @@ import {
 import {dirname, join} from 'node:path';
 
 export const SCHEMA_VERSION = 2;
-export const PRISM_VERSION = '6.1.0';
+export const PRISM_VERSION = '6.6.7';
 export const STATE_DIR = '.claude';
 export const STATE_FILENAME = '.prism-state.json';
 // v2 phase order (D004 §4). v1 had: identity, structure, discovery, roster, health.

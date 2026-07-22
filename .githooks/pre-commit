@@ -8,14 +8,32 @@
 # run before a commit landed. See docs/prism/adjudications for the incident
 # this closes.
 #
-# Deliberately narrow: only tests/v3/state/test-manifest-coverage.mjs and
-# tests/v3/install-manifest-completeness.test.mjs run here (both complete in
-# well under a second combined). The full state suite
+# Deliberately narrow: only tests/v3/state/test-manifest-coverage.mjs,
+# tests/v3/install-manifest-completeness.test.mjs, and
+# tests/v3/state/test-version-sync.mjs run here (all three complete in well
+# under a second combined). The full state suite
 # (tests/v3/state/test-prism-installer.mjs — 20+ sequential sandboxed
 # installs, tens of minutes on an SMB-mounted repo) MUST NOT be added here;
 # a slow pre-commit gate gets bypassed with --no-verify, which recreates the
 # exact "optional guard" problem this gate exists to fix. Run the full suite
 # in CONTRIBUTING.md's pre-PR checklist instead.
+#
+# test-version-sync.mjs added after the version-drift bug recurred a THIRD
+# time (6.6.6 release: plugin.json stuck at 6.5.2, tools/lib/prism-state.mjs
+# PRISM_VERSION stuck at 6.1.0). The plugin.json <-> install-manifest.json
+# <-> CHANGELOG.md checks existed since v5.12.1 and correctly caught that
+# class of drift every time they were run — but nothing forced them to run
+# before a commit landed, so they silently rotted for two more releases
+# (6.0.0, then 6.6.6) exactly like the manifest-coverage guards below rotted
+# before THIS gate existed. Same fix, same reasoning: force execution, don't
+# rely on someone remembering to run it by hand.
+#
+# The tools/lib/prism-state.mjs PRISM_VERSION half of that same 6.6.6
+# recurrence was NOT actually covered by the pre-existing assertions above
+# (they only compare plugin.json/manifest/CHANGELOG to each other) — this
+# comment used to imply otherwise. test-version-sync.mjs now also asserts
+# PRISM_VERSION === install-manifest.json's prism_version, so all three
+# canonical version sources are genuinely guarded, not just two of them.
 #
 # Activate once per clone:
 #   git config core.hooksPath .githooks
@@ -38,10 +56,15 @@ if ! node tests/v3/install-manifest-completeness.test.mjs; then
   fail=1
 fi
 
+echo "[pre-commit] version-sync guard: test-version-sync.mjs"
+if ! node tests/v3/state/test-version-sync.mjs; then
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo ""
-  echo "[pre-commit] BLOCKED: one or more manifest guards failed (see above)."
-  echo "[pre-commit] Fix tools/install-manifest.json (or the file that triggered the gap), then retry."
+  echo "[pre-commit] BLOCKED: one or more manifest/version guards failed (see above)."
+  echo "[pre-commit] Fix tools/install-manifest.json / .claude-plugin/plugin.json (or the file that triggered the gap), then retry."
   echo "[pre-commit] Do not bypass with --no-verify — that is exactly how this regression shipped."
   exit 1
 fi

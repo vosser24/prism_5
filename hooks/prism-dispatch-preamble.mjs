@@ -40,7 +40,7 @@ const MODE = String(process.env.PRISM_DISPATCH_PREAMBLE ?? 'on').toLowerCase();
 
 const TAG = '[PRISM dispatch-preamble]';
 
-const PRESENT_RE = /\[PRISM dispatch-preamble\]|write your output to disk|reproduce before you fix|report artifacts, not counters|(there is no bug|the premise is wrong)[^\n]{0,80}valid outcome/i;
+export const PRESENT_RE = /\[PRISM dispatch-preamble\]|write your output to disk|reproduce before you fix|report artifacts, not counters|(there is no bug|the premise is wrong)[^\n]{0,80}valid outcome/i;
 
 const FOOTER = [
   '',
@@ -50,7 +50,8 @@ const FOOTER = [
   '2. "There is no bug" / "the premise is wrong" is a VALID outcome. Do not manufacture a finding to look useful.',
   '3. REPRODUCE before you fix. An inherited diagnosis is a hypothesis, not a fact.',
   '4. Report ARTIFACTS, not counters or prose. Show the command and its output.',
-  '5. KARPATHY DISCIPLINE: make surgical, minimal changes — no speculative features or abstractions; surface your assumptions instead of picking silently; define verifiable success criteria and verify them before reporting.',
+  '5. KARPATHY DISCIPLINE: make surgical, minimal changes — no speculative features or abstractions; surface your assumptions instead of picking silently; define verifiable success criteria and verify them before reporting. Before you remove, collapse, or quieten an existing mechanism, QUOTE the comment saying why it is there — the verbosity may BE the feature.',
+  '6. ABSENCE IS A CLAIM. Before writing that something is absent, empty, missing, or unmatched, read and QUOTE the source field you are describing. A value from a classifier, inference, or default bucket is not evidence the source lacks data — suspect your own mapping first.',
 ].join('\n');
 
 // v1.1.0 (task #17, 2026-07-16) — SendMessage work-assignment preamble.
@@ -75,9 +76,9 @@ const FOOTER = [
 // Kill-switch: PRISM_SENDMESSAGE_ROUTE=off (read per call; ALSO enforced at
 // route level in prism-pretooluse-dispatcher.mjs main()). The hook-wide
 // PRISM_DISPATCH_PREAMBLE=off kills this branch too.
-const SM_STATUS_OPEN_RE = /^\s*(?:phase\s+\d+\s+(?:complete|done)|task\s*#?\d+\s+(?:complete|done)|completed?\b|done[.:!\s]|status\b|update[:\s]|fyi\b|re:)/i;
-const SM_ASSIGN_RE = /\b(?:new task|task\s*#\d+|your task|you are (?:a|the) [^\n]{0,80}\b(?:worker|specialist|agent)\b)/i;
-const SM_CRITERIA_RE = /\b(?:acceptance|deliverables?|done when|budget\b[^\n]{0,40}\btool calls)\b/i;
+export const SM_STATUS_OPEN_RE = /^\s*(?:phase\s+\d+\s+(?:complete|done)|task\s*#?\d+\s+(?:complete|done)|completed?\b|done[.:!\s]|status\b|update[:\s]|fyi\b|re:)/i;
+export const SM_ASSIGN_RE = /\b(?:new task|task\s*#\d+|your task|you are (?:a|the) [^\n]{0,80}\b(?:worker|specialist|agent)\b)/i;
+export const SM_CRITERIA_RE = /\b(?:acceptance|deliverables?|done when|budget\b[^\n]{0,40}\btool calls)\b/i;
 
 function runSendMessage(input) {
   const quiet = {exit: 0, stdout: '', stderr: ''};
@@ -92,14 +93,14 @@ function runSendMessage(input) {
   if (!SM_CRITERIA_RE.test(message)) return quiet;
   // F1 Layer A: the holding-string ban previously reached only the Agent
   // dispatch path (via prism-anti-nesting-inject's FOOTER/FORK_FOOTER). Append
-  // it here as clause 6 so SendMessage work assignments — ~half of agent-teams
+  // it here as clause 7 so SendMessage work assignments — ~half of agent-teams
   // hand-offs — carry the same ban verbatim. Agent-path FOOTER usage is
   // untouched (this addition is local to runSendMessage).
   const out = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      updatedInput: {...ti, message: message + '\n' + FOOTER + '\n6. ' + HOLDING_STRING_BAN},
-      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, holding-string-is-a-failed-result). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
+      updatedInput: {...ti, message: message + '\n' + FOOTER + '\n7. ' + HOLDING_STRING_BAN},
+      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence, holding-string-is-a-failed-result). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
     },
   };
   return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
@@ -135,7 +136,7 @@ export function run(input) {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: {...ti, prompt: augmented},
-        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
+        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
       },
     };
     return {exit: 0, stdout: JSON.stringify(out), stderr: ''};

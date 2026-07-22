@@ -1123,7 +1123,7 @@
       "expected_exit_code": 0,
       "expected_stdout_pattern": "WRITE YOUR OUTPUT TO DISK",
       "max_duration_ms": 500,
-      "notes": "UAT60 #57 — additionalContext/updatedInput.prompt should carry the standard five clauses (write-to-disk, no-bug-is-valid, reproduce-first, artifacts-not-counters, karpathy-discipline) — the same clause set visible in this very dispatched task's own preamble."
+      "notes": "UAT60 #57 — additionalContext/updatedInput.prompt should carry the standard six clauses (write-to-disk, no-bug-is-valid, reproduce-first, artifacts-not-counters, karpathy-discipline, absence-needs-evidence) — the same clause set visible in this very dispatched task's own preamble."
     },
     {
       "id": "UAT60-Q60",

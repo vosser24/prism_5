@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PRISM v4.4.0 uninstaller — Mac/Linux + git-bash wrapper
+# PRISM uninstaller — Mac/Linux + git-bash wrapper
 #
 # Usage:
 #   bash uninstall.sh [options]
@@ -18,10 +18,17 @@
 
 set -euo pipefail
 
-PRISM_VERSION="4.4.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLER="$SCRIPT_DIR/tools/prism-installer.mjs"
+MANIFEST_PATH="$SCRIPT_DIR/tools/install-manifest.json"
 INSTALL_DEST="${HOME}/.claude"
+
+# Read the canonical version from the manifest so the banner never drifts
+# (mirrors install.ps1's existing fix for this same class of stale-banner bug).
+PRISM_VERSION="unknown"
+if [ -f "$MANIFEST_PATH" ] && command -v node >/dev/null 2>&1; then
+  PRISM_VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).prism_version)" "$MANIFEST_PATH" 2>/dev/null || echo "unknown")"
+fi
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
 echo "┌─────────────────────────────────────────────────┐"

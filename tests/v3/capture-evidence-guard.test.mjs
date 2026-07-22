@@ -16,7 +16,7 @@
 // Run: node tests/v3/capture-evidence-guard.test.mjs
 
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -552,6 +552,246 @@ await test('B(4) dispatcher: kill-switch off -> unverified claim passes through 
     {env: {PRISM_CAPTURE_EVIDENCE_GATE: 'off'}}
   );
   assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+// =====================================================================
+// C. D057 absence-claim tripwire tests (RED phase — Phase B1). See
+// docs/prism/plans/2026-07-21-D057-absence-claim-gate-FIX-PLAN.md §4/§5 and
+// docs/prism/plans/2026-07-21-NEXT-SESSION-EXECUTION-RUNBOOK.md Phase B1/B2.
+// hooks/prism-capture-evidence-guard.mjs is NOT edited by this pass (T8,
+// Phase B2, opus, separate commit) — these tests exercise the CURRENTLY
+// SHIPPED CLAIM_TRIGGER_RE (line 85, no absence-claim alternates yet) via
+// the real run() imported above, so the "expect deny" fixtures are expected
+// to FAIL (RED) until T8 lands.
+// =====================================================================
+
+// PRE_PANEL_DRAFT_RE reproduces the FIRST (pre-Seat-3) absence-regex draft
+// described in docs/prism/plans/2026-07-21-D057-absence-claim-gate-FIX-PLAN.md
+// PANEL RECONCILIATION row 3 and §4 intro ("the pre-panel regex below the
+// fold is DEAD -- it MISSES the motivating incident's own text"): a naive
+// `ha(?:s|ve|d) no [a-z_]...` extension with NO markup-wrapper tolerance and
+// NO placeholder exclusions, plus the since-dropped `no \w+ matched`
+// alternate (P5). This never shipped as code (git-ignored plan/position
+// files, superseded in place) -- it is reconstructed here, to its documented
+// shape, ONLY so G-abs6 can prove the backticked/bolded incident text
+// escaped THAT draft too, not just today's live regex.
+const PRE_PANEL_DRAFT_RE = /\b(works|is fixed|are fixed|was fixed|resolves?|resolved|is broken|are broken|was broken|root[\s-]*cause|caused by|confirms?|confirmed|reproduces?|reproduced|no longer (fails|occurs)|now passes|passes now|is now working|bug is|tests? pass(es|ed)?|(all |the )?tests? (are |were )?(green|passing)|suite (is )?green|ha(?:s|ve|d) no [a-z_][\w-]*|(is|are|was|were) empty|(is|are|was|were) missing|no \w+ matched)\b/i;
+
+await test('G-abs1 absence claim ("Eight agents have no core_domains."), no Verified -> deny, exit 2', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D999-absence.md');
+  const content = `# Absence claim fixture (no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+Eight agents have no core_domains.
+`;
+  const r = run({tool_name: 'Write', tool_input: {file_path: filePath, content}});
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+await test('G-abs2 "is empty" absence claim (backticked field), no Verified -> deny', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D998-absence-empty.md');
+  const content = `# Absence claim fixture (empty, no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+The \`core_domains\` field is empty for three of them.
+`;
+  const r = run({tool_name: 'Write', tool_input: {file_path: filePath, content}});
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+});
+
+await test('G-abs3 absence claim WITH Verified -> allow, exit 0 (proves composition, not a new deny class)', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D997-absence-verified.md');
+  const content = `# Absence claim fixture (with Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+**Verified:** node tools/roster-scan.mjs -> confirmed 8/40 agents carry no core_domains field (see run log 2026-07-21T09:00Z)
+
+Eight agents have no core_domains.
+`;
+  const r = run({tool_name: 'Write', tool_input: {file_path: filePath, content}});
+  assert(r.exit === 0, `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+await test('G-abs4 ratchet interplay: Edit appends unverified absence entry to a verified file -> deny, ratchet: per-entry', () => {
+  const filePath = seedFile('docs/prism/adjudications/D996-abs-ratchet.md', VERIFIED_ADJUDICATION);
+  const scratchHome = mkdtempSync(join(tmpdir(), 'prism-ceg-home-gabs4-'));
+  mkdirSync(join(scratchHome, '.claude'), {recursive: true});
+  const prevHome = process.env.HOME;
+  const prevUserProfile = process.env.USERPROFILE;
+  process.env.HOME = scratchHome;
+  process.env.USERPROFILE = scratchHome;
+  try {
+    const r = run({
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: filePath,
+        old_string: 'fix resolves the retry storm.\n',
+        new_string: 'fix resolves the retry storm.\n\n## New finding\nTwo roster entries have no core_domains field.\n',
+      },
+    });
+    assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+    const parsed = JSON.parse(r.stdout);
+    assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
+    const logPath = join(scratchHome, '.claude', '.prism-routing.jsonl');
+    const logLines = existsSync(logPath) ? readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean) : [];
+    const last = logLines.length ? JSON.parse(logLines[logLines.length - 1]) : {};
+    assert(last.ratchet === 'per-entry', `routing-log last record=${JSON.stringify(last)}`);
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    if (prevUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevUserProfile;
+    rmSync(scratchHome, {recursive: true, force: true});
+  }
+});
+
+await test('G-abs5 NEGATIVE CONTROL: "has no side effects" / "empty by design" -> allow, no-claim (precision floor, green before AND after)', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D995-absence-negcontrol.md');
+  const content = `# Precision-floor negative control (no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+This helper has no side effects. The retry list is empty by design.
+`;
+  const r = run({tool_name: 'Write', tool_input: {file_path: filePath, content}});
+  assert(r.exit === 0 && r.stdout === '', `exit=${r.exit} stdout=${r.stdout}`);
+});
+
+await test('G-abs6 backticked object ("have no `core_domains`") -> deny against BOTH the current live regex and the pre-panel draft', () => {
+  const backtickedContent = `# Motivating-incident fixture (backticked field)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+Eight agents have no \`core_domains\` field.
+`;
+  // Historical control: the fixture escapes the never-shipped pre-panel
+  // draft too (no markup-wrapper tolerance in that draft) -- proves the
+  // wrapper-class repair (P4), not just the placeholder exclusions, is
+  // load-bearing.
+  assert(PRE_PANEL_DRAFT_RE.test('Eight agents have no `core_domains` field.') === false,
+    'pre-panel draft (no markup-wrapper tolerance) should NOT match the backticked incident text');
+
+  const filePathBacktick = scratchPath('docs', 'prism', 'adjudications', 'D994-abs-backtick.md');
+  const rBacktick = run({tool_name: 'Write', tool_input: {file_path: filePathBacktick, content: backtickedContent}});
+  assert(rBacktick.exit === 2, `exit=${rBacktick.exit} stdout=${rBacktick.stdout}`);
+  const parsedBacktick = JSON.parse(rBacktick.stdout);
+  assert(parsedBacktick.hookSpecificOutput.permissionDecision === 'deny', `stdout=${rBacktick.stdout}`);
+
+  const boldedContent = `# Motivating-incident fixture (bolded field)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+Eight agents have no **core_domains** frontmatter.
+`;
+  assert(PRE_PANEL_DRAFT_RE.test('Eight agents have no **core_domains** frontmatter.') === false,
+    'pre-panel draft (no markup-wrapper tolerance) should NOT match the bolded incident text');
+
+  const filePathBold = scratchPath('docs', 'prism', 'adjudications', 'D993-abs-bold.md');
+  const rBold = run({tool_name: 'Write', tool_input: {file_path: filePathBold, content: boldedContent}});
+  assert(rBold.exit === 2, `exit=${rBold.exit} stdout=${rBold.stdout}`);
+  const parsedBold = JSON.parse(rBold.stdout);
+  assert(parsedBold.hookSpecificOutput.permissionDecision === 'deny', `stdout=${rBold.stdout}`);
+});
+
+await test('G-abs7 NEGATIVE CONTROL: single-letter placeholder rule-quotes -> allow, no-claim; paired positive still denies', () => {
+  const placeholderContent = `# Rule-quote fixture (placeholder form only, no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+The D057 rule covers sentences shaped like "X has no Y", "X is empty", and "N are missing Z" -- quote the source before writing any of those.
+`;
+  const filePathPlaceholder = scratchPath('docs', 'prism', 'adjudications', 'D992-abs-placeholder.md');
+  const rPlaceholder = run({tool_name: 'Write', tool_input: {file_path: filePathPlaceholder, content: placeholderContent}});
+  assert(rPlaceholder.exit === 0 && rPlaceholder.stdout === '', `exit=${rPlaceholder.exit} stdout=${rPlaceholder.stdout}`);
+
+  // Paired positive: a REAL absence claim in the same shape family must
+  // still deny, or the exclusion is too wide.
+  const positiveContent = `# Paired positive fixture (no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+3 are missing core_domains.
+`;
+  const filePathPositive = scratchPath('docs', 'prism', 'adjudications', 'D991-abs-positive-pair.md');
+  const rPositive = run({tool_name: 'Write', tool_input: {file_path: filePathPositive, content: positiveContent}});
+  assert(rPositive.exit === 2, `exit=${rPositive.exit} stdout=${rPositive.stdout}`);
+  const parsedPositive = JSON.parse(rPositive.stdout);
+  assert(parsedPositive.hookSpecificOutput.permissionDecision === 'deny', `stdout=${rPositive.stdout}`);
+});
+
+await test('G-abs8 rule-quoting amendment ratchet -> allow; a REAL absence claim in the same amendment still denies', () => {
+  // The exclusions must be narrow enough to let a quoted rule through AND wide
+  // enough to still catch a real claim sitting next to it in the SAME added
+  // region. Both halves run against the LIVE hook -- no test-side regex
+  // literal is asserted on (anti-tautology, runbook Phase B1).
+
+  // Half 1 (allow): amendment body only QUOTES the rule in placeholder form.
+  const quoteOnlyBody = 'the D057 rule covers phrasings like "X has no Y" and "N are missing Z" -- quote the source before writing either shape.';
+  const quotePath = seedFile('docs/prism/adjudications/D990-abs-ratchet-amend.md', VERIFIED_ADJUDICATION);
+  const rQuote = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: quotePath,
+      old_string: 'fix resolves the retry storm.\n',
+      new_string: `fix resolves the retry storm.\n\n## Amendment\n${quoteOnlyBody}\n`,
+    },
+  });
+  assert(rQuote.exit === 0, `quote-only amendment should ALLOW: exit=${rQuote.exit} stdout=${rQuote.stdout}`);
+
+  // Half 2 (deny, RED until T8): same ratchet shape, same quoted rule, but the
+  // amendment ALSO asserts a real absence. The per-entry ratchet must fire.
+  const mixedBody = 'the D057 rule covers phrasings like "X has no Y" -- and, checked today, two seats have no position file.';
+  const mixedPath = seedFile('docs/prism/adjudications/D988-abs-ratchet-mixed.md', VERIFIED_ADJUDICATION);
+  const rMixed = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: mixedPath,
+      old_string: 'fix resolves the retry storm.\n',
+      new_string: `fix resolves the retry storm.\n\n## Amendment\n${mixedBody}\n`,
+    },
+  });
+  assert(rMixed.exit === 2, `mixed amendment should DENY: exit=${rMixed.exit} stdout=${rMixed.stdout}`);
+  const parsedMixed = JSON.parse(rMixed.stdout);
+  assert(parsedMixed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${rMixed.stdout}`);
+});
+
+await test('G-abs9 NEGATIVE CONTROL / DOCUMENTED BEHAVIOUR: conditional "is missing" prose denies under the Locked regex (recorded decision)', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D989-abs-conditional.md');
+  const content = `# Conditional-prose fixture (no Verified)
+
+**Status:** Draft
+**Date:** 2026-07-21
+**Captured by:** manual
+
+Skip the test gracefully if either file is missing.
+`;
+  const r = run({tool_name: 'Write', tool_input: {file_path: filePath, content}});
+  // This is a DOCUMENTED, chosen behaviour (Seat 3's leakiest-alternate
+  // finding), not a bug to be fixed: assert the outcome the Locked regex
+  // actually produces so it is on record, not a surprise in production.
+  assert(r.exit === 2, `exit=${r.exit} stdout=${r.stdout}`);
+  const parsed = JSON.parse(r.stdout);
+  assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
 });
 
 console.log(`\ncapture-evidence-guard: ${pass} passed, ${fail} failed`);

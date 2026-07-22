@@ -84,6 +84,7 @@ Imperatives drawn from the most important Locked adjudications (auto-generated �
 see `tools/lib/memory-heal.mjs regenerateStandingRules`, D-recall-hardening C2/C3):
 
 <!-- prism:standing-rules:start (AUTO-GENERATED from Locked adjudication **Rule:** lines by tools/lib/memory-heal.mjs — do not hand-edit between anchors) -->
+- **D056:** PRISM's specialist-routing guard must match on DOMAIN signal, not ambient agent-name tokens — stoplist repo-ambient name-segments (claude, prism, code, …) in agentTerms() and require score≥2 to nudge; do NOT promote to enforce or widen the buildScore classifier until the newly-instrumented nudge-compliance data justifies it.
 - **D055:** Key the live-agents ledger on the per-instance `agent_id` via `extractAgentKey` (falling back to agent type only when absent) and age-cap `running` entries — never key ledger status on agent TYPE, which collapses concurrent same-type dispatches into one flickering slot.
 - **D054:** On a panel-summoning turn PRISM MUST force-inject the roster-first then factory-fill then tag-provenance seat-sourcing discipline (never a bare general-purpose/persona fill for a vertical seat), and the panel.json provenance detector MUST infer vertical (not require the explicit tag) and run regardless of dispatch_mode; the schema shown to the model MUST equal the schema the guard enforces.
 - **D053:** Admit a lesson-match fire only if the prompt shares >=1 token unique to
@@ -95,7 +96,6 @@ see `tools/lib/memory-heal.mjs regenerateStandingRules`, D-recall-hardening C2/C
 - **D045:** In agent-teams (all teammates share one `session_id`), the dispatch guard's session-global `dispatched` flag CANNOT gate per-caller — ship it ADVISORY in teams topology (fail-safe, gated on `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), make every borrowed-unlock VISIBLE (`borrowed_unlock` event + in-band advisory) so the silent false-allow becomes measurable, and close write-collisions via a DECLARED-identity lease; NEVER build a per-caller HARD gate on payload fields that do not carry caller identity.
 - **D044:** Before pushing to any PUBLIC remote (prism_5), run an exhaustive PII scan on the actual commit-tree object; already-tracked files are leak vectors that .gitignore does NOT retroactively cover (git rm --cached to untrack); the release commit itself must pass the same PII scan — test fixtures included.
 - **D042:** A guard is not proven until it has been demonstrated to FIRE on a bad input AND STAY QUIET on a good one. One path is not proof. A lesson violated twice is a missing guard, not a missing paragraph.
-- **D041:** /prism-clean must distinguish "never bootstrapped" from "running in a git worktree where .prism-state.json is legitimately absent (gitignored, lives in the main worktree)" — detect the worktree via `git rev-parse --git-common-dir` and PROCEED with capture (git-tracked MEMORY.md + docs/prism/ + knowledge-index still work), skipping only the state-derived --slug pointer-appends; never blanket-STOP and advise /prism-bootstrap in the worktree case (that would create a second desynced state file).
 <!-- prism:standing-rules:end -->
 
 ## Active specialists

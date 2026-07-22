@@ -379,8 +379,12 @@ test('sanity: the known composed pair (dispatch-preamble -> anti-nesting-inject)
 test('live-fire: reordering the known composed pair in the REAL source text is caught', () => {
   const dispatcherSrc = readFileSync(DISPATCHER_PATH, 'utf-8');
   const regressed = dispatcherSrc.replace(
-    `'prism-dispatch-dedup-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT`,
-    `'prism-dispatch-dedup-guard.mjs', 'prism-anti-nesting-inject.mjs', 'prism-dispatch-preamble.mjs', PARENT`
+    // Task #19 (v6.4.0, 0721cd38c) inserted prism-live-work-dedup.mjs and
+    // prism-file-lease-guard.mjs between the dedup guard and the preamble; this
+    // literal must track hooks/prism-pretooluse-dispatcher.mjs's ROUTES.Agent
+    // exactly, or the swap below silently no-ops.
+    `'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT`,
+    `'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs', 'prism-anti-nesting-inject.mjs', 'prism-dispatch-preamble.mjs', PARENT`
   );
   assert(regressed !== dispatcherSrc, 'string swap did not match — ROUTES.Agent literal text changed shape; update this fixture');
 

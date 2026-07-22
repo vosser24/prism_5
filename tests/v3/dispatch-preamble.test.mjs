@@ -27,7 +27,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {HOLDING_STRING_BAN} from '../../hooks/prism-anti-nesting-inject.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -330,6 +330,176 @@ function runDispatcher(payload, envOverrides = {}) {
   const r = runHook(payload);
   check('3d long status report (no assignment/criteria markers) → no rewrite (empty stdout)',
     r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+
+// ---------------------------------------------------------------------------
+// Part 4 (D057 §5, runbook Phase B1) — absence-claim tripwire tests. See
+// docs/prism/plans/2026-07-21-D057-absence-claim-gate-FIX-PLAN.md §3/§4/§5
+// and docs/prism/plans/2026-07-21-NEXT-SESSION-EXECUTION-RUNBOOK.md Phase
+// B1/B2 for the authoritative spec. RED-PHASE ONLY: hooks/prism-dispatch-
+// preamble.mjs and hooks/prism-capture-evidence-guard.mjs are NOT edited by
+// this pass (Phase B2, opus, separate commit). The FINAL CLAIM_TRIGGER_RE
+// (and PRESENT_RE / SM_ASSIGN_RE / SM_CRITERIA_RE / SM_STATUS_OPEN_RE) are
+// imported LIVE via dynamic import below, never copied as string/regex
+// literals into this file — a copied literal would keep passing against a
+// stale copy even if the shipped hook regressed, proving nothing. Test 6e is
+// "the panel's central finding": clause 6's own text must not self-fire the
+// regex it ships alongside.
+// ---------------------------------------------------------------------------
+
+const CAPTURE_GUARD = join(HOOKS, 'prism-capture-evidence-guard.mjs');
+const captureGuardModule = await import(pathToFileURL(CAPTURE_GUARD).href);
+const dispatchPreambleModule = await import(pathToFileURL(HOOK).href);
+
+// 6a. clause-6 (absence-is-a-claim) lands on a fresh Agent dispatch.
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  check('6a clause-6 lands: "ABSENCE IS A CLAIM"',
+    typeof prompt === 'string' && prompt.includes('ABSENCE IS A CLAIM'), `prompt=${prompt}`);
+  check('6a clause-6 lands: "not evidence the source lacks data"',
+    typeof prompt === 'string' && prompt.includes('not evidence the source lacks data'), `prompt=${prompt}`);
+}
+
+// 6a-bis. clause-5 fold (Chesterton's-fence change discipline) lands INSIDE
+// the clause-5 line, not as a stray standalone line.
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  const clause5Line = typeof prompt === 'string' ? (prompt.match(/^5\. KARPATHY[^\n]*$/m) || [])[0] : undefined;
+  check('6a-bis clause-5 fold text present somewhere in the prompt',
+    typeof prompt === 'string' && prompt.includes('QUOTE the comment saying why it is there'), `prompt=${prompt}`);
+  check('6a-bis clause-5 fold text lands INSIDE the "5. KARPATHY" line (not a stray line)',
+    typeof clause5Line === 'string' && clause5Line.includes('QUOTE the comment saying why it is there'),
+    `clause5Line=${clause5Line}`);
+}
+
+// 6b. SendMessage renumber: the holding-string ban becomes clause 7, and
+// exactly one line is numbered "6." (the absence clause), not two.
+{
+  const assignment = [
+    'Your task: implement the exponential-backoff retry helper in src/net/retry.mjs.',
+    'You are the worker for this unit. Read the existing HTTP client, add retry with',
+    'jitter, and cap attempts at five before surfacing the last error to the caller.',
+    'Acceptance: the unit tests cover the backoff sequence and the attempt cap.',
+    'Deliverables: the helper plus its tests. Done when node tests/net-retry.test.mjs',
+    'passes with zero failures and the existing client call sites remain unchanged.',
+  ].join(' ');
+  const payload = {
+    tool_name: 'SendMessage',
+    tool_input: {to: 'worker-6b', message: assignment},
+    session_id: 'sendmessage-6b-renumber-test',
+  };
+  const r = runHook(payload);
+  const {message} = r;
+  check('6b SendMessage renumber: holding-string ban is clause 7 (\'\\n7. \' + HOLDING_STRING_BAN)',
+    typeof message === 'string' && message.includes('\n7. ' + HOLDING_STRING_BAN), `message=${message}`);
+  check('6b SendMessage renumber: exactly one line numbered "6. "',
+    typeof message === 'string' && (message.match(/^6\. /gm) || []).length === 1, `message=${message}`);
+  check('6b SendMessage renumber: clause 6 is the absence-is-a-claim clause',
+    typeof message === 'string' && /^6\. ABSENCE IS A CLAIM/m.test(message), `message=${message}`);
+}
+
+// 6c. idempotency with the new footer — guards P9 (PRESENT_RE unchanged).
+{
+  const first = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const second = runHook(
+    {...AGENT_PAYLOAD, tool_input: {...AGENT_PAYLOAD.tool_input, prompt: first.prompt}},
+    {PRISM_ANTI_NESTING_INJECT: 'off'}
+  );
+  check('6c idempotency: tag appears exactly once on the 6a-augmented prompt',
+    typeof first.prompt === 'string' && (first.prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1,
+    `first.prompt=${first.prompt}`);
+  check('6c idempotency: "ABSENCE IS A CLAIM" appears exactly once on the 6a-augmented prompt',
+    typeof first.prompt === 'string' && (first.prompt.match(/ABSENCE IS A CLAIM/g) || []).length === 1,
+    `first.prompt=${first.prompt}`);
+  check('6c idempotency: re-running the hook on the already-augmented prompt is a no-op',
+    second.exit === 0 && second.stdout === '', `stdout=${second.stdout}`);
+}
+
+// 6e. THE PANEL'S CENTRAL FINDING — the SHIPPED CLAIM_TRIGGER_RE (imported
+// live from hooks/prism-capture-evidence-guard.mjs, never copied) must NOT
+// match clause 6's text, clause 5's text, or the whole rendered FOOTER; the
+// clause text must also stay clean against PRESENT_RE / SM_ASSIGN_RE /
+// SM_CRITERIA_RE / SM_STATUS_OPEN_RE (all imported live from
+// hooks/prism-dispatch-preamble.mjs).
+{
+  const LIVE_CLAIM_TRIGGER_RE = captureGuardModule.CLAIM_TRIGGER_RE;
+  const LIVE_PRESENT_RE = dispatchPreambleModule.PRESENT_RE;
+  const LIVE_SM_ASSIGN_RE = dispatchPreambleModule.SM_ASSIGN_RE;
+  const LIVE_SM_CRITERIA_RE = dispatchPreambleModule.SM_CRITERIA_RE;
+  const LIVE_SM_STATUS_OPEN_RE = dispatchPreambleModule.SM_STATUS_OPEN_RE;
+
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  const clause6Line = typeof prompt === 'string' ? (prompt.match(/^6\. [^\n]*$/m) || [])[0] : undefined;
+  const clause5Line = typeof prompt === 'string' ? (prompt.match(/^5\. KARPATHY[^\n]*$/m) || [])[0] : undefined;
+
+  function cleanAgainst(re, str, label) {
+    const isRe = re instanceof RegExp;
+    const hasStr = typeof str === 'string';
+    check(label,
+      isRe && hasStr && re.test(str) === false,
+      !isRe ? 'regex not exported live (undefined) -- cannot verify'
+        : !hasStr ? 'target string not present (clause missing from rendered FOOTER)'
+        : `matched: ${str}`);
+  }
+
+  cleanAgainst(LIVE_CLAIM_TRIGGER_RE, clause6Line, '6e CLAIM_TRIGGER_RE (live) does NOT match the shipped clause-6 string');
+  cleanAgainst(LIVE_CLAIM_TRIGGER_RE, clause5Line, '6e CLAIM_TRIGGER_RE (live) does NOT match the shipped clause-5 string');
+  cleanAgainst(LIVE_CLAIM_TRIGGER_RE, prompt, '6e CLAIM_TRIGGER_RE (live) does NOT match the whole rendered FOOTER');
+  // PRESENT_RE detects the `[PRISM dispatch-preamble]` tag, which the whole
+  // augmented prompt contains BY CONSTRUCTION -- passing `prompt` here made
+  // the assertion unsatisfiable. Per the runbook's row-5 spec it is the
+  // CLAUSE TEXT that must stay clean against PRESENT_RE, not the whole prompt.
+  cleanAgainst(LIVE_PRESENT_RE, clause6Line, '6e clause text stays clean against PRESENT_RE (live)');
+  cleanAgainst(LIVE_SM_ASSIGN_RE, prompt, '6e clause text stays clean against SM_ASSIGN_RE (live)');
+  cleanAgainst(LIVE_SM_CRITERIA_RE, prompt, '6e clause text stays clean against SM_CRITERIA_RE (live)');
+  cleanAgainst(LIVE_SM_STATUS_OPEN_RE, prompt, '6e clause text stays clean against SM_STATUS_OPEN_RE (live)');
+}
+
+// 6f. FOOTER budget — <=6 numbered clauses, <=1100 chars. Composed with a
+// presence check for the new clause: a footer that HASN'T grown yet
+// trivially satisfies "<=6 clauses" for the wrong reason, so this test also
+// requires clause 6 to actually be present (anti-tautology).
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  const original = AGENT_PAYLOAD.tool_input.prompt;
+  const footerOnly = typeof prompt === 'string' && prompt.startsWith(original)
+    ? prompt.slice(original.length + 1) : undefined;
+  const numberedClauses = typeof footerOnly === 'string' ? (footerOnly.match(/^\d+\. /gm) || []).length : -1;
+  const footerChars = typeof footerOnly === 'string' ? footerOnly.length : -1;
+  check('6f FOOTER budget: clause 6 (ABSENCE IS A CLAIM) actually present',
+    typeof footerOnly === 'string' && footerOnly.includes('ABSENCE IS A CLAIM'),
+    `footerOnly=${footerOnly}`);
+  check(`6f FOOTER budget: <=6 numbered clauses (measured ${numberedClauses})`,
+    numberedClauses >= 0 && numberedClauses <= 6, `numberedClauses=${numberedClauses}`);
+  check(`6f FOOTER budget: <=1100 chars (measured ${footerChars})`,
+    footerChars >= 0 && footerChars <= 1100, `footerChars=${footerChars}`);
+}
+
+// 6d. NEGATIVE CONTROL — existing 1a/1b/1c must stay green throughout Part
+// B. 1a's clause-5 assertion (above) is an includes(), not an equality, so
+// it survives clause 5 gaining an appended sentence (T2) — verified by
+// reading the source, not assumed.
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  check('6d NEGATIVE CONTROL: clause 1 (WRITE YOUR OUTPUT TO DISK) still present',
+    typeof prompt === 'string' && prompt.includes('WRITE YOUR OUTPUT TO DISK'), `prompt=${prompt}`);
+  check('6d NEGATIVE CONTROL: clause 5 (KARPATHY DISCIPLINE) still present via includes(), not equality',
+    typeof prompt === 'string' && prompt.includes('KARPATHY DISCIPLINE: make surgical, minimal changes'), `prompt=${prompt}`);
+  check('6d NEGATIVE CONTROL: dispatch-preamble tag still appears exactly once',
+    typeof prompt === 'string' && (prompt.match(/\[PRISM dispatch-preamble\]/g) || []).length === 1, `prompt=${prompt}`);
+}
+{
+  const r = runHook({tool_name: 'Bash', tool_input: {command: 'ls'}});
+  check('6d NEGATIVE CONTROL: non-Agent tool still no-ops (1b unaffected)', r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
+}
+{
+  const r = runHook({tool_name: 'Agent', tool_input: {prompt: '   '}});
+  check('6d NEGATIVE CONTROL: empty prompt still no-ops (1c unaffected)', r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

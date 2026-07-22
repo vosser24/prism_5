@@ -6,6 +6,50 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.6.7] - 2026-07-22
+
+### Added
+
+- **Absence-claim tripwire (D057).** The dispatch-preamble FOOTER gains a sixth,
+  nominalised clause: *ABSENCE IS A CLAIM* — before writing that something is
+  absent, empty, missing or unmatched, read and QUOTE the source field; a value
+  from a classifier, inference or default bucket is not evidence the source
+  lacks data. The clause DESCRIBES its trigger shapes and never instantiates
+  them, so it cannot fire the guard it ships alongside (pinned by test 6e).
+- **Chesterton's-fence change discipline** folded into clause 5: before you
+  remove, collapse or quieten an existing mechanism, QUOTE the comment saying
+  why it is there.
+- **`CLAIM_TRIGGER_RE` extended** in the capture-evidence guard with three
+  absence shapes (`has/have/had no X`, `is/are/was/were empty`,
+  `is/are/was/were missing`), including a wrapper class that admits backticked,
+  bolded and quoted objects — without it the guard missed the motivating
+  incident's own text, ``have no `core_domains` ``. Single-letter metasyntactic
+  placeholders are excluded so canonical rule-quotes stay invisible.
+
+### Changed
+
+- SendMessage path: the holding-string ban renumbers from clause 6 to **clause
+  7**; `additionalContext` clause-name lists on both paths gain
+  `absence-needs-evidence`.
+- **FOOTER budget Locked:** max 6 clauses, max 1100 chars, displace-or-compress
+  on any new entry. The next clause proposed for this footer displaces
+  something. The 1100 constant is **fitted, not derived**; the load-bearing part
+  of the rule is the eviction rule, not the number.
+
+### Notes
+
+- **This is a tripwire, not a gate.** The guard extension covers a measured
+  **~34–37%** of organic absence-phrasing mass; escape families total roughly
+  2× the caught mass and are named in the adjudication. It sits on the head of
+  the distribution (`has/have/had no X` is the single largest organic family)
+  and is the motivating incident's own phrasing.
+- **No lever is a complete cure.** PRISM has no hook event on "the model is
+  about to assert a fact in prose", so parent prose is structurally unreachable.
+  `TaskCreate` is not routed to the preamble hook, so a task `description` —
+  the designated durable carryover artifact — receives no clause at all.
+- `PRESENT_RE` is deliberately NOT extended: extending it suppresses the entire
+  footer on realistic builder dispatches.
+
 ## [6.6.6] - 2026-07-21
 
 ### Added
