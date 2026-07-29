@@ -53,8 +53,9 @@
 import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
 import {createHash} from 'crypto';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE_RAW = (process.env.PRISM_MODEL_GUARD || 'soft').toLowerCase();
 // v2.9.1: accept soft|hard|strict. Unknown values fall back to soft (safe default).
@@ -151,6 +152,28 @@ export async function run(input) {
       tool: 'Agent',
       subagent_type: subagentType,
       action: 'passthrough-master-orchestrator',
+    });
+    return done(0);
+  }
+
+  // #56/F41: subagent_type:'fork' ALWAYS runs on the caller's model — per the
+  // Agent tool contract a `model` override on a fork dispatch is a documented
+  // no-op. The firing predicate below (tier==='haiku'/'sonnet' && mult>1) never
+  // consulted subagentType, so it told the operator to add a parameter with no
+  // effect: alert fatigue, and worse, a FALSE COST MODEL — if the chair
+  // complies believing the fork now runs on haiku, later spend reasoning is
+  // wrong in the expensive direction. Mirrors the master-orchestrator
+  // exemption above (same shape): a categorical passthrough for this one
+  // subagent_type, not a suppression of the guard generally — every non-fork
+  // dispatch is still classified and nudged/denied normally.
+  if (String(subagentType).toLowerCase() === 'fork') {
+    appendLog({
+      event: 'agent_model_guard',
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      tool: 'Agent',
+      subagent_type: subagentType,
+      action: 'passthrough-fork-inherits-model',
     });
     return done(0);
   }

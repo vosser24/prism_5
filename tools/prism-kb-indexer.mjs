@@ -15,6 +15,7 @@
 import {readFileSync, readdirSync, statSync, existsSync, writeFileSync} from 'fs';
 import {join, relative} from 'path';
 import {classifyEntry} from './prism-kb-domains.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 function withDomain(entry) {
   const c = classifyEntry(entry);
@@ -24,7 +25,7 @@ function withDomain(entry) {
   return entry;
 }
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const CLAUDE_DIR = join(H, '.claude');
 const INDEX_PATH = join(CLAUDE_DIR, '.prism-kb-index.json');
 

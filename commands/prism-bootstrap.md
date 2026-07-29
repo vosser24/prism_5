@@ -5,10 +5,14 @@ description: One-command PRISM bootstrap — drives the 7-phase state machine fr
 
 # /prism-bootstrap — v3.11.0 unified bootstrap
 
-Locked design: `docs/prism/adjudications/D001-bootstrap-unification.md`,
-`docs/prism/adjudications/D002-v3.10-hooks-drift-scope.md`,
+Locked design: `docs/prism/adjudications/D002-v3.10-hooks-drift-scope.md`,
 `docs/prism/adjudications/D004-v4-product-vision.md` (Phase B brought the
-schema from v1's 5 phases to v2's 7 phases). Schema lives in
+schema from v1's 5 phases to v2's 7 phases). Original proposal:
+`docs/prism/adjudications/D001-bootstrap-unification.md` — its concrete
+specifics (the `/prism-up` name, string `schema_version`, 5-phase table)
+were superseded by D002/D004 above; see D001's own Status/Superseded-by
+lines. Several still-live gates and principles below are traceable only to
+D001 and are cited as "the D001 proposal" accordingly. Schema lives in
 `tools/lib/prism-state.mjs`. Phase machine is driven by
 `tools/prism-bootstrap.mjs` (deterministic ops) plus the LLM-judged steps
 described below.
@@ -51,7 +55,7 @@ answer), do NOT ask clarifying questions. Run Step 1 (state init + plan)
 and every deterministic / default-safe phase. For any step that requires
 a confirmation — the Step 0 git-guard prompt above, an `--interactive`
 phase-confirm, Phase 5's orphan-agent resolution choice, Phase 6's "slug
-needs user prompting" branch, or the Phase 7 telemetry/statusline/claude-mem
+needs user prompting" branch, or the Phase 7 telemetry/statusline
 offers — SKIP that step and RECORD it, then REPORT "needs interactive
 confirmation for X" in the final summary (Step N). Treat those
 confirmation-gated steps as interactive-only: this note does not change how
@@ -97,7 +101,7 @@ For each phase in `pending`, in order:
 1. Mark start: `node ~/.claude/tools/prism-bootstrap.mjs start-phase <name>`
 2. Run the phase-specific work (see sections below).
 3. On success: `node ~/.claude/tools/prism-bootstrap.mjs complete-phase <name> --meta '<json>'`
-4. On failure: `node ~/.claude/tools/prism-bootstrap.mjs fail-phase <name> "<error>"` — then STOP. Do NOT roll back prior phase writes (D001 §Robustness #4: failure isolation).
+4. On failure: `node ~/.claude/tools/prism-bootstrap.mjs fail-phase <name> "<error>"` — then STOP. Do NOT roll back prior phase writes (failure isolation, per the D001 proposal §Robustness principles #4).
 
 If `--dry-run`: skip the deterministic helper writes; print what would happen.
 
@@ -281,8 +285,9 @@ is paid on every prompt forever. Detail lives elsewhere.
   - `/prism-discover` proposes nested files when it detects distinct
     tech-stack subdomains; user approves per-subdomain.
   - Scaffolded subdomain map lives at `.claude/references/subdomain-map.md`.
-- **Health check:** `/prism-discover --check-claude-chain` walks the
-  repo and warns on size or duplication violations.
+- **Health check (manual):** ask `/prism-discover` to audit the CLAUDE.md
+  chain — an LLM-driven repo walk warning on size/duplication violations
+  (see `skills/prism-discover/SKILL.md`); no standalone CLI flag exists.
 
 ## Build / Test / Lint
 
@@ -295,8 +300,9 @@ exact shell commands PRISM subagents should run — nothing else.)
 ones go in nested `CLAUDE.md` files if needed.)
 ```
 - Report line count.
-- Soft warning if line count exceeds 200 (D001 phase 7 calls for ≤200; the
-  CLAUDE.md update phase 7 is folded into the discovery refinement step).
+- Soft warning if line count exceeds 200 (the D001 proposal's phase 7 called
+  for a ≤200 line target; that CLAUDE.md update phase is folded into the
+  discovery refinement step here).
 
 Complete with meta: `{"claude_md_lines": N, "had_existing": true|false}`.
 
@@ -385,8 +391,9 @@ codebase scan + schema introspection + API surface). DO NOT re-implement.
 > errors out in git-bash. This applies to the identity phase's README/package.json
 > reads too.
 
-Skip-condition: D001 §Phases table says skip if last successful run < 24h
-unless `--force`. Implement this by checking `state.phases.discovery.completed_at`:
+Skip-condition (per the D001 proposal's §Phases table): skip if last
+successful run < 24h unless `--force`. Implement this by checking
+`state.phases.discovery.completed_at`:
 
 ```js
 const last = new Date(state.phases.discovery.completed_at);
@@ -402,8 +409,8 @@ Goal: reconcile orphan agents (agents installed in `~/.claude/agents/` but
 not in this project's `.claude/agents/roster.json`).
 
 Invoke the existing `/prism-roster --reconcile` logic. Surface dual-form
-matches (e.g., `app-expert` vs `nexus-expert`) for user choice — D001
-phase 6 explicitly gates here: "**confirm before roster.json write**".
+matches (e.g., `react-expert` vs `nexus-expert`) for user choice — per the
+D001 proposal's phase 6 gate: "**confirm before roster.json write**".
 
 If `--interactive`: hold for user confirmation.
 
@@ -478,7 +485,7 @@ Branch on the returned JSON:
 
 #### Step 7c — complete
 
-Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N, "telemetry_opt_in": true|false}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.)
+Complete with meta: `{"health_status": "green"|"yellow"|"red", "checks_passed": N, "checks_failed": N, "checks_detail": [...], "telemetry_opt_in": true|false}`. (The v2 sentinel `status` is reserved for the orchestrator's phase state.) `checks_detail` is per `commands/prism-health.md`'s "Recording results" section — carry it through here, don't drop it.
 
 ---
 
@@ -494,8 +501,12 @@ Then summarize for the user:
 - Suggested next action: `/prism-sync` for ongoing maintenance,
   or `/prism-clean` before /exit to capture session lessons.
 
-If new files were written: show `git status --short` and ask the user
-whether to stage and commit. **Do not auto-commit** (D001 phase 9 gate).
+If new files were written under TRACKED paths: show `git status --short` and
+ask the user whether to stage and commit. **Do not auto-commit** (per the
+D001 proposal's phase 9 gate). Note this will show NOTHING for the discovery phase's own output
+(`.claude/references/**`, gitignored per `.gitignore:19`) — confirm those
+writes with `ls .claude/references/` instead; a clean `git status --short`
+here does not mean discovery produced no files.
 
 ### Step N.1 — statusline offer (opt-in, v4.0)
 
@@ -542,70 +553,20 @@ Behaviour by branch:
 
 **Never silently write** the statusline. The whole point of folding this
 into bootstrap is opt-in convenience; auto-write would be a behavioural
-regression vs v3.11.0 and earlier. (D001 phase 9 gate — confirm before
-mutating user config.)
+regression vs v3.11.0 and earlier. (Per the D001 proposal's phase 9 gate —
+confirm before mutating user config.)
 
 If `--dry-run` was passed to `/prism-bootstrap`: skip the prompt; just
 print the detect-statusline output and a one-line *"would offer install
 if not in dry-run"* note.
 
-### Step N.2 — claude-mem memory-tier offer (opt-in, v5.1)
+## Memory mode
 
-`claude-mem` (`thedotmack/claude-mem`) is an **optional ambient-memory tier**:
-it captures every session continuously and re-injects context at SessionStart.
-PRISM treats it like the NotebookLM free-research tier — **offered, never
-required**. Its presence selects PRISM's memory mode (see *Memory modes* below).
-
-After the statusline step, detect it:
-
-```bash
-node ~/.claude/tools/prism-bootstrap.mjs detect-claude-mem
-```
-
-The helper prints `{"installed": true|false}` (signal = the `~/.claude-mem/`
-data dir, with a settings.json reference as a corroborating fallback).
-
-Behaviour by branch:
-
-- **`installed: true`** → **Mode A** is active. Say one line: *"claude-mem
-  detected — it owns ambient session memory; PRISM's save-nudge stands down
-  and `/prism-clean` stays manual."* Do not offer anything.
-- **`installed: false`** → **Mode B** is the default. Offer the install via
-  `AskUserQuestion`: *"PRISM can run with `claude-mem` for continuous ambient
-  memory (auto-capture + auto-reload across sessions). Install it now?"* —
-  options (default-first):
-  - **Keep PRISM-native memory (default)** → log: *"staying on Mode B —
-    PRISM's save-nudge stays active and `/prism-clean` folds session
-    summaries into your project-master MEMORY.md. Nothing is lost."*
-  - **Install claude-mem** → run `npx claude-mem install` (Node ≥20 + Bun are
-    auto-handled by its installer). On success, note that PRISM has switched to
-    Mode A for subsequent sessions; on failure, surface the error and remain on
-    Mode B.
-
-**Never auto-install.** Like the statusline, this is opt-in convenience.
-
-If `--dry-run` was passed: print the detect-claude-mem output and a one-line
-*"would offer install if not in dry-run"* note; prompt nothing.
-
----
-
-## Memory modes (Mode A / Mode B)
-
-PRISM's session-memory behaviour is **two-mode**, selected at runtime by
-whether `claude-mem` is installed (`~/.claude-mem/`). Nothing is lost either
-way — the modes are mutually exclusive fallbacks, not a feature gate.
-
-| | **Mode A — claude-mem present** | **Mode B — claude-mem absent (default)** |
-|---|---|---|
-| Ambient capture | claude-mem captures continuously + reloads at SessionStart | PRISM's `memory-save-nudge` reminds you to capture before `/clear` |
-| Save nudge | **Stands down** (claude-mem already injects + reminds) | **Active** |
-| `/prism-clean` | Manual; the MEMORY.md session-summary fold is redundant (skip it) | Manual; folds a one-line session summary into `master-<slug>` MEMORY.md `## Session log` via `append-summary` |
-| Durable router | claude-mem store + project-master MEMORY.md | project-master MEMORY.md (decisions / lessons / session log) |
-
-Switching is automatic: install claude-mem → next session runs Mode A; remove
-it → back to Mode B. `/clear` fires `SessionEnd`+`SessionStart` (not
-`PreCompact`), so capture always happens *during* the session (nudge +
-`/prism-clean`), and reload is automatic (subagent MEMORY.md auto-injects).
+PRISM runs a single, native memory mode: `memory-save-nudge` reminds you to
+capture before `/clear` (starting turn 15, every 5 turns thereafter), and
+`/prism-clean` folds a one-line session summary into `master-<slug>`
+MEMORY.md `## Session log` via `append-summary`. Nothing is conditional on
+any external tool.
 
 ---
 

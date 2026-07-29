@@ -15,7 +15,6 @@ adding a row, also add a test case to `tests/v3/T13.4-skill-trigger.md`.
 | `\b(plan\|architect\|strategy\|migrate\|build [a-z]+ system)\b` | blueprint-prompt | nudge |
 | `\b(/panel\|panel review\|adversarial)\b` | prism-chat | nudge |
 | `\b(seo\|search rank\|page speed\|core web vitals)\b` | greek-ecommerce-seo-specialist | nudge |
-| `\b(video\|youtube\|shorts\|reels\|b-roll\|edit footage)\b` | video-production | nudge |
 | `\b(notebook\|notebooklm\|research notes\|literature review)\b` | notebooklm | nudge |
 | `\b(workflow\|orchestrat\|multi-step plan\|run the steps)\b` | workflow-orchestration | nudge |
 | `\b(claude code\|hook\|subagent\|skill author\|claude\.md)\b` | claude-code-expert | nudge |

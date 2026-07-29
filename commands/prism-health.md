@@ -1,6 +1,6 @@
 ---
 name: prism-health
-description: System health check across PRISM core, agents, hooks, external tools, video pipeline
+description: System health check across PRISM core, agents, hooks, external tools
 ---
 
 Comprehensive status check of the PRISM installation (v6.0.0).
@@ -50,9 +50,9 @@ Then run the layout-appropriate file checks below.
 **Plugin-install layout** (`${CLAUDE_PLUGIN_ROOT}` set):
 - `${CLAUDE_PLUGIN_ROOT}/hooks/prism-*.mjs` (16 expected)
 - `${CLAUDE_PLUGIN_ROOT}/commands/prism-*.md` (14 expected)
-- `${CLAUDE_PLUGIN_ROOT}/skills/*` (8 PRISM-owned expected: prism-plan,
+- `${CLAUDE_PLUGIN_ROOT}/skills/*` (6 PRISM-owned expected: prism-plan,
   prism-discover, blueprint-prompt, workflow-orchestration,
-  claude-code-expert, notebooklm, video-production, prism-chat)
+  notebooklm, prism-chat)
 - `${CLAUDE_PLUGIN_ROOT}/agents/*` (3 core expected: master-orchestrator,
   agent-factory, prism-updater)
 - Plus, regardless of layout, the bootstrapped reference files at
@@ -65,19 +65,27 @@ Then run the layout-appropriate file checks below.
 
 **Manual-install layout** (no `${CLAUDE_PLUGIN_ROOT}`):
 - ~/.claude/ directory
-- ~/.claude/CLAUDE.md (with ## PRISM section)
 - ~/.claude/settings.json (hooks registered)
 - ~/.claude/hooks/prism-*.mjs (5 files)
 - ~/.claude/skills/prism-plan/SKILL.md + references/
 - ~/.claude/skills/prism-discover/SKILL.md
-- ~/.claude/skills/video-production/SKILL.md
 - ~/.claude/agents/master-orchestrator.md, agent-factory.md, prism-updater.md
-- ~/.claude/commands/ (9 commands: health, roster, update, init, retire,
-  app-expert, archive, recommend, audit)
+- ~/.claude/commands/ (8 commands: health, roster, update, init, retire,
+  archive, recommend, audit)
 - ~/.claude/skills/prism-plan/references/tools-registry.md (v6.0.0)
 - ~/.claude/skills/prism-plan/references/skill-effectiveness.md (v6.0.0)
 
 Report missing with severity.
+
+**Informational only, never a failed check:** ~/.claude/CLAUDE.md (with
+## PRISM section). No PRISM install path creates or writes this file —
+`tools/prism-installer.mjs` never touches it, and `hooks/prism-config-guard.mjs`
+only reads it to warn if the `## PRISM` section was stripped from an
+already-existing file; neither ever creates it. Since PRISM cannot make this
+file appear on its own, treat it as a status note, not a checked requirement:
+if present, note whether it has a `## PRISM` section; if absent, report
+"not present (PRISM does not create this file — informational only)". Do
+NOT count this item toward `checks_failed`.
 
 ### Step 1b — Installed-vs-repo drift (deterministic, v6.3.2)
 
@@ -233,7 +241,7 @@ Output:
       ✗ Filesystem MCP     not installed
       ✗ GitHub MCP         not installed
       ✓ Context7 MCP       installed
-      ✗ Playwright MCP     not installed (recommended for app-expert)
+      ✗ Playwright MCP     not installed (recommended for browser automation)
 
     Registry last checked: {date} ({N} days ago)
 
@@ -244,11 +252,6 @@ Read dependency-manifest.md, run check commands, report missing.
 
 PRISM-specific dependency checks:
   - notebooklm-py (always)
-  - ffmpeg (video audio mixing)
-  - kokoro-tts (primary TTS)
-  - kokoro-v1.0.onnx + voices-v1.0.bin (model files, 620MB)
-  - @playwright/test (app-expert pattern)
-  - Remotion project (if in video project)
 
 ### Step 5 — Audit status (v6.0.0)
 Read audit-log.json (if exists):
@@ -299,17 +302,6 @@ Check:
   - Last /prism-archive timestamp
   - Pending archive candidates (agents with 5+ unarchived notes)
 
-### Step 8 — Video production readiness
-
-If any project artifact suggests video work (remotion in deps, out/ dir, etc.):
-  VIDEO PRODUCTION
-    ✓/✗ Remotion project detected
-    ✓/✗ ffmpeg available
-    ✓/✗ Kokoro TTS ready (CLI + model files)
-    ✓/✗ Playwright ready (for app-expert screenshots)
-    ✓/✗ CONTEXT.md present in project root
-    Recent renders: {list out/*.mp4 from last 7 days}
-
 ### Step 9 — Project state (if in a project)
 Project name, stack, CLAUDE.md, tasks/, references/, tools-scan.json freshness.
 
@@ -317,19 +309,31 @@ Project name, stack, CLAUDE.md, tasks/, references/, tools-scan.json freshness.
 1. Self-blindness canary flags from Step 6b (likely silently-dead hooks)
 2. Security critical (from /prism-audit)
 3. Missing Tier 1 companions
-4. Missing dependencies (kokoro, ffmpeg) if video work detected
+4. Missing dependencies
 5. Dead agents (> 365 days)
 6. Stale scans (> 30 days)
 7. Pending archive consolidation
 8. Overdue updates
 9. Stale agents
 
+### Recording results (structured detail, v6.6.8)
+
+When `/prism-bootstrap` or `/prism-sync` persists these results to
+`.claude/.prism-state.json`, do not hand back only the aggregate counts —
+also build a `checks_detail` array: one entry per check that is NOT a clean
+pass, shaped `{id, step, status, message}` — `id` a short slug (e.g.
+`step1b-drift`), `step` the step number as a string (e.g. `"1b"`), `status`
+one of `pass`/`fail`/`unknown`, `message` a one-line summary (e.g. "8 stale
+files vs repo"). Use `status: "unknown"` — never `"fail"` or a silent pass —
+for a genuinely unmeasured check (e.g. Step 2c's task-api-probe `unknown`
+verdict). `checks_failed` must equal the count of `"fail"` entries;
+`tools/lib/prism-state.mjs` enforces this at write time.
+
 ## FLAGS
 /prism-health               → full check
 /prism-health --quick       → skip dependency checks
 /prism-health --tools       → external tools only
 /prism-health --agents      → roster only
-/prism-health --video       → video production readiness only
 /prism-health --project     → current project only
 
 ## EXIT CODES (for CI)

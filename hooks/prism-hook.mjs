@@ -13,6 +13,7 @@
 
 import {readFileSync as r, writeFileSync as w, existsSync as e, mkdirSync as mk} from 'fs';
 import {join as j} from 'path';
+import {prismHome} from './lib/prism-home.mjs';
 // Phase 1.3 + v5.2.1: KB router and pasted-content classifier loaded in parallel
 // (E-P1: serial cold-start ≈380ms → parallel cold-start ≈190ms).
 // Each import degrades gracefully if the lib is absent — the outer try/catch
@@ -42,7 +43,7 @@ export async function run(payload, ctx = {}) {
   const ownPrompt = pastedRatio(prompt) >= 0.6 ? stripPastedContent(prompt) : prompt;
   const ownPromptLC = ownPrompt.toLowerCase().trim();
   const sessionId = input.session_id || 'no-session';
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = prismHome();
   let messages = [];
 
   // ── Project-local turn-counter state ──
@@ -261,7 +262,7 @@ export async function run(payload, ctx = {}) {
 
     const playwright_intent = /\b(visual regression|screenshot this page|click through this flow|navigate to .+ and verify)\b/i;
     if (playwright_intent.test(ownPrompt) && shouldSuggest('playwright_mcp', 10)) {
-      messages.push("PRISM: Direct browser control works with @playwright/mcp. Useful for app-expert workflows needing per-step reliability.");
+      messages.push("PRISM: Direct browser control works with @playwright/mcp. Useful for UI-automation workflows needing per-step reliability.");
       recordSuggestion('playwright_mcp'); matchedInvocation = true;
     }
 

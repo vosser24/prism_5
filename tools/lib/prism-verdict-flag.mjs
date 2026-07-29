@@ -23,9 +23,11 @@
 
 import {writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync, readdirSync, appendFileSync} from 'fs';
 import {join} from 'path';
+import {prismHome} from '../../hooks/lib/prism-home.mjs';
+import {renameWithRetry} from './atomic-fs.mjs';
 
 function home() {
-  return process.env.HOME || process.env.USERPROFILE;
+  return prismHome();
 }
 
 function dotClaudeDir() {
@@ -55,11 +57,12 @@ function atomicWrite(path, content) {
   try {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
+    renameWithRetry(renameSync, tmp, path);
     return true;
-  } catch {
+  } catch (renameErr) {
     try {
       writeFileSync(path, content);
+      process.stderr.write(`PRISM verdict-flag: atomic rename failed for ${path} (${(renameErr && renameErr.code) || 'unknown'}); wrote directly instead\n`);
       return true;
     } catch (e) {
       process.stderr.write(`PRISM verdict-flag: write failed for ${path}: ${e && e.message}\n`);

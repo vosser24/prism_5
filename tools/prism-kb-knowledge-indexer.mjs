@@ -26,6 +26,7 @@ import {
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import { hostname } from 'os';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
 
 // Reused primitives (DO NOT duplicate):
 //  - parseYamlFrontMatter(text) -> {raw, fields} and extractKeywords(text, topN) -> string[]
@@ -36,6 +37,7 @@ import { hostname } from 'os';
 import { parseYamlFrontMatter, extractKeywords } from './prism-kb-indexer.mjs';
 import { classifyEntry } from './prism-kb-domains.mjs';
 import { tokenize, termFrequencies } from './lib/prism-bm25.mjs';
+import { prismHome } from '../hooks/lib/prism-home.mjs';
 
 // ── exported constants ──────────────────────────────────────────────────────
 
@@ -110,7 +112,8 @@ export function writeShareMarker(projectRoot, types) {
   const p = join(projectRoot, '.prism-kb-share.json');
   const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmp, JSON.stringify(obj));
-  renameSync(tmp, p);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, p);
   return obj;
 }
 
@@ -511,7 +514,8 @@ export function buildKnowledgeIndex({ home, projectRoot, now } = {}) {
   // Atomic write: tmp + renameSync (Windows/SMB safe; no PowerShell redirection).
   const tmp = `${indexPath}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmp, JSON.stringify(index));
-  renameSync(tmp, indexPath);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, indexPath);
 
   return index;
 }
@@ -524,7 +528,7 @@ if (invokedDirectly) {
     console.log('Usage: prism-kb-knowledge-indexer.mjs\n  Builds the global cross-project knowledge index (~/.prism-kb/knowledge-index.json)\n  from the current project (cwd) when it carries a .prism-kb-share.json marker.');
     process.exit(0);
   }
-  const home = process.env.HOME || process.env.USERPROFILE;
+  const home = prismHome();
   const projectRoot = process.cwd();
   const idx = buildKnowledgeIndex({ home, projectRoot });
   console.log(`PRISM knowledge index built: ${idx.doc_count} entries (${Object.keys(idx.projects).length} project(s)).`);

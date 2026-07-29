@@ -29,6 +29,7 @@
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'fs';
 import {join, dirname} from 'path';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 const args = process.argv.slice(2);
 let opts = {dryRun: false, tuning: false, force: false, home: null, phase15Agreement: false, agreement: false, routingLog: null, recommendCalibration: false, blindnessCanary: false};
@@ -49,7 +50,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-const HOME = opts.home || process.env.HOME || process.env.USERPROFILE;
+const HOME = opts.home || prismHome();
 if (!HOME) {
   process.stderr.write('error: HOME/USERPROFILE unset and no --home passed\n');
   process.exit(2);
@@ -129,7 +130,20 @@ const NO_OP_ACTION_MARKERS = [
 ];
 const NO_OP_CANARY_MIN_VOLUME = 20;   // hook needs >= this many entries to be judged
 const NO_OP_CANARY_FLAG_SHARE = 0.95; // top-action share >= this ⇒ flag
-const NO_OP_CANARY_WINDOW = 2000;     // only look at the last N log entries
+const NO_OP_CANARY_WINDOW = 2000;     // only look at the last N entries — PER HOOK (D064 remedy 4a)
+
+// D064 remedy 4b — paired start/completion lifecycle actions to check for a
+// completion-rate metric. A hook that logs `start` a healthy number of times
+// but `complete` ZERO times is a mechanism that starts and never finishes —
+// invisible to the no-op-share canary above (its top action isn't a no-op
+// marker; it just never closes the loop). Today only phase_1_5_oob emits this
+// convention (`pending-written` -> `verdict-written`, D064's canonical 0/11
+// case), but this list is scanned against EVERY hook (data-driven, not
+// hardcoded to a hook name) so any future hook adopting the same
+// start/complete action-naming convention is automatically covered.
+const LIFECYCLE_PAIRS = [
+  { start: 'pending-written', complete: 'verdict-written' },
+];
 
 function isNoOpAction(action) {
   if (action === undefined || action === null) return false;
@@ -137,39 +151,143 @@ function isNoOpAction(action) {
   return NO_OP_ACTION_MARKERS.some(marker => a === marker || a.includes(marker));
 }
 
+function tallyActions(list) {
+  const s = { total: 0, actions: {} };
+  for (const e of list) {
+    s.total++;
+    const key = String(e.action);
+    s.actions[key] = (s.actions[key] || 0) + 1;
+  }
+  return s;
+}
+
+// D064 remedy 4b: completion-rate metric, computed over each hook's FULL
+// (unwindowed) lifetime history — not the recency window used for the no-op
+// share check below. A mechanism whose completions are genuinely zero
+// forever is invisible to ANY recency window (there is nothing recent to
+// find on either side of the pair), so this check deliberately looks at the
+// whole log, however far back it goes.
+function computeCompletionRates(perHookFull) {
+  const rates = [];
+  const findings = [];
+  for (const [hook, s] of Object.entries(perHookFull)) {
+    for (const pair of LIFECYCLE_PAIRS) {
+      const starts = s.actions[pair.start] || 0;
+      if (starts === 0) continue; // this hook doesn't emit this lifecycle at all
+      const completions = s.actions[pair.complete] || 0;
+      const rate = completions / starts;
+      const row = {
+        hook,
+        start_action: pair.start,
+        complete_action: pair.complete,
+        starts,
+        completions,
+        completion_rate: rate,
+      };
+      rates.push(row);
+      if (completions === 0) {
+        findings.push({
+          ...row,
+          severity: 'LOUD',
+          message: `Hook '${hook}' emitted '${pair.start}' ${starts} time(s) across its full lifetime but '${pair.complete}' ZERO times — the mechanism starts but never completes. Investigate immediately.`,
+        });
+      }
+    }
+  }
+  return { rates, findings };
+}
+
 function computeBlindnessCanary(events) {
-  const perHook = {}; // hook (event name) -> { total, actions: {action: count} }
+  // D064 remedy 4a — group by hook FIRST, over the FULL (unwindowed) event
+  // list, preserving each hook's own chronological order. Previously this
+  // function received an already-windowed (last-2000-of-the-MERGED-log)
+  // slice, so a low-frequency hook (phase_1_5_oob: 8,769 of 47,506 total
+  // lines) was almost entirely excluded before this function ever saw it —
+  // the canary could see only whatever scraps of that hook happened to fall
+  // in the last 2000 lines of every OTHER hook's noise too. Fix: each hook
+  // is now windowed against its OWN last-N entries, not the merged log's.
+  const perHookAll = {};
   for (const e of events) {
     if (!e || !e.event || e.action === undefined) continue; // only events carrying an `action` field are in scope
-    perHook[e.event] ??= { total: 0, actions: {} };
-    perHook[e.event].total++;
-    const key = String(e.action);
-    perHook[e.event].actions[key] = (perHook[e.event].actions[key] || 0) + 1;
+    (perHookAll[e.event] ??= []).push(e);
   }
+
+  const perHookFull = {};     // hook -> tally over its FULL history (completion-rate input)
+  const perHookWindowed = {}; // hook -> tally over its OWN last-N entries (no-op-share input)
+  for (const [hook, list] of Object.entries(perHookAll)) {
+    perHookFull[hook] = tallyActions(list);
+    const ownWindow = list.length > NO_OP_CANARY_WINDOW ? list.slice(list.length - NO_OP_CANARY_WINDOW) : list;
+    perHookWindowed[hook] = tallyActions(ownWindow);
+  }
+
   const checked = [];
   const flagged = [];
-  for (const [hook, s] of Object.entries(perHook)) {
+  for (const [hook, s] of Object.entries(perHookWindowed)) {
     if (s.total < NO_OP_CANARY_MIN_VOLUME) continue;
     const [topAction, topCount] = Object.entries(s.actions).sort((a, b) => b[1] - a[1])[0];
     const share = topCount / s.total;
-    const row = { hook, total: s.total, top_action: topAction, top_action_count: topCount, top_action_share: share };
+    const row = {
+      hook,
+      total: s.total,
+      top_action: topAction,
+      top_action_count: topCount,
+      top_action_share: share,
+      hook_lifetime_total: perHookFull[hook].total,
+    };
     checked.push(row);
     if (isNoOpAction(topAction) && share >= NO_OP_CANARY_FLAG_SHARE) {
-      flagged.push({
-        ...row,
-        severity: 'LOUD',
-        message: `Hook '${hook}' emitted no-op action '${topAction}' in ${(share * 100).toFixed(1)}% of ${s.total} logged entries — likely a silently-dead mechanism. Investigate immediately.`,
-      });
+      // F10 fix (task #23): before escalating to LOUD, cross-check whether
+      // this SAME windowed slice (`s`, already tallied above — no second
+      // pass over the log, no new lifecycle definitions) also shows a
+      // LIFECYCLE_PAIRS completion. A high no-op share plus zero completions
+      // is "likely dead" (the D064 shape: starts:11, completions:0, forever).
+      // A high no-op share WITH recent completions in the SAME window is a
+      // hook correctly bailing most of the time (e.g. a low tag-ratio) while
+      // demonstrably still alive — that is not the same finding and must not
+      // be reported with the same "likely dead" severity.
+      //
+      // DELIBERATELY windowed, not lifetime-wide: `computeCompletionRates()`
+      // below reads `perHookFull` (the hook's ENTIRE history) by design,
+      // exactly so a mechanism that is dead NOW cannot hide behind
+      // completions from long ago (see its own comment). Reusing that
+      // full-lifetime number HERE would create the opposite bug: a hook that
+      // completed successfully once, long before the current window, could
+      // mask a genuine RECENT regression — completions>0 lifetime-wide would
+      // never go back to false even after the mechanism actually died. F10's
+      // own fix-candidate wording is "recent genuine fires exist", and
+      // "recent" is the operative word — so this check is scoped to the same
+      // last-N window the no-op share itself was computed from.
+      const recentCompletions = LIFECYCLE_PAIRS.some(pair => (s.actions[pair.complete] || 0) > 0);
+      if (recentCompletions) {
+        flagged.push({
+          ...row,
+          severity: 'INFO',
+          message: `Hook '${hook}' emitted no-op action '${topAction}' in ${(share * 100).toFixed(1)}% of its own last ${s.total} logged entries, but shows genuine recent completions in that SAME window — likely correctly bailing (e.g. a low tag/arming ratio) rather than silently dead. Review if unexpected, but this is not the "likely dead" shape.`,
+        });
+      } else {
+        flagged.push({
+          ...row,
+          severity: 'LOUD',
+          message: `Hook '${hook}' emitted no-op action '${topAction}' in ${(share * 100).toFixed(1)}% of its own last ${s.total} logged entries — likely a silently-dead mechanism. Investigate immediately.`,
+        });
+      }
     }
   }
   checked.sort((a, b) => b.total - a.total);
-  flagged.sort((a, b) => b.top_action_share - a.top_action_share);
+
+  const { rates: completionRates, findings: completionFindings } = computeCompletionRates(perHookFull);
+
+  const allFlagged = flagged.concat(completionFindings);
+  allFlagged.sort((a, b) => (b.top_action_share ?? 0) - (a.top_action_share ?? 0));
+
   return {
     hooks_checked: checked.length,
     min_volume: NO_OP_CANARY_MIN_VOLUME,
     flag_share_threshold: NO_OP_CANARY_FLAG_SHARE,
-    flagged,
+    per_hook_window: NO_OP_CANARY_WINDOW,
+    flagged: allFlagged,
     all: checked,
+    completion_rates: completionRates,
   };
 }
 
@@ -187,12 +305,23 @@ if (opts.blindnessCanary) {
     process.stdout.write(JSON.stringify({ mode: 'blindness-canary', status: 'no-data', reason: `unreadable: ${e.message}`, hooks_checked: 0, flagged: [] }, null, 2) + '\n');
     process.exit(0);
   }
-  const windowed = canaryEvents.length > NO_OP_CANARY_WINDOW ? canaryEvents.slice(canaryEvents.length - NO_OP_CANARY_WINDOW) : canaryEvents;
-  const result = computeBlindnessCanary(windowed);
-  process.stdout.write(JSON.stringify({ mode: 'blindness-canary', status: 'ok', window_size: windowed.length, ...result }, null, 2) + '\n');
-  if (result.flagged.length) {
-    process.stderr.write(`\n[BLINDNESS CANARY] ${result.flagged.length} hook(s) look silently dead:\n`);
-    for (const f of result.flagged) process.stderr.write(`  - ${f.message}\n`);
+  // D064 remedy 4a: no merged-log windowing here anymore — the FULL event
+  // list goes into computeBlindnessCanary, which windows PER HOOK internally.
+  const result = computeBlindnessCanary(canaryEvents);
+  process.stdout.write(JSON.stringify({ mode: 'blindness-canary', status: 'ok', total_events: canaryEvents.length, ...result }, null, 2) + '\n');
+  // F10 fix (task #23): severity-aware banner — an INFO-demoted entry (high
+  // no-op share, but confirmed-alive via recent completions) must not be
+  // printed under a "look silently dead" header; that would just relocate
+  // the same false alarm from the message text into the banner text.
+  const loudFlags = result.flagged.filter(f => f.severity !== 'INFO');
+  const infoFlags = result.flagged.filter(f => f.severity === 'INFO');
+  if (loudFlags.length) {
+    process.stderr.write(`\n[BLINDNESS CANARY] ${loudFlags.length} hook(s) look silently dead:\n`);
+    for (const f of loudFlags) process.stderr.write(`  - ${f.message}\n`);
+  }
+  if (infoFlags.length) {
+    process.stderr.write(`\n[BLINDNESS CANARY] ${infoFlags.length} hook(s) have a high no-op share but confirmed recent activity (not dead):\n`);
+    for (const f of infoFlags) process.stderr.write(`  - ${f.message}\n`);
   }
   process.exit(0);
 }
@@ -480,7 +609,13 @@ function aggregate(events) {
       if (!r.last_event || e.ts > r.last_event) r.last_event = e.ts;
     }
     const isRouting = e.event === 'prompt_tier_router';
-    if (e.tier && r.tier_distribution[e.tier] !== undefined) r.tier_distribution[e.tier]++;
+    // v-fix (guard-telemetry-skew): dispatch_guard now also fires on silent ALLOW
+    // paths (blocked:false) for visibility (RB-04). Those allow records still
+    // carry `tier`, but they are not a routing/enforcement decision — excluding
+    // them (and ONLY them) keeps tier_distribution's pre-fix semantics for every
+    // other event type that carries `tier`.
+    const isNewGuardAllow = e.event === 'dispatch_guard' && e.blocked === false;
+    if (e.tier && r.tier_distribution[e.tier] !== undefined && !isNewGuardAllow) r.tier_distribution[e.tier]++;
     // FIX-B (v5.x): classifier source is `source` on routing events (legacy code
     // read a non-existent `classifier_source`). Scope to routing events.
     const src = e.classifier_source || (isRouting ? e.source : undefined);

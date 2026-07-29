@@ -7,7 +7,7 @@
   "safety/rm-rf-root": {
     "exit": 2,
     "stdout": "",
-    "stderr": "rm -rf blocked by PRISM safety gate (dangerous/unverifiable target)"
+    "stderr": "rm -rf blocked by PRISM safety gate (dangerous/unverifiable target) (If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt — put the text in a file and pass it via stdin.)"
   },
   "safety/rm-rf-subdir": {
     "exit": 0,
@@ -22,12 +22,12 @@
   "safety/curl-bash": {
     "exit": 2,
     "stdout": "",
-    "stderr": "pipe-to-shell (curl|bash) blocked by PRISM safety gate"
+    "stderr": "pipe-to-shell (curl|bash) blocked by PRISM safety gate (If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt — put the text in a file and pass it via stdin.)"
   },
   "safety/force-push": {
     "exit": 2,
     "stdout": "",
-    "stderr": "Force push blocked by PRISM safety gate"
+    "stderr": "Force push (--force) blocked by PRISM safety gate. If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt or a node -e diagnostic — put the text in a file and pass it via stdin."
   },
   "safety/warn-mainpush": {
     "exit": 0,

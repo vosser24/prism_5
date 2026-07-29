@@ -6,6 +6,228 @@ All notable changes to PRISM are documented here. The format is based on
 
 ## [Unreleased]
 
+## [6.7.1] - 2026-07-29
+
+Reliability and release-safety pass over the 6.7.0 tree. No new surfaces —
+every item below is a hardening of an existing one, and each was measured on
+this repo rather than argued from the code's own comments.
+
+### Added
+
+- **Accounted-findings mirror PII gate** (#93). `tools/prism-mirror-pii-scan.mjs`
+  exited non-zero with 30 findings on a clean tree, all of them false
+  positives — so "zero true positives" was a human judgement re-made every
+  release, not a machine-checkable gate. Every accepted finding now carries a
+  durable, individually justified `ACCOUNTED[]` entry keyed on file + pattern +
+  digest of the matched value. The run fails on any UNACCOUNTED finding, any
+  STALE entry (one that matched nothing this run), and any MALFORMED entry —
+  a suppression list nobody can trust is worse than none. The owner-fragment
+  sweep over `git ls-files` is absorbed into the tool as a second, independent
+  check (D108, Proposed).
+- **`tests/v3/state/test-prism-mirror-pii-gate.mjs`** — 38 assertions covering
+  the accounted/stale/malformed/unaccounted paths.
+
+### Changed
+
+- **22 rename sites migrated to `renameWithRetry`** with a logged degraded
+  fallback (#88). The tmp+rename durability pattern had been hand-copied
+  across hooks and tools — in one case copied *with attribution to the
+  defect*. The fallback path is now logged rather than silent (D046).
+- **Provenance comments cite `writeSentinel()` by name**, not a line range
+  (#95). Nine comments across five hooks pointed at
+  `prism-parent-dispatch-guard.mjs:90-107` — a range that function has never
+  occupied. A cross-file line-number citation rots silently and no test can
+  catch it.
+- **`tests/v3/run-all.sh` records file-level failures** (a crashed test file,
+  as distinct from a failed assertion inside one) in the static log with the
+  node exit code (#90). A file that died on import previously left no trace
+  in the log a reviewer reads.
+- **D086 is cited as a proposal, not as governing policy** (#86), per the
+  `Proposed`-status rules in `.claude/rules/capture-conventions.md`.
+- **`prism-clean` takes its adjudication census after Step 4**, not before, so
+  the count includes the session's own captures (#84, #85).
+
+### Fixed
+
+- **The force-push safety gate matched only the long `--force` spelling**
+  (#91, D105). `git push -f` and `git push <remote> +HEAD:main` were both
+  ALLOWED — measured, not inferred. This also falsifies D044 §(d)'s claim
+  that "an agent could not have pushed this mirror itself even if
+  instructed to." Both spellings are now blocked.
+- **The PII scanner's own source was a PII manifest** (#92, D107). Its
+  patterns were plaintext owner values; they are now reconstructed at load
+  from non-matching parts. The first fix reintroduced the owner's email in an
+  explanatory comment in a regex-escaped form the scanner structurally could
+  not match — caught only by grepping the tracked tree *independently of the
+  tool*, which is the general rule the incident produced: scope a
+  verification to the artifact, never to an instrument's own output.
+- **`capture-evidence-guard` deny message** named a file-wide absence when the
+  real scope was the added block (#87), sending readers to look in the wrong
+  place.
+- **`lesson-match` transient rename failures** are retried and the degraded
+  path logged (#82); its perf gate is now a same-session with/without ratio
+  instead of an absolute wall-clock threshold that flaked under load
+  (#79, #83, D102).
+- **`advisory-log`** caches `mkdir` per directory instead of per write; the
+  `git check-ignore` guidance in `capture-conventions.md` is corrected to
+  require `--no-index` (plain `check-ignore` is silent for tracked-but-ignored
+  paths — the exact state behind a real leak in this project).
+
+## [6.7.0] - 2026-07-29
+
+### Added
+
+- **Panel-guard F7 Phases 1-4.** Deterministic `panel.json` producer off
+  Agent-dispatch (Phase 2, D072), cross-turn panel-active latch so the
+  name-guard now fires on post-approval seat dispatch (Phase 1), Stop-gated
+  phase-0d OOB fire decoupled from the model-authored `panel.json` (Phase 3),
+  and a 0-seats panel-completion gate (Phase 4).
+- **Mechanical D062 panel name-guard** (F1) — warns on a name'd `Agent()`
+  dispatch during panel turns; F8 adds an advisory when a seat appears in
+  both `positions[]` and `dropped_positions[]`.
+- **`force_opus` soft-gate (D069).** The model can no longer self-grant the
+  opus override; it must ask the user. Dispatch-guard silent-allow paths are
+  now logged and a telemetry-skew bug is fixed alongside it (RB-04).
+- **Task-snapshot malformed-tool-call detection**, closing a live F38
+  fixture gap (#57 F40, #66).
+- **D097 Tier-core standing-rules exemption** — a 7-rule core set is exempt
+  from the date-ordered standing-rules eviction/sort (#69).
+- **Corpus-backed dedup baseline + adjudication retirement mechanism**
+  (append-only `**Retired:**` line; `**Status:**` is never edited in place)
+  (#58 #61 #62).
+- **Bounded EPERM/EACCES/EBUSY retry** on atomic tmp+rename writes, closing
+  a Windows-specific durability gap (#47).
+- **Roster name-drift reconcile** (#26 #31).
+- **Shared `makeFixtureHome` test helper**, replacing ad hoc per-test
+  fixture-home setup (#55 F38).
+- ~40 new regression tests across `tests/v3/{hooks,state,lib,agents,tools}/`
+  backing the items above (panel-guard consistency/evidence-class,
+  name-guard latch, seat recorder, phase-0d schema parity, dispatch
+  sentinel/self-chair, atomic-fs retry, mutation-guard command-position
+  narrowing, memory-heal Tier-core exemption, and more).
+
+### Changed
+
+- **Chair-facing panel schema synced with reviewer taxonomy**: `evidence_class`
+  widened to a 7-value enum, `rationale.alternatives_considered` added to
+  the injected schema, nameless-seat dispatch mandated (F1-F5, RB-05..07).
+- **Classifier**: pasted/transcript content no longer overrides explicit-panel
+  suppression or triggers a false re-summon on a minority-paste (D068, D077,
+  F16, F22/D079, F24); a prefix-anchor force-override token closes a paste
+  self-grant bypass (F16/D077).
+- **OOB reviewer spawn unified** across phase-0d and phase-1.5 into one
+  shared lib, with a 240s timeout (D070, RB-06).
+- **Tier-router** suppresses panel misfire on background task-notification
+  turns (D075); F23 prunes stale turn-tier sentinels; sentinel resolved-path
+  emit + `evidence_class` enum gate + MSYS `cygpath` handling (F22/D079,
+  F24, MSYS).
+- **Chair-only turn-tier sentinel (D087).** Only the chair may write
+  `.prism-turn-tier-*.json`; the dispatch-guard exemption and the
+  tier-override directive are gated on `CLAUDE_CODE_CHILD_SESSION !== '1'`,
+  always failing open and logging the fail-open. A named `Agent()` dispatch
+  now appends its teammate-report clause outside the locked `FOOTER`
+  (D089) (#43 #44).
+- **Governance**: `Proposed` status formally defined and surfaced on
+  adjudications; the agent-factory template fixed to match (#39 #40 #41).
+- **Adjudication status hygiene.** `commands/prism-bootstrap.md` no longer
+  labels the Proposed D001 as "Locked design"; D001 is marked `Superseded`
+  by D002/D004 with its still-live rationale preserved in place.
+  `Superseded`/`Withdrawn` and the `**Superseded-by:**` field are now
+  documented in `.claude/rules/capture-conventions.md` (#73 #74).
+- **Standing-rules cap** raised 12 -> 30 -> 35 across the window as the
+  corpus-backed dedup baseline landed (#53 #22 #32 #51, D083 Phase 1).
+- **`prism-clean --since`** resolves a SHA-shaped value as a git revision
+  instead of misreading it as a date (#68 F50).
+- **Mutation-guard write-pattern** narrowed to command position, so heredoc
+  bodies and `-m` commit-message text no longer false-trigger it (#67 F49).
+- **ACL**: guard manifest-owned agents from a promote/upgrade split-brain
+  (#8); stale-tmp cleanup now unlinks instead of self-renaming (#48).
+- **`prism-catalog`/conventions**: restore the `claude-master` reference —
+  `git status` cannot verify docs-only claims on its own (#63 F46, #64 F47).
+
+### Fixed
+
+- **D093 adjudication-retirement mechanism was retiring itself** — header
+  extraction is now scoped to the header block only (#61 #62 #65).
+- **Skill-equip scorer** was false-firing on PRISM's own boilerplate (#60
+  F43).
+- **Guards false-positive batch** + latent instrumentation gaps closed
+  across dispatch/mutation/wiring guards (#23 #25 #33 #38).
+- **Wiring-guard**: single-pass state-machine `stripComments`, closing an
+  F6 false-negative.
+- **Five verification instruments** repaired (#29 #30 #34 #35).
+- **Test runner discovery** (`tests/v3/run-all.sh`) moved from a
+  hand-maintained glob (silently covering a subset of one directory) to
+  `git ls-files`-based discovery, reproducible across checkouts (F13
+  manual-install detection; F27 seat-bookkeeping docs).
+
+## [6.6.11] - 2026-07-23
+
+### Changed
+
+- **Post-removal cleanup.** Reconcile uninstall-script PRISM-owned skill
+  list with manifest `directories[]` (7 skills; add missing
+  `master-orchestrator`, drop non-shipped `claude-code-expert`). Reword dead
+  `prism-app-expert` references (opus advisory message, bootstrap example).
+  De-document the unimplemented `--check-claude-chain` flag as a manual
+  `/prism-discover` procedure.
+
+## [6.6.10] - 2026-07-23
+
+### Removed
+
+- **Dependency removal: claude-mem, pwagent, video-production, prism-app-expert.**
+  Remove three bundled subsystems: claude-mem two-mode memory + detection
+  (`hooks/lib/prism-claude-mem-*`), pwagent bundled Playwright CLI
+  (`tools/pwagent/`), and the video-production skill + `prism-app-expert`
+  command. Strip `prism-deps`/`dependency-manifest` Tiers B (video) and C
+  (app-expert), keeping Tier A (notebooklm-py) and Tier D (gh/jq). Clean
+  residual dead references (opus-classifier allowlist, `prism-health` layout
+  list).
+
+## [6.6.9] - 2026-07-23
+
+### Fixed
+
+- **`prism-clean`: reject MSYS path-converted `--title` arguments.** Git
+  Bash's MSYS auto path-conversion rewrote a leading-`/` `--title` argument
+  into a Windows Git-install path (e.g. `/prism-health…` →
+  `C:/Program Files/Git/prism-health…`), corrupting
+  `.claude/agents/MEMORY.md`. Added `MSYS_NO_PATHCONV=1` to all three
+  documented invocations in `commands/prism-clean.md`, plus a
+  `rejectIfMsysPathConverted()` guard (new exit code 9) in
+  `tools/prism-clean.mjs` wired into all three subcommands, and 4 new test
+  arms. (task 12)
+
+## [6.6.8] - 2026-07-22
+
+### Added
+
+- **Health `checks_detail` structured-result schema.** `/prism-bootstrap` and
+  `/prism-sync` now persist a `checks_detail` array alongside the aggregate
+  health counts — one entry per check that is not a clean pass, shaped
+  `{id, step, status, message}`. `status` is one of `pass`/`fail`/`unknown`
+  (`CHECK_STATUSES` in `tools/lib/prism-state.mjs`); `unknown` is the genuine
+  third state for a check that could not be measured (e.g. a task-api-probe
+  with no observed Task call in the window) and must never be collapsed into
+  a pass or a fail.
+- **`assertHealthChecksDetailConsistent` gate** in `tools/lib/prism-state.mjs`,
+  enforced at the single chokepoint both `/prism-sync` and `/prism-bootstrap`
+  route through when completing the health phase: every `checks_detail` entry
+  must carry a valid `status`, and `checks_failed` must equal the count of
+  `"fail"` entries. Absent `checks_detail` is a no-op, so state files written
+  before this field existed remain backward compatible.
+
+### Changed
+
+- **Phase 1.5 OOB error code** is no longer hardcoded to
+  `CLAUDE_BINARY_MISSING`; it is now derived from the real errno and applies
+  only to `ENOENT`, so other spawn failures surface their actual error code
+  instead of a misleading fixed label.
+- **`~/.claude/CLAUDE.md` demoted from a required check to informational** in
+  the health/bootstrap flow — its absence no longer fails the check, it is
+  reported for awareness only.
+
 ## [6.6.7] - 2026-07-22
 
 ### Added

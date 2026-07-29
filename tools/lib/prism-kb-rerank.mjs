@@ -27,6 +27,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { prismHome } from '../../hooks/lib/prism-home.mjs';
 
 // ── exported constants ────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export function resolveClaudeBin() {
   if (process.env.PRISM_CLAUDE_BIN) return process.env.PRISM_CLAUDE_BIN;
   const isWin = process.platform === 'win32';
   const exts = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
-  const H = process.env.HOME || process.env.USERPROFILE || '';
+  const H = prismHome();
   const extraDirs = [join(H, '.local', 'bin')];
   const pathDirs = (process.env.PATH || '').split(isWin ? ';' : ':').concat(extraDirs);
   for (const dir of pathDirs) {

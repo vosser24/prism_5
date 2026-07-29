@@ -20,7 +20,9 @@
 //     PreToolUse dispatcher; standalone shim at the bottom for direct use/tests.
 //   • Specialist source of truth = roster.agents matched on `core_domains`
 //     (the field that ALREADY exists — no parallel domain_keywords array).
-//     Archived / non-available agents are skipped (red-team S3).
+//     Archived / dead-status agents are skipped (red-team S3; the status
+//     vocabulary was widened from the single literal 'available' to
+//     LIVE_STATUSES by task #54 — see that block for the census).
 //   • Three-path subagent-context bypass, identical to agent-model-guard /
 //     parent-dispatch-guard (red-team S4): a subagent spawning a subagent is
 //     not re-gated by parent rules.
@@ -60,8 +62,10 @@
 
 import {readFileSync, existsSync, appendFileSync, mkdirSync} from 'node:fs';
 import {join, dirname, basename} from 'node:path';
+import {createHash} from 'node:crypto';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.USERPROFILE || process.env.HOME || '';
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE_RAW = String(process.env.PRISM_SPECIALIST_GUARD || 'advisory').toLowerCase();
 const MODE = ['off', 'advisory', 'enforce'].includes(MODE_RAW) ? MODE_RAW : 'advisory';
@@ -105,11 +109,55 @@ function scoreSignals(text, signals) {
   return s;
 }
 
+// ── Negation lookback (task #32, 2026-07-28) ────────────────────────────────
+// BUILD_SIGNALS was NEGATION-BLIND: `\bcreate\b` scored +1 on "do NOT create a
+// branch", `\badd (an? )?\b` on "a blanket add ... is explicitly forbidden".
+// Dispatch prompts are dense with prohibitions ("do NOT create", "never add",
+// "avoid ... without"), so an explicitly FORBIDDEN build verb inflated
+// buildScore exactly like a requested one. Measured on the real logged FP
+// fixture fixtures/t32-specialist-routing-fp/fp-1-git-commit-dispatch.txt
+// (a pure `git commit` task): build 4 → 3, with `\bcreate\b` correctly
+// suppressed on "do not create".
+//
+// ASYMMETRIC ON PURPOSE — build signals only, NOT read signals. The file
+// header states the governing bias: "Build-vs-read classifier biased toward
+// SILENCE (red-team / proposal §5.3, §11) ... False-silence is safer than
+// false-block for a guard that can deny." Suppressing a negated BUILD verb
+// only ever LOWERS buildScore → strictly toward silence (safe). Suppressing a
+// negated READ verb would only ever RAISE the build lean → strictly toward
+// more firing, against that bias. Measured cost of the symmetric variant on
+// tp-1-etimedout-dispatch.txt: read 4 → 2 (it suppresses "not even read-only",
+// a constraint clause) — a real accuracy gain in isolation, but it pushes a
+// TRUE-positive-adjacent text further build-ward for no fired-behaviour
+// benefit. Not shipped. Revisit only with a fixture where it changes isBuild.
+//
+// A signal scores if it has AT LEAST ONE non-negated occurrence — so text with
+// no negation at all scores byte-identically to the pre-#32 scorer (verified:
+// tp-1 build=5/read=4 and fp-2 build=1/read=0 are unchanged).
+const NEGATION_RE = /\b(?:not|never|dont|doesnt|didnt|cannot|cant|avoid|without|forbidden|refuses?|refused|skip)\b|\bno\s+(?:need|longer)\b/;
+const NEGATION_WINDOW = 40; // chars of lookback before the matched verb
+
+function scoreSignalsNegationAware(text, signals) {
+  let s = 0;
+  for (const [re, w] of signals) {
+    // Fresh global clone per call — never mutate the shared literal's lastIndex.
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    let m;
+    while ((m = g.exec(text)) !== null) {
+      const pre = text.slice(Math.max(0, m.index - NEGATION_WINDOW), m.index);
+      if (NEGATION_RE.test(pre)) continue; // explicitly forbidden → not build intent
+      s += w;
+      break; // weight counts once per signal, matching the pre-#32 semantics
+    }
+  }
+  return s;
+}
+
 // Returns {isBuild, buildScore, readScore}. isBuild only when build strictly
 // outweighs read AND clears a floor of 1 (biased to silence).
 export function classifyBuildVsRead(text) {
   const t = String(text || '').toLowerCase();
-  const buildScore = scoreSignals(t, BUILD_SIGNALS);
+  const buildScore = scoreSignalsNegationAware(t, BUILD_SIGNALS);
   const readScore = scoreSignals(t, READ_SIGNALS);
   return {isBuild: buildScore >= 1 && buildScore > readScore, buildScore, readScore};
 }
@@ -189,7 +237,75 @@ function agentTerms(name, entry) {
   return terms.map(t => String(t || '').toLowerCase()).filter(t => t.length >= 3);
 }
 
-// Returns {name, score, matchedTerms} of the best non-archived, available
+// ── Roster status vocabulary (task #54 / F37, 2026-07-28) ───────────────────
+// The candidate filter was `entry.status && entry.status !== 'available'` —
+// a single-literal string equality. MEASURED against the INSTALLED roster
+// (C:\Users\devuser\.claude\skills\prism-plan\references\roster.json — the copy
+// that actually drives dispatch; the REPO skeleton at
+// skills/prism-plan/references/roster.json is a deliberately EMPTY fresh-install
+// template and carries no status values at all), 21 agents:
+//     "available" × 19,  "active" × 1 (claude-master),  field absent × 1
+//     (marketing-production-ops-specialist).
+// So `claude-master` — 37 completed tasks, last used 2026-07-27 — was SILENTLY
+// excluded from every routing suggestion.
+//
+// WHY THIS IS NOT A ONE-LINE STRING SWAP: the writers disagree, so no single
+// literal is correct.
+//   tools/prism-roster.mjs:142            → writes 'upgrade_needed'
+//   tools/prism-roster.mjs:185            → 'upgrade_needed' → 'active'
+//   tools/prism-capability-learn.mjs:244  → 'upgrade_needed' → 'active'
+//   hooks/prism-agent-write-register.mjs:182 → writes the stub with NO status
+//                                              field at all (→ undefined)
+// No shipped .mjs writer in this repo emits the literal 'available' at all
+// (grepped tools/ + hooks/: the only 'available' producers are unrelated —
+// prism-task-api-probe.mjs:218 and this file). The 19 'available' values are
+// legacy/prose-authored. Changing the literal to 'active' would break the other
+// 19; the fix-class is a LIVE-STATE SET, not a different string.
+//
+// D046 (Locked) — an omissive failure is fixed by making misses LOUD, never by
+// silently widening a parser. So this is an explicit ALLOW-list, not a
+// deny-list: an unknown future status still excludes (fail-closed), but
+// statusCensus() below counts and names every excluded value and run() puts it
+// on the routing-log line, so the NEXT silent exclusion is measurable from the
+// log alone instead of requiring archaeology.
+//
+// 'upgrade_needed' is LIVE on purpose: prism-roster.mjs:142 sets it as an
+// upgrade FLAG on a working agent and :185 clears it after the upgrade — the
+// agent is dispatchable throughout. Excluding it would create exactly the
+// silent-exclusion class this fix removes.
+//
+// NOT included (genuinely dead): 'archived', 'retired'. `archived === true`
+// remains a separate boolean check — both paths are kept, they are different
+// fields.
+export const LIVE_STATUSES = new Set(['available', 'active', 'upgrade_needed']);
+
+export function isLiveStatus(entry) {
+  if (!entry || entry.status === undefined || entry.status === null || entry.status === '') return true;
+  return LIVE_STATUSES.has(String(entry.status).toLowerCase());
+}
+
+// D046 instrumentation: how many non-archived roster entries this guard threw
+// away purely on `status`, and which literal values did it. Emitted on every
+// roster-consulting log line in run(). excluded_by_status > 0 with an
+// unexpected value in excluded_statuses is the tripwire for the next
+// vocabulary drift.
+export function statusCensus(roster) {
+  const out = {excluded_by_status: 0, excluded_statuses: []};
+  try {
+    if (!roster || !roster.agents || typeof roster.agents !== 'object') return out;
+    const seen = new Set();
+    for (const entry of Object.values(roster.agents)) {
+      if (!entry || entry.archived === true) continue;
+      if (isLiveStatus(entry)) continue;
+      out.excluded_by_status++;
+      seen.add(String(entry.status));
+    }
+    out.excluded_statuses = [...seen].sort();
+  } catch {}
+  return out;
+}
+
+// Returns {name, score, matchedTerms} of the best non-archived, live-status
 // specialist whose domain terms appear in the task text, or null. score =
 // count of distinct matched terms (a multi-word term counts as one strong
 // hit). matchedTerms is the actual list of terms that matched, for
@@ -200,7 +316,7 @@ export function matchSpecialist(text, roster) {
   let best = null, bestScore = 0, bestMatched = [];
   for (const [name, entry] of Object.entries(roster.agents)) {
     if (!entry || entry.archived === true) continue;
-    if (entry.status && entry.status !== 'available') continue;
+    if (!isLiveStatus(entry)) continue; // task #54 — LIVE_STATUSES set, not one literal
     // build_class:false means this specialist does NOT own build work — skip.
     if (entry.build_class === false) continue;
     const terms = agentTerms(name, entry);
@@ -224,7 +340,7 @@ export function matchSpecialists(text, roster, {limit = 6, minScore = 1} = {}) {
   const hits = [];
   for (const [name, entry] of Object.entries(roster.agents)) {
     if (!entry || entry.archived === true) continue;
-    if (entry.status && entry.status !== 'available') continue;
+    if (!isLiveStatus(entry)) continue; // task #54 — LIVE_STATUSES set, not one literal
     const terms = agentTerms(name, entry);
     const matched = new Set();
     for (const term of terms) {
@@ -252,6 +368,26 @@ function appendLog(obj) {
     mkdirSync(dirname(LOG_PATH), {recursive: true});
     appendFileSync(LOG_PATH, JSON.stringify(obj) + '\n');
   } catch {}
+}
+
+// PRISM task #32 (2026-07-28): the routing log previously carried ONLY the
+// classifier's own output (build_score/read_score/action) — no field tied
+// the event back to the originating dispatch text, so a false-positive
+// (e.g. a trivial one-line edit nudged toward an irrelevant specialist)
+// could NOT be identified from the log alone; it required archaeology
+// (joining routing-log timestamps to session transcripts by hand — see
+// docs/prism/plans/... T32 report). This computes a short, non-reversible
+// fingerprint of the normalised dispatch text so future FPs are joinable
+// to their originating dispatch WITHOUT transcript archaeology, while
+// deliberately NEVER persisting the raw prompt/description text itself
+// (privacy/log-bloat guard). Same normalisation as classifyBuildVsRead()
+// (lower-cased) so two log lines with the same hash are guaranteed to have
+// scored identically. 16 hex chars (64 bits) is ample — this repo emits at
+// most low-thousands of these events, nowhere near a birthday-bound risk.
+function promptHash(text) {
+  try {
+    return createHash('sha256').update(String(text || '').toLowerCase()).digest('hex').slice(0, 16);
+  } catch { return null; }
 }
 
 export async function run(input) {
@@ -296,6 +432,15 @@ export async function run(input) {
     const ti = input.tool_input || {};
     const subagentType = String(ti.subagent_type || '').toLowerCase();
     const sessionId = input.session_id || 'anon';
+    // Computed up front (cheap — just string concat) so EVERY specialist_
+    // routing_guard log line below, including the force_gp passthrough, can
+    // carry the prompt_hash join key (task #32).
+    const text = `${ti.description || ''}\n${ti.prompt || ''}`.trim();
+    const pHash = promptHash(text);
+    // Roster status census (task #54 / D046). Empty until the roster is loaded
+    // below, so the two pre-roster log lines spread a no-op — only the log
+    // lines that actually consulted the roster carry excluded_by_status.
+    let sc = {};
 
     // Exempt: a non-generic subagent_type was already chosen (specialist / fork /
     // orchestrator / etc.). This is the cheap early-exit.
@@ -312,22 +457,25 @@ export async function run(input) {
 
     // Override: !gp-force: → sentinel.force_gp (set upstream by the tier-router).
     if (sentinel && sentinel.force_gp === true) {
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'passthrough-force-gp'});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'passthrough-force-gp', prompt_hash: pHash, ...sc});
       return allow('');
     }
 
-    const text = `${ti.description || ''}\n${ti.prompt || ''}`.trim();
     const cls = classifyBuildVsRead(text);
 
     // Read-only recon to a generic agent is correct — stay silent.
     if (!cls.isBuild) {
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-read-class', build_score: cls.buildScore, read_score: cls.readScore});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-read-class', build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
       return allow('');
     }
 
     const roster = loadRoster();
     const specialist = matchSpecialist(text, roster);
     const domain = matchDomain(text);
+    // D046 (Locked) — the status filter above drops candidates. Make the drop
+    // VISIBLE on every roster-consulting log line rather than letting a future
+    // vocabulary drift silently shrink the candidate pool again (task #54).
+    sc = statusCensus(roster);
 
     // Case A — a matching specialist EXISTS AND clears the nudge floor.
     // D056 (2026-07-21): the nudge floor was previously score>=1 (any single
@@ -346,10 +494,10 @@ export async function run(input) {
       const confident = specialist.score >= ENFORCE_MIN_SCORE;
       const base = `PRISM SPECIALIST-ROUTING: this is BUILD-class work (build=${cls.buildScore}/read=${cls.readScore}) routed to '${subagentType || 'general-purpose'}', but roster specialist '${specialist.name}' covers this domain. Generic agents drift from the design system / domain conventions and keep no durable knowledge — re-dispatch with subagent_type:'${specialist.name}'.`;
       if (MODE === 'enforce' && confident) {
-        appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'block', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+        appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'block', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
         return deny(`${base} Override: prefix the user prompt with !gp-force: (or set PRISM_SPECIALIST_GUARD=off / advisory).`);
       }
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-specialist', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-specialist', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
       return allow(`${base} (advisory — dispatch proceeds. Override: !gp-force:.)`);
     }
 
@@ -357,18 +505,18 @@ export async function run(input) {
     // Do NOT fall through to the "no specialist exists" hire-nudge below —
     // one does exist, it just didn't clear the bar. Stay silent.
     if (specialist) {
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-weak-match', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-weak-match', specialist: specialist.name, score: specialist.score, matched_terms: specialist.matchedTerms, subagent_type: subagentType, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
       return allow('');
     }
 
     // Case B — known build domain, but NO specialist exists yet. Never blocks.
     if (domain && domain.score >= 2) {
-      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-hire', domain: domain.domain, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+      appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'nudge-hire', domain: domain.domain, mode: MODE, build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
       return allow(`PRISM SPECIALIST-ROUTING: this is BUILD-class ${domain.domain} work routed to a generic agent, and no roster specialist owns that domain. Consider hiring one via @agent-factory (dispatch @master-orchestrator) before building, so future ${domain.domain} work reuses durable domain knowledge. Advisory only; dispatch proceeds.`);
     }
 
     // Case C — build-class but unknown domain → don't nag.
-    appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-unknown-domain', mode: MODE, build_score: cls.buildScore, read_score: cls.readScore});
+    appendLog({event: 'specialist_routing_guard', ts: new Date().toISOString(), session_id: sessionId, action: 'silent-unknown-domain', mode: MODE, build_score: cls.buildScore, read_score: cls.readScore, prompt_hash: pHash, ...sc});
     return allow('');
   } catch {
     return allow('');

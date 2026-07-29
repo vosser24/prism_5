@@ -18,7 +18,7 @@
 //     One-turn user override via !opus-force: prefix is read from the
 //     sentinel (set by prism-prompt-tier-router on UserPromptSubmit).
 //   - Atomic tempfile + rename + catch-fallback for state writes:
-//     prism-parent-dispatch-guard.mjs:90-107 (verbatim shape).
+//     writeSentinel() in prism-parent-dispatch-guard.mjs (verbatim shape).
 //   - Sentinel-aware mode handling (soft / hard): mirrors
 //     prism-agent-model-guard.mjs:200-238.
 //
@@ -47,9 +47,11 @@
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {createHash} from 'node:crypto';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 import {resolveParallelCap} from './lib/prism-cap.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const POLICY_PATH = join(H, '.claude', 'prism-policy.json');
 const RECENT_WINDOW_MS = 60_000;
@@ -105,15 +107,23 @@ function readTrace(sessionId) {
 }
 
 // Atomic write — tempfile + rename + catch-fallback. Pattern copied
-// verbatim from prism-parent-dispatch-guard.mjs:90-107.
+// verbatim from writeSentinel() in hooks/prism-parent-dispatch-guard.mjs.
 function writeTrace(sessionId, trace) {
+  const p = tracePath(sessionId);
+  const tmp = p + '.tmp';
+  const body = JSON.stringify(trace, null, 2);
   try {
-    const p = tracePath(sessionId);
-    const tmp = p + '.tmp';
-    writeFileSync(tmp, JSON.stringify(trace, null, 2));
-    renameSync(tmp, p);
-  } catch {
-    try { writeFileSync(tracePath(sessionId), JSON.stringify(trace, null, 2)); } catch {}
+    writeFileSync(tmp, body);
+    renameWithRetry(renameSync, tmp, p);
+  } catch (renameErr) {
+    try {
+      writeFileSync(p, body);
+      appendLog({event: 'parallel_guard_trace_write', session_id: sessionId,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      appendLog({event: 'parallel_guard_trace_write', session_id: sessionId,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 

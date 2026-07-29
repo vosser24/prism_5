@@ -19,7 +19,7 @@
 //     so a subagent-spawned re-prompt (rare but possible) bypasses.
 //   - force_opus sentinel honoring: prism-mutation-guard.mjs:281-311.
 //   - Atomic tempfile + rename + catch-fallback for the pending-trigger
-//     state file: prism-parent-dispatch-guard.mjs:90-107 (verbatim).
+//     state file: writeSentinel() in prism-parent-dispatch-guard.mjs (verbatim).
 //   - Sentinel-aware mode + policy precedence: parity with the v3.1.0
 //     parallel-guard and panel-guard hooks in this directory.
 //
@@ -43,8 +43,10 @@
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {createHash} from 'node:crypto';
+import {prismHome} from './lib/prism-home.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const POLICY_PATH = join(H, '.claude', 'prism-policy.json');
 const TRIGGERS_PATH = join(H, '.claude', 'skills', 'prism-plan', 'references', 'skill-triggers.md');
@@ -74,15 +76,24 @@ function readPending(sessionId) {
   } catch { return {entries: [], turn_count: 0}; }
 }
 
-// Atomic write — verbatim shape from parent-dispatch-guard.mjs:90-107.
+// Atomic write — verbatim shape from writeSentinel() in
+// hooks/prism-parent-dispatch-guard.mjs.
 function writePending(sessionId, payload) {
+  const p = pendingPath(sessionId);
+  const tmp = p + '.tmp';
+  const body = JSON.stringify(payload, null, 2);
   try {
-    const p = pendingPath(sessionId);
-    const tmp = p + '.tmp';
-    writeFileSync(tmp, JSON.stringify(payload, null, 2));
-    renameSync(tmp, p);
-  } catch {
-    try { writeFileSync(pendingPath(sessionId), JSON.stringify(payload, null, 2)); } catch {}
+    writeFileSync(tmp, body);
+    renameWithRetry(renameSync, tmp, p);
+  } catch (renameErr) {
+    try {
+      writeFileSync(p, body);
+      appendLog({event: 'skill_trigger_guard_pending_write', session_id: sessionId,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      appendLog({event: 'skill_trigger_guard_pending_write', session_id: sessionId,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -225,7 +236,7 @@ function run(payload) {
   // Note: sentinel may not exist YET if this hook fires before tier-router,
   // so detect prefix in the prompt directly as well.
   const sentinel = readSentinel(sessionId);
-  if ((sentinel && sentinel.force_opus === true) || /!opus-force:/.test(userPrompt)) {
+  if ((sentinel && sentinel.force_opus === true) || /^\s*!opus-force:/.test(userPrompt)) {
     appendLog({
       ts: new Date().toISOString(),
       event: 'skill_trigger_guard',

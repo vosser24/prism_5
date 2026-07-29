@@ -307,5 +307,69 @@ await test('I. genuine strong match (score>=2) → still nudges (recall preserve
   assert(/html-email-esp-engineer/.test(r.additionalContext || ''), `strong match should still nudge, got: ${r.additionalContext}`);
 });
 
+// ── Task #54 / F37: roster status vocabulary (2026-07-28) ───────────────────
+// The candidate filter was `entry.status && entry.status !== 'available'`.
+// Measured against the INSTALLED roster
+// (C:\Users\devuser\.claude\skills\prism-plan\references\roster.json — the copy
+// that drives real dispatch; the repo skeleton at
+// skills/prism-plan/references/roster.json is an intentionally EMPTY template),
+// 21 agents scored: "available" x19, "active" x1, field-absent x1. The single
+// "active" entry is `claude-master` (37 completed tasks, last_used
+// 2026-07-27T14:27:14.134Z) — SILENTLY excluded from every routing suggestion.
+//
+// This roster is a VERBATIM shape copy of that real excluded entry: the same
+// name, the same `"status": "active"`, and its real core_domains array
+// ["hooks","subagents","mcp","plugins","permissions","settings","sessions",
+// "powershell"] as quoted from the installed file.
+const STATUS_ACTIVE_ROSTER = {
+  version: '3.1.0',
+  agents: {
+    'claude-master': {
+      core_domains: ['hooks', 'subagents', 'mcp', 'plugins', 'permissions', 'settings', 'sessions', 'powershell'],
+      status: 'active', // ← the real installed value; pre-#54 this excluded the agent
+      build_class: true,
+    },
+    'retired-ghost': {
+      core_domains: ['hooks', 'subagents'],
+      status: 'retired', // genuinely dead → must STAY excluded, and be COUNTED
+    },
+  },
+  skills: {}, tools: {}, mcps: {},
+};
+
+// RED before the fix (pre-#54 the filter dropped status:'active', so no
+// specialist matched and the guard fell through to silence/hire-nudge),
+// GREEN after. Scoped per D084 to the SPECIALIST-ROUTING nudge text only —
+// it asserts the agent NAME is recommended, not merely mentioned somewhere.
+await test('J. #54: roster entry with status:"active" is a live candidate (was silently excluded)', () => {
+  const r = runDispatcher(
+    {tool_name: 'Agent', session_id: 'j', tool_input: {subagent_type: 'general-purpose', model: 'sonnet', prompt: 'implement the new subagents permissions hooks wiring for claude code settings'}},
+    {roster: STATUS_ACTIVE_ROSTER, env: {PRISM_SPECIALIST_GUARD: 'advisory'}}
+  );
+  assert(r.exit === 0, `exit ${r.exit}`);
+  assert(/SPECIALIST-ROUTING/.test(r.additionalContext || ''), `expected a specialist-routing nudge, got: ${r.additionalContext}`);
+  assert(/subagent_type:'claude-master'/.test(r.additionalContext || ''),
+    `status:'active' must be treated as LIVE and recommended by name, got: ${r.additionalContext}`);
+});
+
+// D046 (Locked) — the exclusion must be LOUD, not silent. A genuinely dead
+// status still excludes, but the routing log now carries the count + the
+// offending literal so the next vocabulary drift is measurable from the log.
+await test('K. #54/D046: a dead status still excludes, but is COUNTED and NAMED in the routing log', async () => {
+  const {statusCensus, matchSpecialist} = await import('../../../hooks/prism-specialist-routing-guard.mjs');
+  const c = statusCensus(STATUS_ACTIVE_ROSTER);
+  assert(c.excluded_by_status === 1, `expected exactly 1 excluded-by-status ('retired-ghost'), got ${JSON.stringify(c)}`);
+  assert(JSON.stringify(c.excluded_statuses) === JSON.stringify(['retired']),
+    `the offending literal must be named, got ${JSON.stringify(c)}`);
+  // and the dead one is genuinely not matchable
+  const m = matchSpecialist('implement the new subagents hooks wiring', STATUS_ACTIVE_ROSTER);
+  assert(m && m.name === 'claude-master', `dead entry must not win the match, got ${JSON.stringify(m)}`);
+  // absent status field is LIVE (agent-write-register writes no status at all)
+  const noStatus = {version: '1', agents: {'html-email-esp-engineer': {core_domains: ['bulletproof-responsive-html-email', 'mso-conditional-comments-ghost-tables']}}};
+  assert(statusCensus(noStatus).excluded_by_status === 0, 'an absent status field must never be counted as an exclusion');
+  assert(matchSpecialist('build a bulletproof responsive html email template with mso conditional comments ghost tables', noStatus) !== null,
+    'an entry with NO status field must remain matchable');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

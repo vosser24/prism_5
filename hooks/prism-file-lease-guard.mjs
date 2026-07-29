@@ -45,6 +45,7 @@ import { prismHome } from './lib/prism-home.mjs';
 import { extractAgentId, reconcile } from './lib/prism-live-agents.mjs';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
 import { classifyBuildVsRead } from './prism-specialist-routing-guard.mjs';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
 
 // Declaration line. agent= is the DECLARED identity (the agent writes its own
 // agentId); files= is a comma-separated path list terminated by end-of-line.
@@ -75,15 +76,30 @@ function appendLog(obj) {
   } catch { /* fail-open */ }
 }
 
+// MIGRATE-LOW-PRIORITY (task #88 census): this ledger is documented
+// ADVISORY-ONLY / FAIL-OPEN with TTL self-heal (see header above) — a lost
+// write here is not the "control disarmed" risk it can look like at a
+// glance, only a missed advisory nudge that self-corrects on the next TTL
+// sweep. Migrated for consistency with the rest of the sweep, not urgency.
 function atomicWrite(path, obj) {
   try {
     mkdirSync(dirname(path), { recursive: true });
     const tmp = path + '.tmp';
-    writeFileSync(tmp, JSON.stringify(obj, null, 2));
-    renameSync(tmp, path);
-  } catch {
-    try { writeFileSync(path, JSON.stringify(obj, null, 2)); } catch { /* fail-open */ }
-  }
+    const body = JSON.stringify(obj, null, 2);
+    writeFileSync(tmp, body);
+    try {
+      renameWithRetry(renameSync, tmp, path);
+    } catch (renameErr) {
+      try {
+        writeFileSync(path, body);
+        appendLog({event: 'file_lease_guard_ledger_write', status: 'atomic_failed_fallback_ok',
+          error_code: (renameErr && renameErr.code) || null});
+      } catch (fallbackErr) {
+        appendLog({event: 'file_lease_guard_ledger_write', status: 'write_failed',
+          error_code: (fallbackErr && fallbackErr.code) || null});
+      }
+    }
+  } catch { /* fail-open */ }
 }
 
 // Path normalization for lease keying: forward slashes, no leading ./,

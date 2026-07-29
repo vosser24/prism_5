@@ -5,8 +5,7 @@
 PRISM is **local-first**. Its core — deterministic Node hooks + JSON manifests — makes **no network calls**, requires **no API keys**, and sends **no telemetry** off your machine. Telemetry is opt-in and local-only. PRISM influences which model tier your existing agentic CLI uses; it does not make model calls itself.
 
 Optional tiers that *can* reach the network are clearly marked and opt-in:
-- the cross-project research tier (NotebookLM / `gh`),
-- the bundled `pwagent` Playwright tool (downloads Chromium on first run, only after you enable it with `--with-pwagent`).
+- the cross-project research tier (NotebookLM / `gh`).
 
 Nothing reaches the network unless you explicitly opt in.
 

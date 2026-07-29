@@ -234,5 +234,71 @@ total++;
   }
 }
 
+// Test 9: manifest_owned agent must NOT be flagged despite high UN-CITED rate
+total++;
+{
+  const sh = mkdtempSync(join(tmpdir(), 'prism-ratchet-test9-'));
+  process.on('exit', () => { try { rmSync(sh, {recursive: true, force: true}); } catch {} });
+  const rDir = join(sh, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rDir, {recursive: true});
+  writeFileSync(join(rDir, 'roster.json'), JSON.stringify({
+    schema_version: '4.4.0',
+    agents: {
+      'manifest-agent': { pending_upgrade: false, manifest_owned: true, corrections_since_last_upgrade: 0 },
+    },
+  }, null, 2));
+  const vl = join(sh, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  for (let i = 0; i < 10; i++) {
+    appendFileSync(vl, JSON.stringify({
+      sha: 'm' + i, session_id: 'ms-' + i, specialist_name: '@manifest-agent',
+      summary: {total: 5, evidenced: 0, un_cited: 5, rejected: 0}, completed_at: new Date().toISOString(),
+    }) + '\n');
+  }
+  const r9 = spawnSync('node', [TOOL, '--apply-ratchet'], {
+    encoding: 'utf-8', env: {...process.env, HOME: sh, USERPROFILE: sh}, timeout: 10000,
+  });
+  const r9roster = JSON.parse(readFileSync(join(rDir, 'roster.json'), 'utf-8'));
+  if (r9.status === 0 && r9roster.agents['manifest-agent'].pending_upgrade === false) {
+    pass++;
+  } else {
+    console.log(`FAIL T9: manifest_owned agent flagged despite guard (status=${r9.status}, pending_upgrade=${r9roster.agents['manifest-agent'].pending_upgrade})`);
+  }
+}
+
+// Test 10: flat-file-owned agent (agents/<name>.md exists) must NOT be flagged
+total++;
+{
+  const sh = mkdtempSync(join(tmpdir(), 'prism-ratchet-test10-'));
+  process.on('exit', () => { try { rmSync(sh, {recursive: true, force: true}); } catch {} });
+  const rDir = join(sh, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rDir, {recursive: true});
+  writeFileSync(join(rDir, 'roster.json'), JSON.stringify({
+    schema_version: '4.4.0',
+    agents: {
+      'flat-agent': { pending_upgrade: false, corrections_since_last_upgrade: 0 },
+    },
+  }, null, 2));
+  // Seed the FLAT agent file that marks it owned-outside-ACL.
+  const agDir = join(sh, '.claude', 'agents');
+  mkdirSync(agDir, {recursive: true});
+  writeFileSync(join(agDir, 'flat-agent.md'), '---\nname: flat-agent\ndescription: x\n---\n', 'utf-8');
+  const vl = join(sh, '.claude', '.prism-phase-1-5-verdicts.jsonl');
+  for (let i = 0; i < 10; i++) {
+    appendFileSync(vl, JSON.stringify({
+      sha: 'f' + i, session_id: 'fs-' + i, specialist_name: '@flat-agent',
+      summary: {total: 5, evidenced: 0, un_cited: 5, rejected: 0}, completed_at: new Date().toISOString(),
+    }) + '\n');
+  }
+  const r10 = spawnSync('node', [TOOL, '--apply-ratchet'], {
+    encoding: 'utf-8', env: {...process.env, HOME: sh, USERPROFILE: sh}, timeout: 10000,
+  });
+  const r10roster = JSON.parse(readFileSync(join(rDir, 'roster.json'), 'utf-8'));
+  if (r10.status === 0 && r10roster.agents['flat-agent'].pending_upgrade === false) {
+    pass++;
+  } else {
+    console.log(`FAIL T10: flat-file-owned agent flagged despite guard (status=${r10.status}, pending_upgrade=${r10roster.agents['flat-agent'].pending_upgrade})`);
+  }
+}
+
 console.log(`tests passed: ${pass}/${total}`);
 if (pass !== total) process.exit(1);

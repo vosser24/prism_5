@@ -206,9 +206,9 @@ Write the proposal + outcome (Y/R/N per subdomain) to
 `.claude/references/subdomain-map.md` so re-running `/prism-discover`
 doesn't re-propose subdomains the user already declined.
 
-## State of the nested-CLAUDE.md chain (health check)
+## Auditing the nested-CLAUDE.md chain (manual procedure — no CLI flag)
 
-`/prism-discover --check-claude-chain` walks the repo, reports every
+When asked to audit the CLAUDE.md chain, walk the repo and report every
 CLAUDE.md file found, their token size, and any violations of the
 lean-template rules:
 

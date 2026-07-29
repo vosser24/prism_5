@@ -24,6 +24,9 @@ const fixture = {
     'alpha-agent': { core_domains: ['greek-ecommerce', 'availability-ux'], status: 'available' },
     'archived-agent': { description: 'Should NOT appear.', status: 'archived' },
     'flagged-archived': { description: 'Also should NOT appear.', archived: true, status: 'available' },
+    'active-status-agent': { description: 'Live agent whose status is active, not available.', status: 'active' },
+    'upgrade-needed-agent': { description: 'Live agent mid-upgrade.', status: 'upgrade_needed' },
+    'dead-status-agent': { description: 'Should NOT appear — unknown/dead status.', status: 'deprecated' },
     '_schema_example_agent': { description: 'schema doc — must be skipped' },
   },
   skills: {
@@ -55,8 +58,25 @@ const mustAppear = [
 ];
 for (const n of mustAppear) ok(`(a) name present: ${n}`, out.includes(`- ${n} —`), n);
 
-const mustNotAppear = ['archived-agent', 'flagged-archived', '_schema_example_agent', '_schema_example_skill'];
+// F46 (task #63): an "active"/"upgrade_needed"-status agent (e.g. claude-master)
+// must reach the catalog — this is the regression the old bare `=== 'available'`
+// predicate silently broke. Pinned here so a future re-duplication trips a RED.
+for (const n of ['active-status-agent', 'upgrade-needed-agent']) {
+  ok(`(a) F46 live-status agent present: ${n}`, out.includes(`- ${n} —`), n);
+}
+
+const mustNotAppear = ['archived-agent', 'flagged-archived', 'dead-status-agent', '_schema_example_agent', '_schema_example_skill'];
 for (const n of mustNotAppear) ok(`(a') excluded absent: ${n}`, !out.includes(`- ${n} `) && !out.includes(`- ${n}\n`), n);
+
+// F46 census: the dead-status agent must be COUNTED and NAMED, not silently
+// dropped (D046 loud-census requirement). 'archived-agent' also legitimately
+// appears here — its exclusion is via a `status: 'archived'` STRING literal,
+// distinct from the `archived: true` boolean flag ('flagged-archived' uses that).
+{
+  const censusLine = out.match(/_\(agents:.*\)_/)?.[0] || '';
+  ok('(a\'\') census line present', !!censusLine, censusLine);
+  ok('(a\'\') census names "deprecated" status literal', /excluded by status:.*\bdeprecated\b/.test(censusLine), censusLine);
+}
 
 // ── (b) grouped with expected headers ────────────────────────────────────────
 for (const h of ['## Agents', '## Skills', '## Plugin skills', '## Tools', '## MCP tools']) {

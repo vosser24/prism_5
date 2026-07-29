@@ -27,6 +27,14 @@ const CLASSIFY_LIB = join(REPO, 'tools', 'lib', 'prism-tier-classify.mjs');
 const CLASSIFIER_LIB = join(REPO, 'hooks', 'lib', 'prism-opus-classifier.mjs');
 const ROUTER_HOOK = join(REPO, 'hooks', 'prism-prompt-tier-router.mjs');
 
+// D087 (#44): the tier-override directive is now suppressed for a dispatched
+// teammate (CLAUDE_CODE_CHILD_SESSION=1). Every assertion below describes the
+// CHAIR path, so pin the discriminator — otherwise this suite passes for the
+// chair and fails for a subagent that runs it (an environment-dependent red of
+// exactly the kind findings #33/#39 cost us). The spawnSync router children
+// inherit this process's env, so the delete covers them too.
+delete process.env.CLAUDE_CODE_CHILD_SESSION;
+
 let pass = 0, fail = 0;
 const tests = [];
 function test(name, fn) { tests.push([name, fn]); }

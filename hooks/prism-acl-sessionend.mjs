@@ -19,8 +19,9 @@ import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { prismHome } from './lib/prism-home.mjs';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME = prismHome();
 const CLAUDE_DIR = join(HOME, '.claude');
 const DEBOUNCE_FILE = join(CLAUDE_DIR, '.prism-acl-debounce');
 const SPAWN_MARKER = join(CLAUDE_DIR, '.prism-acl-spawn-marker');

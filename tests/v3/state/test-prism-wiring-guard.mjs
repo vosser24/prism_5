@@ -29,14 +29,42 @@ const HOOKS = join(ROOT, 'hooks');
 let pass = 0, fail = 0;
 function check(name, cond) { if (cond) { pass++; process.stdout.write(`  ok  ${name}\n`); } else { fail++; process.stdout.write(`  FAIL ${name}\n`); } }
 
-// Strip /* */ blocks then // line comments so assertions see CODE, not the prose
+// Strip /* */ blocks and // line comments so assertions see CODE, not the prose
 // that explains why a removed flag was removed.
+//
+// Single-pass state machine (not two chained regexes): a naive
+// `/\/\*[\s\S]*?\*\//` block-comment strip run BEFORE line-comment stripping
+// is fooled when a `//` comment's PROSE happens to contain a `/*`-lookalike
+// substring (e.g. a glob path "references/*." or "Task*/TodoWrite") — it
+// pairs that fake opener with the next `*/`-lookalike anywhere later in the
+// file, silently swallowing genuine code in between (found live: it ate the
+// prism-acl-notify.mjs wiring call in prism-session-start.mjs, ~480 lines
+// away from the fake opener). Tracking string-literal state also keeps `/*`
+// or `//` inside a quoted string from being misread as a comment start.
 function stripComments(src) {
-  return String(src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^.*?\/\/.*$/gm, (l) => {
-    // keep the part before the first // (so `const x = 1; // note` keeps the code)
-    const i = l.indexOf('//');
-    return i >= 0 ? l.slice(0, i) : l;
-  });
+  const s = String(src);
+  let out = '';
+  let mode = 'code'; // 'code' | 'line' | 'block' | 'str'
+  let strChar = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i], c2 = s[i + 1];
+    if (mode === 'code') {
+      if (c === '/' && c2 === '/') { mode = 'line'; i++; continue; }
+      if (c === '/' && c2 === '*') { mode = 'block'; i++; continue; }
+      if (c === '"' || c === "'" || c === '`') { mode = 'str'; strChar = c; out += c; continue; }
+      out += c;
+    } else if (mode === 'line') {
+      if (c === '\n') { mode = 'code'; out += c; }
+    } else if (mode === 'block') {
+      if (c === '*' && c2 === '/') { mode = 'code'; i++; }
+      else if (c === '\n') out += c;
+    } else if (mode === 'str') {
+      out += c;
+      if (c === '\\') { out += c2 ?? ''; i++; continue; }
+      if (c === strChar) mode = 'code';
+    }
+  }
+  return out;
 }
 const readCode = (p) => stripComments(readFileSync(p, 'utf-8'));
 const refsLeaf = (code, leaf) => new RegExp(`\\b${leaf.replace(/[.]/g, '\\.')}`).test(code);

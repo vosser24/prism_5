@@ -22,6 +22,15 @@ failures, anomalies, and a real-vs-synthetic correlation.
 If you just want a quick secrets+config hygiene pass, use `/prism-audit`
 instead — it runs in seconds and is the right tool for casual checks.
 
+**Source-repo-only (F13).** This command's Step 2/4 harness
+(`tools/prism-audit-runner.mjs` + `tests/v3/audit-scenarios.json` +
+`tests/v3/analyze-audit.mjs`) only works from a full PRISM source-repo
+clone. `tools/install-manifest.json` copies the runner itself to a manual
+(non-plugin) install's `~/.claude/tools/`, but never copies `tests/` —
+so a manual install has the runner without its data, and the runner
+would FATAL. Step 1 below detects this up front and aborts with an
+explanation instead of shelling out to a guaranteed failure.
+
 ## Step 1 — Pre-flight
 
 1. Confirm you're inside a PRISM install. One of these must exist:
@@ -33,12 +42,22 @@ instead — it runs in seconds and is the right tool for casual checks.
    ```
 3. Note the install method detected (plugin vs manual) — record it for
    the final report so version drift between install paths is visible.
-4. Confirm the synthetic runner is present:
+4. Confirm the synthetic runner AND its test-fixture directory are both
+   present (the fixture check is what actually distinguishes a working
+   source-repo checkout from a non-functional manual install — see
+   F13 above):
    ```bash
-   test -f tools/prism-audit-runner.mjs || echo "MISSING"
+   test -f tools/prism-audit-runner.mjs || echo "RUNNER MISSING"
+   test -d tests/v3 || echo "FIXTURES MISSING"
    ```
-   If missing, abort and tell the user to update PRISM (`git pull` then
-   `node tools/prism-installer.mjs install`).
+   - If the runner is missing: abort and tell the user to update PRISM
+     (`git pull` then `node tools/prism-installer.mjs install`).
+   - If `tests/v3` is missing (runner present, fixtures absent — the
+     manual-install shape): **abort here, do not run Step 2.** Tell the
+     user plainly: "`/prism-audit-full` needs a full PRISM source-repo
+     clone (its `tests/v3/` fixtures aren't shipped to manual installs).
+     Use `/prism-audit` for a fast hygiene check instead, or re-run this
+     command with a source-repo clone as your working directory."
 
 ## Step 2 — Synthetic audit (automated, ~30s)
 

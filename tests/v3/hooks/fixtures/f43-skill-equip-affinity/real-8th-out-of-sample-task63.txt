@@ -1,0 +1,52 @@
+PRISM-LEASE: agent=catalog-worker files=tools/prism-capability-catalog.mjs,hooks/prism-specialist-routing-guard.mjs
+
+Repo: C:\dev\prism_3. You own task #63 (finding F46).
+
+EMIT YOUR STEP LIST FIRST, then execute. Tool budget ~30 calls.
+
+════════ CRITICAL GROUND RULES ════════
+1. **Use Edit/Write tools for file changes — NEVER Bash/PowerShell redirection** (PowerShell's `Set-Content`/`Out-File`/`>` write UTF-8 WITH BOM and mangle files).
+2. **Do NOT run `node tools/prism-installer.mjs install`** — deployment is orchestrator-owned (adjudication D081). Read-only `verify` and `prism-drift-check.mjs` are fine.
+3. **Measure the premises in this prompt.** If a claimed line number or count disagrees with what you read, THE MEASUREMENT WINS and the discrepancy is a finding to report.
+4. Before writing that something is absent/missing, READ AND QUOTE the source field (adjudication D057).
+
+════════════════════════════ THE DEFECT ═══════════════════════════════════════
+
+`tools/prism-capability-catalog.mjs` (reported at line 65) filters roster agents on `status === 'available'`. **`claude-master`'s status is `"active"`**, so it is silently dropped.
+
+Consequence: the SessionStart CAPABILITY CATALOG listed **20 agents against a roster of 21** — omitting the one agent whose own definition says *"MUST BE USED before any change to hooks/, agents/, skills/"* — while **all seven of the previous session's dispatches were hook work.** Nothing surfaced the 20-vs-21 gap; it was found only because a worker enumerated the roster for an unrelated reason.
+
+This is the textbook OMISSIVE failure class (adjudication D046): a structured path drops an entry, something PLAUSIBLE is emitted in its place (a catalog of 20 looks exactly like a complete catalog), and nothing reports the miss.
+
+**Task #54 ALREADY LANDED the correct status allow-list** in `hooks/prism-specialist-routing-guard.mjs` (it went RED→GREEN in the previous session). Adjudication D096 governs: filter roster agents against ONE explicit live-state allow-list imported from a SINGLE module (`{available, active, upgrade_needed}` plus absent/null), so unknown future values fail CLOSED, and LOG every exclusion with the offending literal instead of widening the parser silently.
+
+The capability catalog is a **SECOND CONSUMER of the same concept that disagreed with the first** — which is precisely what a duplicated literal set produces.
+
+════════════════════════════ STEPS ════════════════════════════════════════════
+
+1. `hooks/prism-specialist-routing-guard.mjs` — locate the status allow-list #54 landed. Read it IN FULL. Confirm whether it is EXPORTED; if not, make it exportable with a MINIMAL, surgical change (do not restructure the module).
+2. `tools/prism-capability-catalog.mjs` — read the current `status === 'available'` predicate and **QUOTE IT VERBATIM (with its real line number) before changing it.** Verify the line number; the reported ":65" may be stale.
+3. Replace that predicate by **IMPORTING** the allow-list from step 1.
+   ⚠️ **DO NOT DUPLICATE THE LITERAL SET.** Duplication is the exact mechanism that created this divergence. A third copy guarantees a third divergence. If import is genuinely impossible (e.g. a hooks→tools dependency direction that would be architecturally wrong), STOP and report why, proposing where the shared module should live instead — do not silently fall back to copying.
+4. Add the **LOUD CENSUS** counterpart per D096: the catalog must report kept-vs-read counts, or enumerate what it excluded, naming the offending status literal. A filter that silently excludes IS the defect class — fixing only this one value leaves the class intact. **If #54's landed code already has this shape, REUSE it rather than reinventing it.**
+5. Confirm the catalog now lists **21 of 21** and that **claude-master is present.** Show this as actual COMMAND OUTPUT, not as a prose assertion.
+6. **Check for a THIRD consumer before closing** — `grep -rn "status === '" tools/ hooks/`. If one exists, it has the same bug. State the denominator (files searched, hits found).
+
+COMMANDS:
+```bash
+grep -rn "status === '" tools/ hooks/
+grep -rn "status" tools/prism-capability-catalog.mjs | head -30
+node tools/prism-capability-catalog.mjs | grep -ci "claude-master"   # MUST be >= 1
+node tests/v3/hooks/test-specialist-routing-guard.mjs
+node tools/prism-drift-check.mjs                                      # expect 0 drift
+```
+
+Add or extend a test pinning that an `"active"`-status agent reaches the catalog, so this cannot regress.
+
+════════════════════════════ DONE WHEN ════════════════════════════════════════
+
+The original predicate is QUOTED with its verified line number; the allow-list is **IMPORTED** from `hooks/prism-specialist-routing-guard.mjs` with **NO duplicated literal set anywhere**; the catalog emits **21 of 21 with claude-master present, shown as command output**; the catalog reports kept-vs-read counts or enumerates exclusions with the offending literal; the third-consumer grep is run and its result stated with a denominator; a regression test pins the `"active"` case; drift check reports 0.
+
+"The premise was wrong" is a VALID outcome — report it plainly rather than manufacturing a fix.
+
+Compute and report YOUR OWN result. Do NOT spawn a verifier child and relay its status. A holding string ("verifying…") is a FAILED result.

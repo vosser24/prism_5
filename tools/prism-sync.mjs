@@ -13,9 +13,9 @@
 // All subcommands accept --root <path> and refuse to run without .git/ unless --no-git-guard.
 
 import {existsSync, statSync, appendFileSync, mkdirSync} from 'node:fs';
-import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 import {
   isPhaseCompleted,
@@ -25,6 +25,7 @@ import {
   setSyncStamps,
   writeStateAtomic,
 } from './lib/prism-state.mjs';
+import { reconcileRoster } from './lib/prism-roster-reconcile.mjs';
 
 // ------------------------------ args ------------------------------
 
@@ -52,8 +53,13 @@ function usage(code = 0) {
 Commands:
   plan [--smart-drift]
   complete [--meta '<json>']
+  reconcile-roster
 `);
   exit(code);
+}
+
+function resolveHome() {
+  return prismHome();
 }
 
 // ------------------------------ guards ------------------------------
@@ -76,7 +82,7 @@ function die(msg, code = 1) {
 // never break the sync it records — swallow every error.
 function appendRouting(obj) {
   try {
-    const home = process.env.HOME || process.env.USERPROFILE || homedir();
+    const home = prismHome();
     const p = join(home, '.claude', '.prism-routing.jsonl');
     mkdirSync(dirname(p), {recursive: true});
     appendFileSync(p, JSON.stringify({ts: new Date().toISOString(), ...obj}) + '\n');
@@ -108,7 +114,7 @@ function claudeMdChangedSince(referenceIso) {
   return mtimeMs > refMs;
 }
 
-function planMaintenancePhases(state) {
+function planMaintenancePhases(state, root) {
   const reasons = {};
   const pending = [];
 
@@ -126,12 +132,22 @@ function planMaintenancePhases(state) {
   reasons.discovery = 'conservative re-scan';
 
   pending.push('roster');
-  reasons.roster = 'reconcile orphan agents';
+  // F11 (task #26): this used to be a label with no diff behind it. Now
+  // actually runs the reconcile so `reasons.roster` reflects real findings
+  // instead of a static "reconcile orphan agents" string that named work it
+  // never did.
+  const rosterReconcile = reconcileRoster({home: resolveHome(), cwd: root});
+  const orphanCount = rosterReconcile.orphanRosterEntries.length + rosterReconcile.orphanDiskFiles.length;
+  const renamedCount = rosterReconcile.renamedOrphans.length;
+  const shadowedCount = rosterReconcile.shadowed.length;
+  reasons.roster = (orphanCount === 0 && renamedCount === 0 && shadowedCount === 0)
+    ? 'reconcile orphan agents — no orphans found'
+    : `reconcile orphan agents — ${orphanCount} orphan(s), ${renamedCount} renamed, ${shadowedCount} shadowed (see roster_reconcile)`;
 
   pending.push('health');
   reasons.health = 'verify wiring';
 
-  return {pending, reasons, claude_md_changed: claudeChanged};
+  return {pending, reasons, claude_md_changed: claudeChanged, roster_reconcile: rosterReconcile};
 }
 
 // ------------------------------ command dispatch ------------------------------
@@ -143,7 +159,7 @@ try {
         stderr.write('WARNING: --smart-drift is EXPERIMENTAL and not yet implemented; falling back to conservative.\n');
       }
       const state = loadStateOrDie();
-      const planned = planMaintenancePhases(state);
+      const planned = planMaintenancePhases(state, opts.root);
       stdout.write(JSON.stringify({
         project: state.project_name,
         mode: 'conservative',
@@ -152,7 +168,23 @@ try {
         last_sync_at: state.last_sync_at,
         last_run: state.last_run,
         claude_md_changed: planned.claude_md_changed,
+        roster_reconcile: planned.roster_reconcile,
       }, null, 2) + '\n');
+      break;
+    }
+
+    case 'reconcile-roster': {
+      // Standalone entry point (F11 / task #26) — same reconcile the `plan`
+      // phase now runs, callable directly without a full bootstrap/state
+      // check. REPORT-ONLY: prints findings, never mutates roster.json or
+      // any agent file. Exit code reflects only whether the reconcile itself
+      // ran (0) or a roster file was unparseable (1) — orphans found is NOT
+      // a failure exit, this is advisory, not a gate.
+      const report = reconcileRoster({home: resolveHome(), cwd: opts.root});
+      stdout.write(JSON.stringify(report, null, 2) + '\n');
+      if (report.global_roster_unparseable || report.project_roster_unparseable) {
+        exit(1);
+      }
       break;
     }
 

@@ -24,7 +24,7 @@ PHASE 0a — Inventory
 Skills (installed & loadable):
   [from Claude Code's session-start skill index]
   - claude-code-expert, prism-plan, prism-discover, blueprint-prompt,
-    workflow-orchestration, notebooklm, video-production, <plugin skills>…
+    workflow-orchestration, notebooklm, <plugin skills>…
 
 External tools (Tier 1 + installed Tier 2):
   [from ~/.claude/skills/prism-plan/references/tools-registry.md

@@ -55,7 +55,7 @@ await test('tier-router run() classifies + returns additionalContext JSON, exit 
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
-await test('memory-save-nudge run() stands down when claude-mem installed / silent before first nudge, exit 0', async () => {
+await test('memory-save-nudge run() silent before first nudge, exit 0', async () => {
   const home = fakeHome('mem-run');
   const prevCwd = process.cwd();
   try {

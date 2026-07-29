@@ -1,16 +1,7 @@
 {
   "schema_version": 1,
-  "prism_version": "6.6.7",
+  "prism_version": "6.7.1",
   "files": [
-    {"src": "tools/pwagent/pwagent.cmd", "dst": "tools/pwagent/pwagent.cmd", "executable": false},
-    {"src": "tools/pwagent/pwagent.ps1", "dst": "tools/pwagent/pwagent.ps1", "executable": false},
-    {"src": "tools/pwagent/requirements.txt", "dst": "tools/pwagent/requirements.txt", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/__init__.py", "dst": "tools/pwagent/src/pwagent/__init__.py", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/__main__.py", "dst": "tools/pwagent/src/pwagent/__main__.py", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/cli.py", "dst": "tools/pwagent/src/pwagent/cli.py", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/actions.py", "dst": "tools/pwagent/src/pwagent/actions.py", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/session.py", "dst": "tools/pwagent/src/pwagent/session.py", "executable": false},
-    {"src": "tools/pwagent/src/pwagent/errors.py", "dst": "tools/pwagent/src/pwagent/errors.py", "executable": false},
     {"src": "hooks/prism-agent-model-guard.mjs", "dst": "hooks/prism-agent-model-guard.mjs", "executable": true},
     {"src": "hooks/prism-agent-quality-gate.mjs", "dst": "hooks/prism-agent-quality-gate.mjs", "executable": true},
     {"src": "hooks/prism-agent-write-register.mjs", "dst": "hooks/prism-agent-write-register.mjs", "executable": true},
@@ -36,6 +27,8 @@
     {"src": "hooks/prism-memory-save-nudge.mjs", "dst": "hooks/prism-memory-save-nudge.mjs", "executable": true},
     {"src": "hooks/prism-mutation-guard.mjs", "dst": "hooks/prism-mutation-guard.mjs", "executable": true},
     {"src": "hooks/prism-panel-guard.mjs", "dst": "hooks/prism-panel-guard.mjs", "executable": true},
+    {"src": "hooks/prism-panel-name-guard.mjs", "dst": "hooks/prism-panel-name-guard.mjs", "executable": true},
+    {"src": "hooks/prism-panel-seat-recorder.mjs", "dst": "hooks/prism-panel-seat-recorder.mjs", "executable": true},
     {"src": "hooks/prism-parallel-guard.mjs", "dst": "hooks/prism-parallel-guard.mjs", "executable": true},
     {"src": "hooks/prism-parent-dispatch-guard.mjs", "dst": "hooks/prism-parent-dispatch-guard.mjs", "executable": true},
     {"src": "hooks/prism-phase-0d-challenges.mjs", "dst": "hooks/prism-phase-0d-challenges.mjs", "executable": true},
@@ -67,8 +60,7 @@
     {"src": "hooks/lib/prism-capability-catalog.mjs", "dst": "hooks/lib/prism-capability-catalog.mjs", "executable": false},
     {"src": "hooks/lib/prism-live-agents.mjs", "dst": "hooks/lib/prism-live-agents.mjs", "executable": false},
     {"src": "hooks/lib/prism-panel-mode.mjs", "dst": "hooks/lib/prism-panel-mode.mjs", "executable": false},
-    {"src": "hooks/lib/prism-claude-mem-detect.mjs", "dst": "hooks/lib/prism-claude-mem-detect.mjs", "executable": false},
-    {"src": "hooks/lib/prism-claude-mem-guard.mjs", "dst": "hooks/lib/prism-claude-mem-guard.mjs", "executable": false},
+    {"src": "hooks/lib/prism-panel-latch.mjs", "dst": "hooks/lib/prism-panel-latch.mjs", "executable": false},
     {"src": "hooks/lib/prism-home.mjs", "dst": "hooks/lib/prism-home.mjs", "executable": false},
     {"src": "hooks/lib/prism-advisory-log.mjs", "dst": "hooks/lib/prism-advisory-log.mjs", "executable": false},
     {"src": "hooks/lib/prism-freshness-sweep.mjs", "dst": "hooks/lib/prism-freshness-sweep.mjs", "executable": true},
@@ -78,6 +70,8 @@
     {"src": "hooks/lib/prism-agent-quality.mjs", "dst": "hooks/lib/prism-agent-quality.mjs", "executable": false},
     {"src": "hooks/lib/prism-task-snapshot.mjs", "dst": "hooks/lib/prism-task-snapshot.mjs", "executable": false},
     {"src": "hooks/lib/prism-task-api-probe.mjs", "dst": "hooks/lib/prism-task-api-probe.mjs", "executable": false},
+    {"src": "hooks/lib/prism-oob-spawn.mjs", "dst": "hooks/lib/prism-oob-spawn.mjs", "executable": false},
+    {"src": "hooks/lib/prism-transcript-extract.mjs", "dst": "hooks/lib/prism-transcript-extract.mjs", "executable": false},
     {"src": "tools/prism-audit-runner.mjs", "dst": "tools/prism-audit-runner.mjs", "executable": true},
     {"src": "tools/prism-capability-cli.mjs", "dst": "tools/prism-capability-cli.mjs", "executable": true},
     {"src": "tools/prism-capability-detect.mjs", "dst": "tools/prism-capability-detect.mjs", "executable": true},
@@ -114,6 +108,7 @@
     {"src": "tools/prism-uninstall-cleanup.mjs", "dst": "tools/prism-uninstall-cleanup.mjs", "executable": true},
     {"src": "tools/prism-validate-plugins.mjs", "dst": "tools/prism-validate-plugins.mjs", "executable": true},
     {"src": "tools/prism-knowledge-index.mjs", "dst": "tools/prism-knowledge-index.mjs", "executable": true},
+    {"src": "tools/prism-mirror-pii-scan.mjs", "dst": "tools/prism-mirror-pii-scan.mjs", "executable": true},
     {"src": "tools/lib/prism-acl-store.mjs", "dst": "tools/lib/prism-acl-store.mjs", "executable": true},
     {"src": "tools/lib/prism-agent-scope.mjs", "dst": "tools/lib/prism-agent-scope.mjs", "executable": true},
     {"src": "tools/lib/prism-bm25.mjs", "dst": "tools/lib/prism-bm25.mjs", "executable": true},
@@ -122,6 +117,7 @@
     {"src": "tools/lib/prism-kb-knowledge-query.mjs", "dst": "tools/lib/prism-kb-knowledge-query.mjs", "executable": true},
     {"src": "tools/lib/prism-kb-rerank.mjs", "dst": "tools/lib/prism-kb-rerank.mjs", "executable": true},
     {"src": "tools/lib/prism-roster-lock.mjs", "dst": "tools/lib/prism-roster-lock.mjs", "executable": true},
+    {"src": "tools/lib/prism-roster-reconcile.mjs", "dst": "tools/lib/prism-roster-reconcile.mjs", "executable": true},
     {"src": "tools/lib/prism-state.mjs", "dst": "tools/lib/prism-state.mjs", "executable": true},
     {"src": "tools/lib/prism-state.ps1", "dst": "tools/lib/prism-state.ps1", "executable": false},
     {"src": "tools/lib/prism-tier-classify.mjs", "dst": "tools/lib/prism-tier-classify.mjs", "executable": true},
@@ -129,6 +125,7 @@
     {"src": "tools/lib/prism-validation-classify.mjs", "dst": "tools/lib/prism-validation-classify.mjs", "executable": true},
     {"src": "tools/lib/prism-verdict-flag.mjs", "dst": "tools/lib/prism-verdict-flag.mjs", "executable": true},
     {"src": "tools/lib/knowledge-delta.mjs", "dst": "tools/lib/knowledge-delta.mjs", "executable": false},
+    {"src": "tools/lib/atomic-fs.mjs", "dst": "tools/lib/atomic-fs.mjs", "executable": false},
     {"src": "tools/lib/memory-anchors.mjs", "dst": "tools/lib/memory-anchors.mjs", "executable": false},
     {"src": "tools/lib/memory-heal.mjs", "dst": "tools/lib/memory-heal.mjs", "executable": false},
     {"src": "agents/agent-factory.md", "dst": "agents/agent-factory.md", "executable": false},
@@ -138,7 +135,6 @@
     {"src": "agents/phase-1-5-oob-reviewer.md", "dst": "agents/phase-1-5-oob-reviewer.md", "executable": false},
     {"src": "agents/phase-1-5-oob-reviewer-lite.md", "dst": "agents/phase-1-5-oob-reviewer-lite.md", "executable": false},
     {"src": "agents/prism-updater.md", "dst": "agents/prism-updater.md", "executable": false},
-    {"src": "commands/prism-app-expert.md", "dst": "commands/prism-app-expert.md", "executable": false},
     {"src": "commands/prism-archive.md", "dst": "commands/prism-archive.md", "executable": false},
     {"src": "commands/prism-audit.md", "dst": "commands/prism-audit.md", "executable": false},
     {"src": "commands/capability-log.md", "dst": "commands/capability-log.md", "executable": false},
@@ -184,6 +180,21 @@
       "src": "skills/prism-discover",
       "dst": "skills/prism-discover",
       "preserve_files": []
+    },
+    {
+      "src": "skills/blueprint-prompt",
+      "dst": "skills/blueprint-prompt",
+      "preserve_files": []
+    },
+    {
+      "src": "skills/notebooklm",
+      "dst": "skills/notebooklm",
+      "preserve_files": []
+    },
+    {
+      "src": "skills/workflow-orchestration",
+      "dst": "skills/workflow-orchestration",
+      "preserve_files": []
     }
   ],
   "remove_on_upgrade_patterns": [
@@ -206,7 +217,10 @@
     "skills/master-orchestrator",
     "skills/prism-plan",
     "skills/prism-chat",
-    "skills/prism-discover"
+    "skills/prism-discover",
+    "skills/blueprint-prompt",
+    "skills/notebooklm",
+    "skills/workflow-orchestration"
   ],
   "settings_fragment": "settings.fragment.json",
   "user_state_paths_preserved": [

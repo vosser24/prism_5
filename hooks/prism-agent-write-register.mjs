@@ -31,6 +31,9 @@
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync} from 'node:fs';
 import {join, dirname, sep, basename} from 'node:path';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
+import { prismHome } from './lib/prism-home.mjs';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
+import { logAdvisory } from './lib/prism-advisory-log.mjs';
 
 // Matches `.../.claude/agents/<name>.md`. <name> is anything that isn't
 // a directory separator. roster.json itself is excluded in isAgentPath().
@@ -102,15 +105,27 @@ function readRoster(path) {
 }
 
 // Atomic write via tempfile + rename. Same pattern as
-// hooks/prism-memory-save-nudge.mjs (v2.9.1 ATOMIC-WRITE-001).
+// hooks/prism-memory-save-nudge.mjs (v2.9.1 ATOMIC-WRITE-001). This writes
+// the SHARED roster.json (agent registry consumed by panel-guard, dispatch,
+// and effectiveness tracking) — bounded retry (task #82/#88) absorbs the
+// transient Windows AV/indexer handle-lock window before degrading, and the
+// degraded path is logged rather than silent (D046).
 function writeRosterAtomic(path, data) {
   mkdirSync(dirname(path), {recursive: true});
   const tmp = path + '.tmp.' + process.pid + '.' + Math.random().toString(36).slice(2, 10);
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
-  try { renameSync(tmp, path); }
-  catch {
+  const body = JSON.stringify(data, null, 2) + '\n';
+  writeFileSync(tmp, body);
+  try { renameWithRetry(renameSync, tmp, path); }
+  catch (renameErr) {
     // Fallback: direct write. Same rationale as memory-save-nudge.
-    writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
+    try {
+      writeFileSync(path, body);
+      logAdvisory({event: 'agent_write_register_roster_write', path,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      logAdvisory({event: 'agent_write_register_roster_write', path,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -209,7 +224,7 @@ async function registerAgent(agentPath, H, GLOBAL_ROSTER) {
 
 export async function run(payload) {
   // Recompute per-call so HOME-override in tests is honored.
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = prismHome();
   const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 
   // Cheap early-exits first.

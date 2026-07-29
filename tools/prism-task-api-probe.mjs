@@ -40,8 +40,8 @@ const asJson = process.argv.includes('--json');
 // Claude Code stores transcripts at ~/.claude/projects/<mangled-abs-path>/<session>.jsonl
 // where the mangling replaces every non-alphanumeric run in the absolute path
 // with '-'. Derived empirically from the live layout, e.g.
-//   Y:\Documents\utilities_projects\prism_3
-//     -> Y--Documents-utilities-projects-prism-3
+//   C:\dev\sample_repo
+//     -> C--dev-sample-repo
 function mangle(absPath) {
   return absPath.replace(/[\\/:_.]/g, '-');
 }

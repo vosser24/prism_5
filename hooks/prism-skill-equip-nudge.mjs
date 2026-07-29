@@ -12,8 +12,9 @@ import {readFileSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {logAdvisory} from './lib/prism-advisory-log.mjs';
 import {classifyBuildVsRead} from './prism-specialist-routing-guard.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.USERPROFILE || process.env.HOME || '';
+const H = prismHome();
 
 // F9 precision tuning. The old matcher raw-substring-matched every domain/
 // keyword term against the prompt, so ultra-generic single words ("review",
@@ -83,6 +84,55 @@ const ENGLISH_STOPWORDS = new Set([
   'very', 'really', 'actually', 'wants', 'wanted', 'uses', 'used', 'using',
 ]);
 
+// F43 (task #60, 2026-07-28): AMBIENT ENVIRONMENT terms — words that appear as
+// this REPO'S OWN recurring dispatch-safety boilerplate, not per-task domain
+// content. MEASURED: the census's 3 dominant, near-invariant skills are
+// redeploy-readiness / redeploy-vm-laptop (domains include 'windows',
+// 'powershell') and design-is (domain 'design'). Verbatim from a real
+// session-4 dispatch (fixtures/f43-skill-equip-affinity/real-1-ratify-d088.txt,
+// the "Ratify D088" task — governance/adjudication work, ZERO deployment
+// content): "Use the Edit/Write TOOLS for all file changes — never Bash/
+// PowerShell redirection (`>`, Set-Content, Out-File default to UTF-8-with-
+// BOM on Windows and will mangle these files)." This exact sentence (or a
+// close paraphrase) opens NEARLY EVERY dispatch in this session regardless of
+// task — it is a Windows-laptop operational safety warning, not deployment
+// domain signal. Measured: this ONE sentence alone scores redeploy-readiness
+// and redeploy-vm-laptop at score=4 (both 'windows' and 'powershell' are
+// DOMAIN terms for those two skills, weight 2 each) on ANY prompt, including
+// ones about coffee-ledger schema changes or pure math — invariant of
+// content, which is exactly the "high baseline affinity" signature, not a
+// mis-tuned-but-responsive scorer.
+// MEASURED SESSION-WIDE (not just the one fixture): grepped all 11 real Agent
+// dispatches in this session's transcript for these bare words — 'deployment'
+// 7/11 (64%), 'windows' 7/11 (64%), 'powershell' 9/11 (82%). 'deployment'
+// turned out to recur at the SAME rate for the SAME reason: the standing
+// D081 boilerplate ("deployment is the orchestrator's single post-batch
+// step... do NOT run the installer") appears in nearly every dispatch this
+// repo issues, same structural cause as the Windows/PowerShell BOM warning —
+// so it is included here too, NOT because "deployment" is generically
+// meaningless (in another repo it would be a fine domain word), but because
+// in THIS repo it is measurably ambient boilerplate, not per-task signal.
+// 'devops' (this same skill pair's OTHER domain tag) does NOT recur this way
+// and is left untouched — it is NOT part of any standing boilerplate here.
+// SCOPED to these three measured terms, not a general env-vocabulary sweep.
+// This is the SAME remedy shape D056 already shipped for the sibling guard
+// (stoplist ambient repo-context tokens — 'claude'/'prism'/'code' there
+// because this is a Claude/PRISM repo; these three here because this is a
+// Windows-laptop repo with standing safety/deployment-ownership boilerplate).
+//
+// HONEST LIMIT (measured, not assumed): this does NOT fully silence
+// redeploy-vm-laptop on the real-1 fixture (see tests/v3/skill-equip-nudge-
+// precision.test.mjs Case 16) — its score there drops from 8 (pre-fix,
+// matches the live log exactly) to 2 (post-fix: 'deployment'/'windows'/
+// 'powershell' now zero-weighted, but 'three' + 'commands' are two ordinary,
+// coincidentally-matching weight-1 words that independently sum to the
+// floor). That residual is the SAME pre-existing, already-documented
+// auto-extracted-keywords imprecision the 2026-07-14 fix-history comment
+// above discloses ("not something a purely mechanical scorer can fully
+// resolve without semantic understanding of the prompt") — not a new
+// mechanism, and not chased further here to avoid an unbounded stoplist.
+const AMBIENT_ENV_TERMS = new Set(['windows', 'powershell', 'deployment']);
+
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // Specificity weight: generic/stopword single words → 0; multi-word /
@@ -97,7 +147,7 @@ function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function termWeight(term, isDomainTerm) {
   const t = String(term || '').toLowerCase().trim();
   if (!t) return 0;
-  if (GENERIC_TERMS.has(t) || ENGLISH_STOPWORDS.has(t)) return 0;
+  if (GENERIC_TERMS.has(t) || ENGLISH_STOPWORDS.has(t) || AMBIENT_ENV_TERMS.has(t)) return 0;
   if (/[\s-]/.test(t)) return 3;
   if (t.length <= 3) return 0;
   return isDomainTerm ? 2 : 1;
@@ -112,55 +162,19 @@ function matchesWord(term, lowerPrompt) {
   return re.test(lowerPrompt);
 }
 
-export async function run(payload) {
-  const allow = (ctx) => ({
-    exit: 0,
-    stdout: ctx
-      ? JSON.stringify({hookSpecificOutput: {hookEventName: 'PreToolUse', additionalContext: ctx}})
-      : '',
-    stderr: '',
-  });
-
-  // Only act on Agent dispatches
-  if (!payload || payload.tool_name !== 'Agent') return allow('');
-
-  const rawPrompt = (payload.tool_input && payload.tool_input.prompt) || '';
-  const prompt = rawPrompt.toLowerCase();
-
-  // FIX-5 (v6.6.0): suppress on read-dominant dispatches. Live routing log
-  // showed a 77% fire rate (132/172 evals) because this hook fires on ANY
-  // Agent dispatch regardless of build/read class — a read-only analysis/
-  // scan/extract worker gets the same equip nudge as a build worker, even
-  // though skill injection is skippable for pure reads. `readScore >
-  // buildScore` (not a hard isBuild-required gate) is the verified-safe
-  // subset: a hard build-only gate breaks precision-test Cases 4 and 10
-  // (neutral prompts, buildScore 0 / readScore 0, that must still nudge).
-  const cls = classifyBuildVsRead(rawPrompt);
-  if (cls.readScore > cls.buildScore && cls.buildScore < 2) {
-    logAdvisory({
-      event: 'skill_equip_advisory',
-      session_id: payload.session_id || null,
-      matched: [],
-      scores: [],
-      candidate_count: 0,
-      suppressed: 'read-dominant',
-      build_score: cls.buildScore,
-      read_score: cls.readScore,
-    });
-    return allow('');
-  }
-
-  // Read roster — fail-open on any error
-  let roster = null;
-  try {
-    const rosterPath = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
-    if (!existsSync(rosterPath)) return allow('');
-    roster = JSON.parse(readFileSync(rosterPath, 'utf-8'));
-  } catch {
-    return allow('');
-  }
-
-  if (!roster || !roster.skills) return allow('');
+// F43 (task #60, 2026-07-28): pure extraction of the scoring/ranking loop
+// (previously inline in run(), lines ~166-228) into a standalone, directly
+// testable, EXPORTED function — zero behavior change (verified against the
+// full existing test suite before/after). Reused rather than re-derived: this
+// IS the "68-skill scored[] pool" the task #60 brief asked to evaluate for
+// reuse before hand-rolling a second tokenizer for measurement/testing.
+// Returns the FULL ranked array (every skill scoring >= MIN_SKILL_SCORE), not
+// just the top-N slice run() nudges on — callers that need the full ranking
+// (baseline-affinity measurement, precision tests) get it directly instead of
+// reconstructing it from routing-log top-3 telemetry.
+export function scoreSkills(rawPrompt, roster) {
+  const prompt = String(rawPrompt || '').toLowerCase();
+  if (!roster || !roster.skills) return [];
 
   const scored = [];
   for (const [skillName, entry] of Object.entries(roster.skills)) {
@@ -202,7 +216,7 @@ export async function run(payload) {
         if (isDomainTerm) domainHits++;
       }
     }
-    const skillInPrompt = rawPrompt.includes(skillName);
+    const skillInPrompt = String(rawPrompt || '').includes(skillName);
 
     if (score >= MIN_SKILL_SCORE && !skillInPrompt) {
       scored.push({skillName, score, domainHits, distinctHits});
@@ -225,6 +239,60 @@ export async function run(payload) {
     (b.distinctHits - a.distinctHits) ||
     a.skillName.localeCompare(b.skillName)
   );
+
+  return scored;
+}
+
+export async function run(payload) {
+  const allow = (ctx) => ({
+    exit: 0,
+    stdout: ctx
+      ? JSON.stringify({hookSpecificOutput: {hookEventName: 'PreToolUse', additionalContext: ctx}})
+      : '',
+    stderr: '',
+  });
+
+  // Only act on Agent dispatches
+  if (!payload || payload.tool_name !== 'Agent') return allow('');
+
+  const rawPrompt = (payload.tool_input && payload.tool_input.prompt) || '';
+
+  // FIX-5 (v6.6.0): suppress on read-dominant dispatches. Live routing log
+  // showed a 77% fire rate (132/172 evals) because this hook fires on ANY
+  // Agent dispatch regardless of build/read class — a read-only analysis/
+  // scan/extract worker gets the same equip nudge as a build worker, even
+  // though skill injection is skippable for pure reads. `readScore >
+  // buildScore` (not a hard isBuild-required gate) is the verified-safe
+  // subset: a hard build-only gate breaks precision-test Cases 4 and 10
+  // (neutral prompts, buildScore 0 / readScore 0, that must still nudge).
+  const cls = classifyBuildVsRead(rawPrompt);
+  if (cls.readScore > cls.buildScore && cls.buildScore < 2) {
+    logAdvisory({
+      event: 'skill_equip_advisory',
+      session_id: payload.session_id || null,
+      matched: [],
+      scores: [],
+      candidate_count: 0,
+      suppressed: 'read-dominant',
+      build_score: cls.buildScore,
+      read_score: cls.readScore,
+    });
+    return allow('');
+  }
+
+  // Read roster — fail-open on any error
+  let roster = null;
+  try {
+    const rosterPath = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
+    if (!existsSync(rosterPath)) return allow('');
+    roster = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+  } catch {
+    return allow('');
+  }
+
+  if (!roster || !roster.skills) return allow('');
+
+  const scored = scoreSkills(rawPrompt, roster);
 
   // Telemetry (F9.1 / 2026-07-14): log every evaluation — including the
   // zero-match case — so fire-rate and precision are measurable from

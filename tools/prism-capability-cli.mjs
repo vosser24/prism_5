@@ -16,8 +16,10 @@ import {
   existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, renameSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { renameWithRetry } from './lib/atomic-fs.mjs';
+import { prismHome } from '../hooks/lib/prism-home.mjs';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME = prismHome();
 const CLAUDE_DIR = join(HOME, '.claude');
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
@@ -191,7 +193,9 @@ function cmdRollback(name) {
   try {
     mkdirSync(join(livePath, '..'), { recursive: true });
     copyFileSync(priorFile, tmpPath);
-    renameSync(tmpPath, livePath);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY before the
+    // .dead-marker fallback + exit(1) below.
+    renameWithRetry(renameSync, tmpPath, livePath);
   } catch (e) {
     console.error(`capability-rollback: restore failed for '${name}': ${e.message}`);
     try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath + '.dead'); } catch {}

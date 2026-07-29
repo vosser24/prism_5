@@ -47,63 +47,6 @@ surface AppLocker denies.
 
 ---
 
-## Tier B — Video production (Pro)
-
-### ffmpeg
-
-- **Capability:** audio mixing, format conversion, final video encode.
-- **Used by:** `skills/video-production/` pipeline, `/prism-app-expert`
-  composite renders.
-- **Check (by execution):** `ffmpeg -version`
-- **Install:**
-  - macOS: `brew install ffmpeg`
-  - Linux (Debian/Ubuntu): `sudo apt install ffmpeg`
-  - Linux (Fedora): `sudo dnf install ffmpeg`
-  - Linux (Arch): `sudo pacman -S ffmpeg`
-  - Windows: `winget install Gyan.FFmpeg` or manual from ffmpeg.org
-- **Fallback if absent:** video-production skill prompts user at invocation.
-
-### kokoro-tts + model files
-
-- **Capability:** voiceover generation for video-production.
-- **Used by:** `skills/video-production/`
-- **Check (by execution):**
-  - CLI: `kokoro --version` or `python -c "import kokoro_onnx"`
-  - Models: `kokoro-v1.0.onnx` (~330 MB) + `voices-v1.0.bin` (~5 MB)
-- **Install:**
-  - `pip install kokoro-onnx`
-  - Models: download from GitHub release
-    `https://github.com/nazdridoy/kokoro-tts/releases/download/v1.0.0/`
-- **Fallback if absent:** video-production degrades to silent video or
-  prompts user to configure an alternative TTS.
-
-### Remotion
-
-- **Capability:** programmatic video rendering (React-based compositions).
-- **Used by:** `skills/video-production/`
-- **Check:** `package.json` has `remotion` or `@remotion/*` deps
-- **Install (in project):** `npx create-video@latest`
-- **Fallback if absent:** skill prompts user to bootstrap a Remotion project.
-
----
-
-## Tier C — App-expert pattern (Pro)
-
-### playwright + chromium
-
-- **Capability:** screenshot capture for app-expert agents (persistent
-  per-app specialists that navigate YOUR app).
-- **Used by:** `/prism-app-expert`
-- **Check:** `npx playwright --version` AND `ls ~/.cache/ms-playwright/chromium-*`
-  (or `%LOCALAPPDATA%\ms-playwright\chromium-*` on Windows)
-- **Install (in project):**
-  - `npm install -D @playwright/test`
-  - `npx playwright install chromium`
-- **Fallback if absent:** `/prism-app-expert` prompts for install before
-  creating the agent.
-
----
-
 ## Tier D — Optional dev-time helpers
 
 ### gh (GitHub CLI)
@@ -134,12 +77,7 @@ surface AppLocker denies.
 
 1. Core requirements (blocking — report fail, exit non-zero if missing).
 2. Tier A (notebooklm-py) — always relevant.
-3. Tier B (ffmpeg / kokoro / Remotion) — only relevant if the project
-   has `out/` directory, `remotion` in `package.json`, or CLAUDE.md
-   mentions video.
-4. Tier C (playwright) — only relevant if project has frontend stack OR
-   user has requested `/prism-app-expert`.
-5. Tier D (gh, jq) — informational; report status but don't push install.
+3. Tier D (gh, jq) — informational; report status but don't push install.
 
 ## Install preference per OS
 

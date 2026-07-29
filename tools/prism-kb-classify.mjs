@@ -14,8 +14,9 @@
 import {readFileSync, existsSync} from 'fs';
 import {join} from 'path';
 import {DOMAINS, summarize} from './prism-kb-domains.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const INDEX_PATH = join(H, '.claude', '.prism-kb-index.json');
 
 const args = process.argv.slice(2);

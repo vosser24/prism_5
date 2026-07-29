@@ -39,7 +39,6 @@ function assert(c, m) { if (!c) throw new Error('assert: ' + (m || '')); }
 const QUIET_ENV = {
   PRISM_DISABLE_FRESHNESS_SWEEP: '1',
   PRISM_DISABLE_PARALLEL_REMINDER: '1',
-  PRISM_DISABLE_CLAUDE_MEM_GUARD: '1',
   PRISM_DISABLE_ACL_NOTIFY: '1',
   PRISM_DISABLE_CAPABILITY_CATALOG: '1',
   PRISM_DISABLE_MEMORY_INJECT: '1',
@@ -196,6 +195,63 @@ await test('malformed pointer JSON -> fail-open (no crash, no TASK-RECALL, exit 
     assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
     const ctx = additionalContextOf(r);
     assert(!ctx.includes('TASK-RECALL'), 'no TASK-RECALL block from malformed pointer JSON');
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+// ─── 6. FROZEN-pointer detection (D067) ────────────────────────────────────
+
+function daysAgoIso(days) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+await test('pointer ts older than PRISM_TASK_RECALL_FROZEN_DAYS -> FROZEN POINTER warning injected', () => {
+  const fx = makeFixture('frozen-old');
+  try {
+    writePointer(fx.projectDir, {...OPEN_TASKS_PAYLOAD, ts: daysAgoIso(10)});
+    const r = runHook(fx);
+    assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
+
+    const ctx = additionalContextOf(r);
+    assert(ctx.includes('FROZEN POINTER (D067)'), `expected FROZEN POINTER warning. Got: ${ctx.slice(0, 500)}`);
+    assert(ctx.includes('CANNOT self-update or self-clear'), 'includes the cannot-self-update honesty clause');
+    assert(ctx.includes('D067-master-persona-agent-field-strips-task-tools.md'), 'points at the D067 adjudication');
+    assert(ctx.includes('node tools/prism-repair-open-tasks.mjs'), 'names the repair tool');
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('pointer ts recent (within threshold) -> no FROZEN POINTER warning', () => {
+  const fx = makeFixture('frozen-fresh');
+  try {
+    writePointer(fx.projectDir, {...OPEN_TASKS_PAYLOAD, ts: new Date().toISOString()});
+    const r = runHook(fx);
+    assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
+
+    const ctx = additionalContextOf(r);
+    assert(ctx.includes('<TASK-RECALL priority=high>'), 'TASK-RECALL block still present');
+    assert(!ctx.includes('FROZEN POINTER'), `no FROZEN POINTER warning expected for a fresh pointer. Got: ${ctx.slice(0, 500)}`);
+  } finally {
+    rmSync(fx.home, {recursive: true, force: true});
+    rmSync(fx.projectDir, {recursive: true, force: true});
+  }
+});
+
+await test('PRISM_TASK_RECALL_FROZEN_DAYS override -> custom threshold honored', () => {
+  const fx = makeFixture('frozen-override');
+  try {
+    // 3 days old: below the default 2-day threshold this would trip, but
+    // below a widened 5-day override it should NOT.
+    writePointer(fx.projectDir, {...OPEN_TASKS_PAYLOAD, ts: daysAgoIso(3)});
+    const r = runHook(fx, {PRISM_TASK_RECALL_FROZEN_DAYS: '5'});
+    assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
+
+    const ctx = additionalContextOf(r);
+    assert(!ctx.includes('FROZEN POINTER'), `widened threshold should suppress the warning. Got: ${ctx.slice(0, 500)}`);
   } finally {
     rmSync(fx.home, {recursive: true, force: true});
     rmSync(fx.projectDir, {recursive: true, force: true});

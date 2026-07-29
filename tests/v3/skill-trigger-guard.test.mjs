@@ -2,7 +2,7 @@
 // Tests for hooks/prism-skill-trigger-guard.mjs - the 2026-07-14 revival fix
 // (see docs/prism/2026-07-14-advisory-precision.md).
 //
-// Proves: (a) the 12 curated patterns in the REAL, shipped
+// Proves: (a) the 11 curated patterns in the REAL, shipped
 // skill-triggers.md now actually load and match their own canonical
 // examples (they previously loaded ZERO of them - every row's regex
 // alternation was shredded by a naive markdown-table split('|'), throwing
@@ -66,20 +66,17 @@ try {
   // Copied verbatim (not re-typed) so this test tracks the live curated
   // table rather than a hand-maintained duplicate that could drift from it.
   homeA = makeHome();
-  const realTriggersPath = join(
-    process.env.USERPROFILE || process.env.HOME, '.claude', 'skills', 'prism-plan', 'references', 'skill-triggers.md'
-  );
+  const realTriggersPath = join(__dirname, '..', '..', 'skills', 'prism-plan', 'references', 'skill-triggers.md');
   const realTriggersContent = readFileSync(realTriggersPath, 'utf-8');
   writeTriggersFile(homeA, realTriggersContent);
 
-  // One representative prompt per curated pattern (12 rows as of this
+  // One representative prompt per curated pattern (11 rows as of this
   // writing - see the file's own table for the current count).
   const casesA = [
     {prompt: 'check the accessibility of this design system', skill: 'ui-ux-pro-max'},
     {prompt: 'lets architect a plan for this', skill: 'blueprint-prompt'},
     {prompt: 'run a panel review of this decision', skill: 'prism-chat'},
     {prompt: 'improve our seo and page speed', skill: 'greek-ecommerce-seo-specialist'},
-    {prompt: 'edit this youtube video', skill: 'video-production'},
     {prompt: 'check my notebooklm notes', skill: 'notebooklm'},
     {prompt: 'set up a workflow for this', skill: 'workflow-orchestration'},
     {prompt: 'write a new hook for claude code', skill: 'claude-code-expert'},
@@ -100,7 +97,7 @@ try {
   {
     const logLines = readRoutingLog(homeA);
     const parseErrors = logLines.filter(l => l.event === 'skill_trigger_parse_error');
-    check('real table: zero parse errors logged (all 12 curated rows load cleanly)',
+    check('real table: zero parse errors logged (all 11 curated rows load cleanly)',
       parseErrors.length === 0,
       `expected 0 parse errors, got ${JSON.stringify(parseErrors)}`);
     const advisories = logLines.filter(l => l.event === 'skill_trigger_guard' && l.action === 'advisory');

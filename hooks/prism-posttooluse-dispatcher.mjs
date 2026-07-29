@@ -14,7 +14,7 @@ const ROUTES = {
   Write:     [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run'],['prism-phase-0d-challenges.mjs','run'],['prism-phase-0d-oob.mjs','run'],['prism-panel-guard.mjs','runPostToolUse']],
   Edit:      [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run']],
   MultiEdit: [['prism-kb-autosync.mjs','run'],['prism-agent-write-register.mjs','run'],['prism-agent-quality-gate.mjs','run'],['prism-skill-write-register.mjs','run'],['prism-handoff-pointer.mjs','run']],
-  Agent:     [['prism-dispatch-cap.mjs','run']],
+  Agent:     [['prism-dispatch-cap.mjs','run'],['prism-panel-seat-recorder.mjs','run']],
 };
 
 async function main() {

@@ -26,6 +26,7 @@ import {existsSync, mkdirSync, readdirSync, readFileSync, renameSync,
         statSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {renameWithRetry} from './atomic-fs.mjs';
 
 // ─── tokenizer (lazy) ────────────────────────────────────────────────────────
 
@@ -57,7 +58,8 @@ function sha1(content) {
 function atomicWrite(path, body) {
   const tmp = path + '.tmp';
   writeFileSync(tmp, body, 'utf8');
-  renameSync(tmp, path);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, path);
 }
 
 function ensureDir(dir) {
@@ -160,9 +162,26 @@ function extractStatus(content) {
   return m ? m[1] : null;
 }
 
+// Anchored to line-start (^...$/m) so this matches only a genuine
+// header-style **Rule:** FIELD, never a mid-line mention inside prose or a
+// TITLE (D062: the non-anchored version matched inside a title's own text
+// and returned corrupted output). Global so a file with multiple sub-lesson
+// **Rule:** lines (each its own header-style line) yields ALL of them, not
+// just the first — pre-fix, 25 of 31 genuine Rule declarations across 6
+// lesson files were silently truncated to the first hit.
+function extractRuleAll(content) {
+  const matches = [...content.matchAll(/^\*\*Rule:\*\*\s*(.+)$/gm)];
+  return matches.map(m => m[1].trim()).filter(Boolean);
+}
+
+// Scalar accessor — kept for backward compatibility with every existing
+// consumer of the single `rule` field (manifest, keyword-map tokenizing,
+// prism-lesson-match.mjs injection, prism-session-start.mjs digest). Returns
+// the FIRST anchored **Rule:** line, matching prior behavior for the common
+// single-rule case while no longer returning prose/title corruption.
 function extractRule(content) {
-  const m = content.match(/\*\*Rule:\*\*\s*(.+)/);
-  return m ? m[1].trim() : '';
+  const all = extractRuleAll(content);
+  return all.length ? all[0] : '';
 }
 
 function extractTriggers(content) {
@@ -191,6 +210,7 @@ function scanAdjudications(root) {
       title: extractTitle(content, parsed.slug),
       status: extractStatus(content),
       rule: extractRule(content),
+      rules: extractRuleAll(content),
       hash: sha1(content),
       content,
     });
@@ -219,6 +239,7 @@ function scanLessons(root) {
       type: 'lesson',
       title: extractTitle(content, name.replace(/\.md$/, '')),
       rule: extractRule(content),
+      rules: extractRuleAll(content),
       sortDate,
       hash: sha1(content),
       content,
@@ -253,6 +274,10 @@ function renderManifest(allEntries, now) {
     const entry = {hash: e.hash, type: e.type, ref: e.ref, title: e.title};
     if (e.type === 'adjudication' && e.status) entry.status = e.status;
     if (e.rule) entry.rule = e.rule;
+    // Only emit `rules` when it adds information beyond the scalar `rule`
+    // (i.e. a file has MORE than one header-style **Rule:** line) — keeps
+    // the manifest diff minimal for the common single-rule case.
+    if (e.rules && e.rules.length > 1) entry.rules = e.rules;
     files[e.relPath] = entry;
   }
   return {version: 1, generated_at: now || new Date().toISOString(), files};
@@ -297,11 +322,18 @@ async function buildKeywordMap(entries, keywordMapPath, now) {
     const tokenize = await getTokenize();
     const mapEntries = [];
     for (const e of entries) {
-      const tokens = buildEntryTokens(tokenize, e.title, e.slug, e.ref, e.rule);
+      // Tokenize ALL rule text (not just the first), so a prompt matching a
+      // buried sub-lesson rule can still fire the search — same RULE_TOKEN_CAP
+      // budget in buildEntryTokens still applies, so this cannot re-inflate
+      // the D052/D053 keywordScore cap. Display (rule/rules below) is
+      // unaffected — prism-lesson-match.mjs still shows the FIRST rule.
+      const ruleText = (e.rules && e.rules.length) ? e.rules.join(' ') : (e.rule || '');
+      const tokens = buildEntryTokens(tokenize, e.title, e.slug, e.ref, ruleText);
       const triggers = extractTriggers(e.content || '');
       mapEntries.push({
         ref: e.ref, type: e.type, title: e.title || '',
         relPath: e.relPath || '', rule: e.rule || '', status: e.status || '',
+        ...(e.rules && e.rules.length > 1 ? {rules: e.rules} : {}),
         tokens, triggers,
       });
     }

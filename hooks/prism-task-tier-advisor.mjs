@@ -34,8 +34,9 @@ import {pathToFileURL} from 'url';
 import {join, dirname} from 'path';
 import {classifyPrompt} from './lib/prism-opus-classifier.mjs';
 import {loadCostMultipliers} from '../tools/lib/prism-tier-classify.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = (process.env.PRISM_TASK_TIER || 'soft').toLowerCase();
 const DB_HELPER_URL = pathToFileURL(join(H, '.claude', 'tools', 'prism-db.mjs')).href;

@@ -30,7 +30,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..', '..');
 const LIB_PATH = join(REPO_ROOT, 'hooks', 'lib', 'prism-task-snapshot.mjs');
 
-const {extractTaskSnapshot, mergeOpenTasks} = await import(pathToFileURL(LIB_PATH).href);
+const {extractTaskSnapshot, mergeOpenTasks, detectDescriptionResidue} = await import(pathToFileURL(LIB_PATH).href);
 
 // ── synthetic transcript-line builders (real wire shape) ────────────────────
 let tu = 0;
@@ -242,6 +242,96 @@ test('generic prior-fallback (F2): a prior field OUTSIDE any schema list must be
   assert.equal(t5.status, 'in_progress', 'unobserved status falls back to the prior record');
   assert.ok('priority' in t5, "prior-only field 'priority' must be carried generically, not dropped by an allowlist");
   assert.equal(t5.priority, 'high', "prior 'priority' value preserved");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PART 5 (F40 forensics / F47 follow-up) — residue detector: DETECT AND FLAG,
+// NEVER REPAIR. Fixtures reproduce the exact two shapes measured against the
+// live .claude/.prism-open-tasks.json on 2026-07-28 (6 of 9 stored records
+// corrupted): Pattern A (#32/#60/#61/#62 shape — orphaned trailing close-tag
+// pair) and Pattern B (#63/#64 shape — swallowed next-parameter, orphaned
+// opening tag). Also pins the false-positive-safety design (a description
+// that MENTIONS these tags mid-string, not at the literal end, must NOT
+// trigger) and the fail-open contract (malformed input never throws).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PATTERN_A_TAIL = // real #61 shape, trimmed to the load-bearing tail
+  'the tiering-vs-cache decision is put to the owner with the capture-rate evidence; 0 drift after deploy.</parameter>\n</invoke>\n';
+const PATTERN_B_TAIL = // real #63 shape, trimmed to the load-bearing tail
+  'node tools/prism-drift-check.mjs` reports 0 drift after deploy.</description>\n<parameter name="activeForm">Filing F46 capability-catalog exclusion';
+const CLEAN_TEXT =
+  'Done when: the predicate is quoted by file:line and the after-rate is measured with its denominator stated; 0 drift after deploy.';
+// Mid-string mention (NOT at the literal end) — proves the detector does not
+// fire on a description merely DISCUSSING the tag shapes, only on one ending
+// in an orphaned tag. This is exactly the self-reference risk the design
+// note above calls out (this file's own doc comments contain these strings).
+const SELF_REFERENCE_MENTION =
+  'The forensic finding is that some records end with the literal text `</parameter>\n</invoke>\n` due to a platform-side boundary bug — see the writeup for detail and next steps.';
+
+test('detectDescriptionResidue: Pattern A (trailing orphaned </parameter></invoke>) -> true', () => {
+  assert.equal(detectDescriptionResidue(PATTERN_A_TAIL), true);
+});
+
+test('detectDescriptionResidue: Pattern B (orphaned <parameter name=...> after </description>) -> true', () => {
+  assert.equal(detectDescriptionResidue(PATTERN_B_TAIL), true);
+});
+
+test('detectDescriptionResidue: clean text -> false (no false positive on ordinary prose)', () => {
+  assert.equal(detectDescriptionResidue(CLEAN_TEXT), false);
+});
+
+test('detectDescriptionResidue: SELF-REFERENCE SAFETY — mid-string mention of the tag shapes, not at the literal end, does NOT trigger', () => {
+  assert.equal(detectDescriptionResidue(SELF_REFERENCE_MENTION), false,
+    'a description merely discussing this finding must not be flagged — only a description actually ENDING in an orphaned tag');
+});
+
+test('detectDescriptionResidue: fail-open on non-string input (null/undefined/number/object) — never throws, always false', () => {
+  for (const v of [null, undefined, 42, {}, [], true]) {
+    assert.doesNotThrow(() => detectDescriptionResidue(v), `must not throw for ${JSON.stringify(v)}`);
+    assert.equal(detectDescriptionResidue(v), false, `must be false for ${JSON.stringify(v)}`);
+  }
+});
+
+test('extractTaskSnapshot: per-task description_residue_detected is set ONLY on the corrupted record, absent on the clean one', () => {
+  const lines = [
+    ...taskCreateLines('900', {subject: 'Clean task', description: CLEAN_TEXT, activeForm: 'Doing clean task'}),
+    ...taskCreateLines('901', {subject: 'Corrupted task', description: 'placeholder', activeForm: 'Doing corrupted task'}),
+    ...taskUpdateLines('901', {description: PATTERN_B_TAIL}),
+  ];
+  const tasks = extractTaskSnapshot(lines);
+  const clean = tasks.find(t => t.id === '900');
+  const corrupted = tasks.find(t => t.id === '901');
+  assert.ok(clean, 'clean task reconstructed');
+  assert.ok(corrupted, 'corrupted task reconstructed');
+  assert.ok(!('description_residue_detected' in clean), 'clean task must NOT carry the flag (absence = no residue, matching this file\'s existing absence convention)');
+  assert.equal(corrupted.description_residue_detected, true, 'corrupted task must carry description_residue_detected: true');
+  // ADVISORY ONLY: the description itself must be untouched (still carries the
+  // full residue verbatim) — the detector must never repair/strip it.
+  assert.equal(corrupted.description, PATTERN_B_TAIL, 'description must be persisted VERBATIM, including the residue — detect, never repair');
+});
+
+test('extractTaskSnapshot: counters.residue_detected denominator — counts rows with an OBSERVED corrupted description, distinct from structured_hits (counts ALL resolved rows)', () => {
+  const lines = [
+    ...taskCreateLines('910', {subject: 'A', description: CLEAN_TEXT, activeForm: 'a'}),           // row 1: clean description
+    ...taskUpdateLines('910', {description: PATTERN_A_TAIL}),                                       // row 2: corrupted description
+    ...taskUpdateLines('910', {status: 'in_progress'}, {statusChange: {from: 'pending', to: 'in_progress'}}), // row 3: no description touched at all
+  ];
+  const counters = {structured_hits: 0, regex_fallbacks: 0, unmatched_task_results: 0};
+  extractTaskSnapshot(lines, counters);
+  assert.equal(counters.structured_hits, 3, 'all 3 rows resolved structurally (every row here carries a toolUseResult)');
+  assert.equal(counters.residue_detected, 1,
+    'residue_detected counts only the ONE row whose observed description matched a residue pattern — ' +
+    'it is a SUBSET of structured_hits (row 3 touched no description at all), not a parallel total meant to sum to the same number');
+});
+
+test('extractTaskSnapshot: fail-open when counters is not passed — residue detection still runs, no throw, no counters object required', () => {
+  const lines = [
+    ...taskCreateLines('920', {subject: 'X', description: PATTERN_A_TAIL, activeForm: 'x'}),
+  ];
+  assert.doesNotThrow(() => extractTaskSnapshot(lines), 'must not throw when counters is omitted (default null)');
+  const tasks = extractTaskSnapshot(lines);
+  const t = tasks.find(x => x.id === '920');
+  assert.equal(t.description_residue_detected, true, 'per-task flag still computed even with no counters out-param');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

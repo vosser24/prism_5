@@ -14,8 +14,9 @@
 
 import {readFileSync, existsSync} from 'fs';
 import {join} from 'path';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG = join(H, '.claude', '.prism-phase-1-5-verdicts.jsonl');
 
 const args = process.argv.slice(2);

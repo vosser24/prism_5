@@ -73,7 +73,6 @@ function runHook(home, cwd, extraEnv = {}) {
       // Silence every unrelated notice source so assertions are clean.
       PRISM_DISABLE_FRESHNESS_SWEEP: '1',
       PRISM_DISABLE_PARALLEL_REMINDER: '1',
-      PRISM_DISABLE_CLAUDE_MEM_GUARD: '1',
       PRISM_DISABLE_KNOWLEDGE_DELTA: '1',
       PRISM_DISABLE_ACL_NOTIFY: '1',
       ...extraEnv,

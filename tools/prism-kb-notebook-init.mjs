@@ -16,8 +16,9 @@ import {readFileSync, writeFileSync, existsSync} from 'fs';
 import {join} from 'path';
 import {spawnSync} from 'child_process';
 import {DOMAINS, DOMAIN_TITLES} from './prism-kb-domains.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const META_PATH = join(H, '.claude', '.prism-kb-meta.json');
 
 function loadMeta() {

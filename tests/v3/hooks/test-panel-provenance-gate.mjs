@@ -43,6 +43,12 @@ function provEvents() {
     .map(l => { try { return JSON.parse(l); } catch { return null; } })
     .filter(o => o && o.event === 'panel_provenance_adhoc_seat');
 }
+// RB-07: read back the annotation-only dropped_positions[] that Path B
+// (classifyDropReason) writes onto the panel.json itself.
+function droppedFromPanel() {
+  try { return JSON.parse(readFileSync(PANEL, 'utf-8')).dropped_positions || []; }
+  catch { return []; }
+}
 // Capture direct process.stderr.write (detectAdHocSeats writes there, not the
 // returned .stderr) around a single call.
 function withStderr(fn) {
@@ -177,6 +183,71 @@ try {
     const after = provEvents();
     assert(res.exit === 0, 'observe exits 0');
     assert(after.length - before === 0, `factory-created vertical seat must stay quiet, got ${after.length - before} events`);
+  });
+
+  // ── F3 regression (RB-06 panelSeatSourcingBlock step 4 addition): a title
+  // combining a concrete domain noun with an archetype suffix (e.g.
+  // "Concurrency & Crash-Recovery") is VERTICAL — the provenance gate infers
+  // vertical on these via seatRequiresProvenance REGARDLESS of the seat's
+  // own vertical:false tag. Locks the CURRENT correct gate behavior: leaving
+  // vertical:false on such a title produces a logged mismatch (this event),
+  // never a silent exemption.
+  await test('F3 domain+archetype title infers vertical despite vertical:false (no seat_source)', async () => {
+    process.env.PRISM_PANEL_PROVENANCE = 'observe';
+    writePanel({task_id: 't1', positions: [
+      {title: 'Concurrency & Crash-Recovery', agent_type: 'general-purpose', vertical: false, challenges: [{text: 'x'}]},
+    ]});
+    const before = provEvents().length;
+    const {res} = withStderr(() => mod.runPostToolUse({tool_name: 'Write', tool_input: {file_path: PANEL}}));
+    const after = provEvents();
+    assert(res.exit === 0, 'observe exits 0');
+    assert(after.length - before === 1, `expected exactly 1 panel_provenance_adhoc_seat event, got ${after.length - before}`);
+    const ev = after[after.length - 1];
+    assert(ev.inferred_vertical === true, `expected inferred_vertical:true, got ${JSON.stringify(ev.inferred_vertical)}`);
+  });
+
+  // ── RB-07: classifyDropReason (Path B, dropped_positions[] annotation) must
+  // NOT drop bare cross-cutting archetype seats (Security/Skeptic/...) as
+  // specialist_unknown merely because they carry no `specialist` key. The
+  // panel-summoning protocol (prism-prompt-tier-router.mjs
+  // panelSeatSourcingBlock step 4) explicitly instructs archetype seats to
+  // "stay untagged" (no specialist, no seat_source) — so requiring a
+  // specialist on EVERY position was the bug. Fix reuses seatRequiresProvenance,
+  // the SAME archetype-vs-domain judge already used by checkFactoryFirst/
+  // detectAdHocSeats in this file — no new whitelist.
+  await test('RB-07 archetype-not-dropped: bare "Security" seat, no specialist, 1 challenge → kept', async () => {
+    process.env.PRISM_PANEL_PROVENANCE = 'off'; // isolate from provenance-gate noise
+    writePanel({task_id: 't1', positions: [
+      {title: 'Security', challenges: [{text: 'x'}]},
+    ]});
+    const {res} = withStderr(() => mod.runPostToolUse({tool_name: 'Write', tool_input: {file_path: PANEL}}));
+    assert(res.exit === 0, 'must exit 0');
+    const drops = droppedFromPanel();
+    assert(drops.length === 0, `bare archetype "Security" must NOT be dropped, got ${JSON.stringify(drops)}`);
+  });
+
+  await test('RB-07 vertical-generic-still-dropped: vertical:true seat, no specialist → still specialist_unknown', async () => {
+    process.env.PRISM_PANEL_PROVENANCE = 'off';
+    writePanel({task_id: 't1', positions: [
+      {title: 'Typed-API Advocate', vertical: true, challenges: [{text: 'x'}]},
+    ]});
+    const {res} = withStderr(() => mod.runPostToolUse({tool_name: 'Write', tool_input: {file_path: PANEL}}));
+    assert(res.exit === 0, 'must exit 0');
+    const drops = droppedFromPanel();
+    assert(drops.length === 1 && drops[0].reason === 'specialist_unknown',
+      `vertical:true seat with no specialist must still be dropped as specialist_unknown, got ${JSON.stringify(drops)}`);
+  });
+
+  await test('RB-07 zero-challenge-still-dropped: seat with zero challenges → still insufficient_challenges', async () => {
+    process.env.PRISM_PANEL_PROVENANCE = 'off';
+    writePanel({task_id: 't1', positions: [
+      {title: 'Security', challenges: []},
+    ]});
+    const {res} = withStderr(() => mod.runPostToolUse({tool_name: 'Write', tool_input: {file_path: PANEL}}));
+    assert(res.exit === 0, 'must exit 0');
+    const drops = droppedFromPanel();
+    assert(drops.length === 1 && drops[0].reason === 'insufficient_challenges',
+      `zero-challenge seat must still be dropped as insufficient_challenges, got ${JSON.stringify(drops)}`);
   });
 } finally {
   if (prevH === undefined) delete process.env.HOME; else process.env.HOME = prevH;

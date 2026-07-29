@@ -19,8 +19,10 @@
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, appendFileSync} from 'fs';
 import {join} from 'path';
 import {withRosterLock} from './lib/prism-roster-lock.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 const VERDICT_LOG = join(H, '.claude', '.prism-phase-1-5-verdicts.jsonl');
 const THRESHOLD = 0.30;
@@ -60,11 +62,12 @@ function atomicWrite(path, content) {
   try {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
+    renameWithRetry(renameSync, tmp, path);
     return true;
-  } catch {
+  } catch (renameErr) {
     try {
       writeFileSync(path, content);
+      process.stderr.write(`warn: atomic rename failed for ${path} (${(renameErr && renameErr.code) || 'unknown'}); wrote directly instead\n`);
       return true;
     } catch (e2) {
       process.stderr.write(`error: failed to write ${path}: ${e2 && e2.message}\n`);
@@ -132,6 +135,11 @@ if (mode === 'apply-ratchet') {
       if (rate < THRESHOLD) continue;
       if (!roster.agents || !roster.agents[agent]) continue;
       if (roster.agents[agent].pending_upgrade === true) continue;
+      // Manifest/flat-owned agents are owned outside ACL; the learner refuses to
+      // upgrade them (see tools/prism-capability-learn.mjs), so flagging them
+      // here only creates an unactionable, self-repeating upgrade loop. Skip.
+      if (roster.agents[agent].manifest_owned === true ||
+          existsSync(join(H, '.claude', 'agents', `${agent}.md`))) continue;
       roster.agents[agent].pending_upgrade = true;
       roster.agents[agent].status = 'upgrade_needed';
       logToImprovements(agent, `Evidence-discipline ratchet flipped pending_upgrade=true (UN-CITED rate ${(rate * 100).toFixed(1)}% over ${stats.dispatches} dispatches).`);

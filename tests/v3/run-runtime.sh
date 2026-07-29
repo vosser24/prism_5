@@ -93,35 +93,6 @@ run_test \
   "opus"
 
 # ---------------------------------------------------------------------------
-# T_runtime.2 — prism-skill-trigger-guard → suggests video-production skill
-#
-# KNOWN BUG (Phase 0, 2026-04-27): the hook's markdown table parser splits
-# every row on bare '|' without respecting backtick-quoted cell contents.
-# All rows in skill-triggers.md use regex alternation (video|youtube|…),
-# so every patternRaw is truncated at the first '|' inside the backticks,
-# producing malformed regex strings like '\b(video\' that fail new RegExp().
-# The hook silently skips malformed patterns, leaving triggers=[], and exits
-# 0 with no output.
-#
-# Root-cause hypothesis: skill-trigger-guard.mjs line 108-124 splits on '|'
-# naively.  The parser needs to either (a) collapse backtick-quoted segments
-# before splitting, or (b) use a proper CSV/table parser that handles quoted
-# delimiters.
-#
-# This test is scaffolded for future use.  Once the parser is fixed, replace
-# run_test_skip with the run_test call below and remove this comment.
-#
-# run_test \
-#   "T_runtime.2: skill trigger guard → suggests video-production" \
-#   "prism-skill-trigger-guard.mjs" \
-#   '{"prompt":"create a TikTok video about my product launch","session_id":"rt-skill-'"${_STAMP}"'","cwd":"/tmp"}' \
-#   "video-production"
-# ---------------------------------------------------------------------------
-run_test_skip \
-  "T_runtime.2: skill trigger guard → suggests video-production" \
-  "skill-trigger-guard parser bug: '|' inside backtick-quoted regex alternation is treated as a column separator, truncating every pattern → all triggers compile-fail silently → no output. See prism-skill-trigger-guard.mjs lines 108-124."
-
-# ---------------------------------------------------------------------------
 # T_runtime.3 — prism-prompt-tier-router → haiku on a trivial prompt
 #
 # "what is 2+2" scores 0 on all signal sets → keyword-floor returns haiku.

@@ -30,11 +30,15 @@
 import {readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, existsSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {classifyPrompt, toSentinel} from './lib/prism-opus-classifier.mjs';
 import {EXPLICIT_PANEL_RE} from '../tools/lib/prism-tier-classify.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 import {matchSpecialists, loadRoster as loadInstalledRoster} from './prism-specialist-routing-guard.mjs';
+import {writePanelLatch} from './lib/prism-panel-latch.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = String(process.env.PRISM_PROMPT_ROUTER ?? 'hard').toLowerCase();
 
@@ -117,13 +121,48 @@ function gitSnapshot(cwd) {
   };
   out.branch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
   out.headSha = run(['rev-parse', '--short', 'HEAD']);
-  const status = run(['status', '--porcelain']);
+  const status = run(['--no-optional-locks', 'status', '--porcelain']);
   out.dirty = !!status;
   const log = run(['log', '-5', '--oneline']);
   out.recentCommits = log ? log.split('\n').filter(Boolean) : [];
   const staged = run(['diff', '--cached', '--name-only']);
   out.stagedFiles = staged ? staged.split('\n').filter(Boolean) : [];
+
+  // F17 fix (task #25): git resolution FAILURE (non-repo cwd, git binary
+  // unavailable, or a fresh zero-commit repo — all three collapse both
+  // rev-parse calls to a non-zero exit) leaves branch==='' AND headSha===''
+  // regardless of WHICH project failed. hooks/lib/prism-opus-classifier.mjs's
+  // cacheKey(prompt, branch, headSha) has no other scoping dimension, and the
+  // tier cache is a SINGLE GLOBAL file (~/.claude/.prism-tier-cache.json —
+  // never scoped per cwd/project), so two DIFFERENT projects that both fail
+  // git resolution and submit the same prompt text collide on the IDENTICAL
+  // cache key — confirmed by direct probe (task #25 report): two unrelated
+  // scratch dirs both produced {branch:'', headSha:''} and cacheKey() computed
+  // the SAME sha256 for both. Distinguish "git resolved" from "git could not
+  // be resolved": on failure, fall back to a cwd-derived pseudo-headSha so the
+  // eventual cache key stays scoped to THIS project even when git itself is
+  // unavailable. Never fires when git resolves normally — real branch+headSha
+  // already scope the key correctly in that (overwhelmingly common) case.
+  if (!out.branch && !out.headSha) {
+    out.headSha = `nogit:${createHash('sha256').update(String(cwd)).digest('hex').slice(0, 12)}`;
+  }
   return out;
+}
+
+// D087 (#44, v6.5.0) — chair/teammate BINARY. There is no per-actor identity
+// available to a hook (verified from a live teammate's own env: session_id is
+// SHARED, entrypoint is 'cli', no name/id field anywhere), but
+// CLAUDE_CODE_CHILD_SESSION=1 does distinguish a dispatched teammate from the
+// chair. Used ONLY to suppress the override directive below: the dispatch-guard
+// now DENIES a teammate's sentinel write (D087), and broadcasting an instruction
+// we then deny is worse than either alone.
+// FAIL-OPEN, matching the guard: absent / non-'1' / unreadable / switch off →
+// treat as CHAIR, i.e. prior behavior, unchanged.
+function isTeammateTurn() {
+  try {
+    if (String(process.env.PRISM_SENTINEL_CHAIR_ONLY ?? 'on').toLowerCase() === 'off') return false;
+    return String(process.env.CLAUDE_CODE_CHILD_SESSION ?? '') === '1';
+  } catch { return false; }
 }
 
 function buildOverrideDirective(tier, summonPanel, sessionId) {
@@ -133,11 +172,12 @@ function buildOverrideDirective(tier, summonPanel, sessionId) {
   // corrected sentinel as its FIRST action, before any work tools fire.
   // Skipped on allowlist/force-opus where intent is explicit.
   const sid = String(sessionId || 'anon');
-  const sentinelName = `~/.claude/.prism-turn-tier-${sid}.json`;
+  const sentinelName = sentinelPath(sid);
   return [
     '',
     'PRISM TIER OVERRIDE PROTOCOL (v3.2.0):',
     `keyword-floor classified this prompt as ${tier}. If you (the conversation model) believe this is wrong for the actual task complexity, correct it as your FIRST action of this turn: Read \`${sentinelName}\` first (it already exists — the router rewrites it every turn, so the Write tool refuses without a prior Read), THEN Write or Edit it with corrected fields {"tier":"<correct>","summon_panel":<bool>,"source":"conversation-model-override","rationale":"<why>"}. Otherwise, proceed normally and the keyword-floor classification stands.`,
+    `CONSTRAINT (owner policy): You MAY correct \`tier\` (haiku/sonnet/opus) and \`summon_panel\` to fix a misclassification. You may NOT self-set \`force_opus:true\` — that flag is the full dispatch-guard bypass (the equivalent of the user's \`!opus-force:\` prefix) and is reserved for the USER. If you believe a one-shot bypass of the dispatch/panel gates is genuinely warranted, do NOT write force_opus yourself: state the reason in one line and ASK the user to approve (they can prefix \`!opus-force:\`). Self-granting force_opus is a policy violation and is now logged.`,
   ].join('\n');
 }
 
@@ -166,7 +206,8 @@ function buildOverrideDirective(tier, summonPanel, sessionId) {
 const PANEL_JSON_WRITE_CLAUSE =
   '\n  5. WRITE the panel to JSON at ~/.claude/.prism-task-<task-id>/panel.json BEFORE synthesis, using ONE direct Write tool call to that exact final path — ' +
   'NOT a tempfile+rename, NOT a Bash/PowerShell heredoc, NOT a .tmp path (those bypass the PostToolUse Write event and the Phase 0d reviewer silently never fires). ' +
-  'Schema: {"dispatch_mode":"dispatch","positions":[{"specialist":"<roster key>","title":"...","vertical":true,"seat_source":"rostered|factory-created","agent_type":"<subagent_type>","dispatched_agent_id":"...","challenges":[{"text":"...","evidence_class":"..."}]}]}.';
+  '<task-id> MUST be freshly generated for THIS panel\'s topic — never reuse an id minted for an earlier or declined panel in the same session (reusing silently aliases the wrong workspace). ' +
+  'Schema: {"dispatch_mode":"dispatch","positions":[{"specialist":"<roster key>","title":"...","vertical":true,"seat_source":"rostered"|"factory-created","agent_type":"<subagent_type>","dispatched_agent_id":"...","challenges":[{"text":"...","evidence_class":"PRECEDENT"|"MEASUREMENT"|"SPEC"|"QUOTE"|"DEMO"|"REASONED-INFERENCE"|"CHALLENGE-SUBSTANCE" (ONLY these 7 values — never invent others like "code-evidence" or "reasoning")}]}],"rationale":{"alternatives_considered":[{"approach":"...","why_not":"..."}]}}.';
 
 // Compact seat-sourcing discipline, force-injected on every panel-summon turn.
 // fitLine is the deterministic pre-match result (Fix 1b) or '' when none.
@@ -174,8 +215,8 @@ function panelSeatSourcingBlock(fitLine) {
   return (
     `\n  1. READ the roster (~/.claude/skills/prism-plan/references/roster.json) and match EACH seat to a rostered specialist by core_domains — a STRONG fit on the seat's SPECIFIC sub-domain, not mere adjacency.` +
     `\n  2. For any seat with NO strong-fit specialist, spawn @agent-factory (compose-first: check tools-registry first) to CREATE/UPGRADE a durable specialist. A bare general-purpose/persona subagent is NEVER a valid fill for a vertical/domain seat.` +
-    `\n  3. Dispatch the seats — 3–5, distinct opposed biases — as INDEPENDENT parallel subagents (one Agent() block each).` +
-    `\n  4. Tag each vertical/domain seat in panel.json: "vertical":true, "seat_source":"rostered"|"factory-created", "agent_type":"<real subagent_type>", "specialist":"<roster key>". Cross-cutting archetype seats (Architect/Skeptic/Security/Performance) stay untagged.` +
+    `\n  3. Dispatch the seats — 3–5, distinct opposed biases — as INDEPENDENT parallel subagents (one Agent() block each), dispatched WITHOUT a "name:" field — a named call becomes an Agent-Teams teammate whose position does NOT return as your tool result (only a payload-free idle_notification, D062); if a seat's position never returns as your Agent() result, that seat was never really consulted — do NOT author its challenges yourself.` +
+    `\n  4. Tag each vertical/domain seat in panel.json: "vertical":true, "seat_source":"rostered"|"factory-created" (ONLY these two values — never invent others like "archetype" or "generic"), "agent_type":"<real subagent_type>", "specialist":"<roster key>". Cross-cutting archetype seats (Architect/Skeptic/Security/Performance) stay untagged — omit seat_source entirely, do not set it to "archetype". A title combining a concrete domain noun with an archetype suffix (e.g. "Concurrency & Crash-Recovery", "Migration & Reversibility skeptic") is VERTICAL — tag it vertical:true with a real seat_source/agent_type; the provenance gate infers vertical on these regardless, so leaving it false only produces a logged mismatch, never an exemption.` +
     `\n  5. Chair adversarial review (≥2 substantive challenges per position), then synthesize the verdict yourself.` +
     (fitLine ? `\n  ${fitLine}` : '')
   );
@@ -281,14 +322,17 @@ function formatAdvice(tier, rationale, mode, summonPanel, source, sessionId, act
   // must NOT receive the override directive (context noise, needless sentinel
   // Read+Write on the fast path).
   const panelHardBlocked = mode === 'hard' && tier === 'opus' && effectiveSummonPanel;
-  if ((source === 'keyword-floor' || (source === 'cache' && effectiveSummonPanel)) && !panelHardBlocked) {
+  // D087 (#44): !isTeammateTurn() — a dispatched teammate is now DENIED the
+  // sentinel write this directive asks for, so it must not be instructed to
+  // attempt it. Fail-open (see isTeammateTurn): the chair path is unchanged.
+  if ((source === 'keyword-floor' || (source === 'cache' && effectiveSummonPanel)) && !panelHardBlocked && !isTeammateTurn()) {
     advice += '\n' + buildOverrideDirective(tier, summonPanel, sessionId);
   }
   return advice;
 }
 
 // Exported for unit testing (pure function, no I/O).
-export {formatAdvice, buildOverrideDirective};
+export {formatAdvice, buildOverrideDirective, gitSnapshot};
 
 export async function run(payload) {
   try {
@@ -298,6 +342,13 @@ export async function run(payload) {
     const prompt = String(input.prompt || '');
     const sessionId = input.session_id || 'anon';
     const cwd = input.cwd || process.cwd();
+
+    // D075: a background task-notification turn is NOT genuine user input. Its
+    // `prompt` is the harness <task-notification> body and can carry leaked
+    // IDE-selected context (e.g. a "run the panel" line) that must never
+    // re-classify into a panel summon. hook_event_name is 'UserPromptSubmit'
+    // on both real prompts and notifications, so key off the body sentinel.
+    const isTaskNotification = /^\s*<task-notification>/.test(prompt);
 
     // v3.8.0: continuation detection — short/approval follow-ups inherit prev tier.
     const prevSentinel = readSentinel(sessionId);
@@ -324,13 +375,64 @@ export async function run(payload) {
       } catch {}
     }
 
+    // D075: task-notification turns inherit the prior tier and NEVER re-summon a
+    // panel. Unconditional for notifications (not genuine user input regardless
+    // of length), unlike the length-gated continuation-inherit below.
+    if (isTaskNotification && prevSentinel && prevSentinel.tier) {
+      const inheritedTier = prevSentinel.tier;
+      const inheritedForceOpus = !!prevSentinel.force_opus;
+      const inheritedSentinel = {
+        ...prevSentinel,
+        ts: new Date().toISOString(),
+        source: 'task-notification-inherit',
+        rationale: `task-notification turn (not user input); inherited ${prevSentinel.tier}, panel suppressed (D075)`,
+        dispatched: false,
+        summon_panel: false,
+        orchestrator_dispatched: false,
+        dispatch_count: 0,
+        routine_bypass: (inheritedTier === 'haiku' || inheritedTier === 'sonnet') && !inheritedForceOpus,
+      };
+      try {
+        const p = sentinelPath(sessionId);
+        mkdirSync(dirname(p), {recursive: true});
+        const tmp = p + '.tmp';
+        writeFileSync(tmp, JSON.stringify(inheritedSentinel, null, 2));
+        renameWithRetry(renameSync, tmp, p);
+      } catch (renameErr) {
+        try {
+          const p = sentinelPath(sessionId);
+          writeFileSync(p, JSON.stringify(inheritedSentinel, null, 2));
+          appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+            status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+        } catch (fallbackErr) {
+          appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+            status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+        }
+      }
+      appendLog({
+        schema_version: 4,
+        event: 'prompt_tier_router',
+        ts: inheritedSentinel.ts,
+        session_id: sessionId,
+        tier: inheritedSentinel.tier,
+        source: 'task-notification-inherit',
+        rationale: inheritedSentinel.rationale,
+        summon_panel: false,
+        force_opus: !!inheritedSentinel.force_opus,
+        mode: MODE,
+        phase_1_5: null,
+      });
+      const advice = `PRISM TIER ROUTER: ${inheritedSentinel.tier} (task-notification-inherit; not user input, panel suppressed). Source: task-notification-inherit`;
+      return {exit: 0, stdout: JSON.stringify({hookSpecificOutput: {hookEventName: 'UserPromptSubmit', additionalContext: advice}}), stderr: ''};
+    }
+
     // D034 (2026-06-25): explicit-only panel contract — an explicit panel request
     // on a follow-up turn MUST NOT be zeroed by continuation-inherit's
     // summon_panel:false. If the current prompt is an explicit panel request,
     // skip the inherit path entirely and let the full classification run.
     // This preserves the original FIX-A guarantee (approval "ok"/"yes" turns never
     // re-summon the panel) while honoring deliberate panel requests on follow-ups.
-    const isExplicitPanelRequest = EXPLICIT_PANEL_RE.test(prompt);
+    const isExplicitPanelRequest = !isTaskNotification && EXPLICIT_PANEL_RE.test(prompt);
     if (!isExplicitPanelRequest && shouldInheritPreviousTier(prompt, prevSentinel)) {
       // v6.0.0 routine turn-collapse: per-turn counters must reset on every
       // continuation, even though we inherit the tier.  A stale dispatch_count
@@ -360,12 +462,17 @@ export async function run(payload) {
         mkdirSync(dirname(p), {recursive: true});
         const tmp = p + '.tmp';
         writeFileSync(tmp, JSON.stringify(inheritedSentinel, null, 2));
-        renameSync(tmp, p);
-      } catch {
+        renameWithRetry(renameSync, tmp, p);
+      } catch (renameErr) {
         try {
           const p = sentinelPath(sessionId);
           writeFileSync(p, JSON.stringify(inheritedSentinel, null, 2));
-        } catch {}
+          appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+            status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+        } catch (fallbackErr) {
+          appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+            status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+        }
       }
       appendLog({
         schema_version: 4,
@@ -406,22 +513,44 @@ export async function run(payload) {
       mode: MODE,
     });
 
-    // v5.2.5: if a project-master is the active agent, a panel turn is self-chaired.
-    const activeMaster = detectActiveMaster(cwd);
-    if (activeMaster && classification.summon_panel && sentinel.tier === 'opus') {
-      sentinel.self_chair = true;
-      sentinel.active_master = activeMaster;
+    // D075: no-prior-sentinel edge — a task-notification that falls through to
+    // classification must still never summon a panel.
+    if (isTaskNotification && sentinel.summon_panel) {
+      sentinel.summon_panel = false;
+      sentinel.panel_suppressed_task_notification = true;
     }
 
     // v5.13.x: PRISM_PANEL_DISABLED — Arm B experiment switch. When truthy
     // ('1' or 'true', case-insensitive), suppress the expert panel while
     // keeping all other PRISM machinery (tier routing, orchestrator preamble,
     // dispatch guards, single-pass logic) fully intact.
+    //
+    // F18 fix (task #25): this block MUST run BEFORE the self_chair check
+    // below — self_chair must never be set on a turn where the panel was
+    // suppressed by EITHER this switch OR D075 above.
     const _panelDisabledRaw = String(process.env.PRISM_PANEL_DISABLED || '').toLowerCase().trim();
     const panelDisabled = _panelDisabledRaw === '1' || _panelDisabledRaw === 'true';
     if (panelDisabled && sentinel.summon_panel) {
       sentinel.summon_panel = false;
       sentinel.panel_disabled = true;
+    }
+
+    // v5.2.5: if a project-master is the active agent, a panel turn is self-chaired.
+    // F18 fix (task #25): read the POST-suppression sentinel.summon_panel, not
+    // the raw pre-suppression classification.summon_panel — self_chair must
+    // never be set on a turn where D075 (task-notification, above) or
+    // PRISM_PANEL_DISABLED (above) already suppressed the panel, or the
+    // on-disk sentinel records a self-contradictory state (self_chair:true
+    // alongside summon_panel:false). Reproduced pre-fix: a task-notification
+    // turn with explicit panel-summoning language leaked into its body, with
+    // an active project-master configured, set self_chair:true while
+    // summon_panel was correctly false — confirmed by direct probe (task #25
+    // report). This ordering fix requires the two suppression blocks above to
+    // run first, which is why this check now sits after both of them.
+    const activeMaster = detectActiveMaster(cwd);
+    if (activeMaster && sentinel.summon_panel && sentinel.tier === 'opus') {
+      sentinel.self_chair = true;
+      sentinel.active_master = activeMaster;
     }
 
     try {
@@ -433,15 +562,36 @@ export async function run(payload) {
       mkdirSync(dirname(p), {recursive: true});
       const tmp = p + '.tmp';
       writeFileSync(tmp, JSON.stringify(sentinel, null, 2));
-      renameSync(tmp, p);
-    } catch {
+      renameWithRetry(renameSync, tmp, p);
+    } catch (renameErr) {
       // Fallback: direct write if rename fails (e.g., tempdir on different
       // filesystem from sentinel — shouldn't happen since they're siblings,
       // but defensive).
       try {
         const p = sentinelPath(sessionId);
         writeFileSync(p, JSON.stringify(sentinel, null, 2));
-      } catch {}
+        appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+          status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+      } catch (fallbackErr) {
+        appendLog({event: 'prompt_tier_router_sentinel_write', session_id: sessionId,
+          status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+      }
+    }
+
+    // F7 Phase 1: arm the panel-active latch on a self-chaired panel-summon
+    // turn. The latch is a SEPARATE sidecar file that persists across turns
+    // (the per-turn sentinel above resets summon_panel to false on the
+    // post-approval turn, line ~354, and a fresh non-panel re-classification
+    // does too — that reset is exactly why prism-panel-name-guard.mjs never
+    // fired in prod). While the latch is live the name-guard fires on the seat
+    // dispatch that actually happens on that later turn. Scoped to self_chair
+    // (project-master active) so raw Agent-Teams usage without a PRISM master
+    // never arms it; gated on the POST-suppression summon_panel so a disabled
+    // panel (PRISM_PANEL_DISABLED) never arms. Re-armed (TTL refreshed) on every
+    // subsequent summon turn. Fail-open — a latch-write error never breaks the
+    // turn. TTL is the only deterministic clear (see prism-panel-latch.mjs).
+    if (sentinel.self_chair && sentinel.tier === 'opus' && sentinel.summon_panel === true) {
+      try { writePanelLatch(sessionId, {active_master: sentinel.active_master || null}); } catch {}
     }
 
     // v4.6: additive event types phase_0d_challenge + dispatch_cap (actual_parallel, queue_depth).

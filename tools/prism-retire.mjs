@@ -39,6 +39,8 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { withRosterLock } from './lib/prism-roster-lock.mjs';
+import { renameWithRetry } from './lib/atomic-fs.mjs';
+import { prismHome } from '../hooks/lib/prism-home.mjs';
 
 const args = process.argv.slice(2);
 const opts = { name: null, dryRun: false, home: null, project: false };
@@ -71,7 +73,7 @@ if (!name || !/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
   process.exit(2);
 }
 
-const HOME = opts.home || process.env.HOME || process.env.USERPROFILE;
+const HOME = opts.home || prismHome();
 if (!HOME) {
   process.stderr.write('error: HOME/USERPROFILE unset and no --home passed\n');
   process.exit(2);
@@ -173,7 +175,8 @@ async function main() {
     }
     const tmp = ROSTER + '.tmp';
     writeFileSync(tmp, JSON.stringify(locked, null, 2));
-    renameSync(tmp, ROSTER);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+    renameWithRetry(renameSync, tmp, ROSTER);
   });
 
   process.stdout.write(

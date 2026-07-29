@@ -25,6 +25,13 @@ const DISPATCH_GUARD = join(REPO, 'hooks', 'prism-parent-dispatch-guard.mjs');
 const MUTATION_GUARD = join(REPO, 'hooks', 'prism-mutation-guard.mjs');
 const ROUTER = join(REPO, 'hooks', 'prism-prompt-tier-router.mjs');
 
+// D087 (#44): the FIX-A escape asserted by A1 is now CHAIR-only — a dispatched
+// teammate (CLAUDE_CODE_CHILD_SESSION=1) is denied the sentinel write. A1
+// describes the chair's escape, so pin the discriminator; without it this suite
+// passes for the chair and fails for a subagent that runs it. Teammate-side
+// behaviour is covered by tests/v3/hooks/test-sentinel-chair-only.mjs.
+delete process.env.CLAUDE_CODE_CHILD_SESSION;
+
 // D025 Fix 2a: implicit panel signals are floored at PANEL_MIN_WORDS (50) words.
 // padToMinWords() pads a prompt with filler tokens to guarantee ≥50 words, so
 // tests that need to exercise the panel path still work after the floor was added.

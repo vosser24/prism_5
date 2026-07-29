@@ -93,6 +93,14 @@ spike: even an agent that declares it in frontmatter has it stripped). So:
   - Debugging with competing hypotheses (teammates test different theories,
     compare notes)
 
+  > **CAUTION — does NOT apply to PHASE 0d panel seats.** A panel seat must
+  > RETURN its position as an `Agent()` result. If Agent Teams is genuinely
+  > chosen for debate, every teammate MUST `SendMessage` its full position
+  > before idling — a bare `idle_notification` with no `SendMessage` is a LOST
+  > report ([[D062]]), not a completed review. For panel seats specifically,
+  > prefer the plain nameless `Agent()` shape described in
+  > `phase-0d-adversarial.md`.
+
   DON'T use Agent Teams when:
   - Steps are truly independent (parallel `Agent()` is cheaper)
   - Sequential dependencies (Teams add overhead for no benefit)

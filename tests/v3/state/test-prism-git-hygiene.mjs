@@ -29,6 +29,11 @@ const HOOK_GIT_CLEAN = join(REPO_ROOT, 'hooks', 'prism-git-clean-nudge.mjs');
 const HOOK_PREPUSH = join(REPO_ROOT, 'hooks', 'prism-prepush-review.mjs');
 const HOOK_SESSION_START = join(REPO_ROOT, 'hooks', 'prism-session-start.mjs');
 const FLAG_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-flag-file.mjs');
+const HOME_HELPER_REPO = join(REPO_ROOT, 'hooks', 'lib', 'prism-home.mjs');
+// task #88: prism-flag-file.mjs's atomicWrite() now uses the shared
+// renameWithRetry helper — copy it so the temp-home import (./atomic-fs.mjs)
+// resolves when the test dynamically imports the home-mirrored copy.
+const ATOMIC_FS_REPO = join(REPO_ROOT, 'tools', 'lib', 'atomic-fs.mjs');
 
 let pass = 0, fail = 0;
 
@@ -53,9 +58,18 @@ function assertEq(a, b, msg) {
 function makeHome() {
   const home = mkdtempSync(join(tmpdir(), 'prism-flag-home-'));
   mkdirSync(join(home, '.claude', 'tools', 'lib'), {recursive: true});
+  mkdirSync(join(home, '.claude', 'hooks', 'lib'), {recursive: true});
   writeFileSync(
     join(home, '.claude', 'tools', 'lib', 'prism-flag-file.mjs'),
     readFileSync(FLAG_HELPER_REPO, 'utf-8'),
+  );
+  writeFileSync(
+    join(home, '.claude', 'hooks', 'lib', 'prism-home.mjs'),
+    readFileSync(HOME_HELPER_REPO, 'utf-8'),
+  );
+  writeFileSync(
+    join(home, '.claude', 'tools', 'lib', 'atomic-fs.mjs'),
+    readFileSync(ATOMIC_FS_REPO, 'utf-8'),
   );
   return home;
 }

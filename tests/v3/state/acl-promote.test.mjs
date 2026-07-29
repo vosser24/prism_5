@@ -75,3 +75,53 @@ try {
 } finally {
   rmSync(tmpHome, { recursive: true, force: true });
 }
+
+// ── F1.5: promote() refuses to promote over a FLAT-owned agent ────────────────
+{
+  const tmpHome2 = mkdtempSync(join(tmpdir(), 'prism-acl-promote-guard-'));
+  const rosterDir2 = join(tmpHome2, '.claude', 'skills', 'prism-plan', 'references');
+  mkdirSync(rosterDir2, { recursive: true });
+  writeFileSync(join(rosterDir2, 'roster.json'), JSON.stringify({ agents: {}, skills: {} }), 'utf-8');
+
+  // Seed a FLAT agent file whose basename matches the name promote() derives.
+  // deriveName('claude-master-agent') keeps it (ends with -agent) → same name.
+  const flatDir = join(tmpHome2, '.claude', 'agents');
+  mkdirSync(flatDir, { recursive: true });
+  const flatName = 'claude-master-agent';
+  writeFileSync(join(flatDir, flatName + '.md'),
+    '---\nname: ' + flatName + '\ndescription: shipped flat agent\n---\n', 'utf-8');
+
+  let factoryCalled = false;
+  function guardFactory(spec, stagingDir) {
+    factoryCalled = true;
+    const dest = join(stagingDir, spec.name + '.md');
+    writeFileSync(dest, '---\nname: ' + spec.name + '\ndescription: x\n---\n', 'utf-8');
+    return dest;
+  }
+
+  const guardCandidate = {
+    kind: 'promote',
+    label: flatName,              // derives to itself (ends with -agent)
+    members: ['a', 'b', 'c'],
+    sessions: ['s1', 's2', 's3'],
+    suggestedType: 'agent',
+  };
+
+  let threw = false;
+  try {
+    await promote(guardCandidate, { home: tmpHome2, factory: guardFactory });
+  } catch (e) {
+    threw = true;
+    assert.ok(/flat-owned/.test(e.message),
+      `promote() must reject with a flat-owned message, got: ${e.message}`);
+  }
+
+  assert.ok(threw, 'promote() must throw for a flat-owned agent');
+  assert.strictEqual(factoryCalled, false,
+    'promote() must not call the factory for a flat-owned agent');
+  assert.ok(!existsSync(join(flatDir, flatName, flatName + '.md')),
+    'promote() must not create a nested copy of a flat-owned agent');
+
+  rmSync(tmpHome2, { recursive: true, force: true });
+  console.log('F1.5 promote() flat-owned guard: PASS');
+}

@@ -13,7 +13,7 @@ source of truth for what to check and how.
 /prism-deps              → scan all tiers, report, offer installs interactively
 /prism-deps --check      → scan only, no install prompts (CI-safe)
 /prism-deps --list       → print the manifest (what each dep enables)
-/prism-deps <dep-name>   → install a single dep (notebooklm, ffmpeg, kokoro, playwright, gh, jq)
+/prism-deps <dep-name>   → install a single dep (notebooklm, gh, jq)
 ```
 
 ## Procedure
@@ -33,15 +33,6 @@ command, install command per OS, fallback-if-absent note.
 ### Step 3 — Detect project relevance (tier gating)
 
 - **Tier A (notebooklm-py):** always relevant.
-- **Tier B (ffmpeg/kokoro/Remotion):** relevant if any of:
-  - `package.json` contains `remotion` or `@remotion/*`
-  - `out/` directory exists
-  - CLAUDE.md mentions "video", "Remotion", or "TTS"
-  - User ran `/prism-app-expert` (screenshots feed into video)
-- **Tier C (playwright):** relevant if any of:
-  - `package.json` has a frontend framework (`react`, `vue`, `next`, `svelte`)
-  - CLAUDE.md mentions `/prism-app-expert`
-  - Existing `.claude/app-experts/` directory
 - **Tier D (gh, jq):** always informational, never pushed.
 
 ### Step 4 — Run checks in parallel
@@ -49,8 +40,8 @@ command, install command per OS, fallback-if-absent note.
 For each relevant dep, run its check command. Record:
 - `✓ installed` (check succeeded)
 - `✗ missing` (check failed)
-- `? partial` (CLI present but dependent artifact missing — e.g., kokoro
-  CLI installed but model files not downloaded)
+- `? partial` (CLI present but a dependent artifact is missing, e.g. an
+  auth token not yet issued)
 
 ### Step 5 — Report
 
@@ -71,17 +62,6 @@ TIER A — Agent research & persistence
       Enables:  $0 agent research via NotebookLM, /prism-archive
       Install:  pip install notebooklm-py[browser]
                  notebooklm login
-
-TIER B — Video production  {relevant|not relevant}
-  ✗ ffmpeg                     missing
-      Install:  {OS-specific command}
-  ? kokoro-tts                 partial (CLI ok, models missing)
-      Install:  curl -L -o kokoro-v1.0.onnx ...
-  ✗ Remotion project           not detected
-      Install (in project):    npx create-video@latest
-
-TIER C — App-expert  {relevant|not relevant}
-  ...
 
 TIER D — Optional dev helpers
   ...
@@ -114,8 +94,8 @@ After all approved installs, re-run the checks from Step 4 to confirm.
 Print a final delta:
 
 ```
-BEFORE: 2/7 installed
-AFTER:  6/7 installed (1 failed: kokoro model download — see details above)
+BEFORE: 2/3 installed
+AFTER:  3/3 installed
 ```
 
 ### Step 8 — Write to `.claude/deps-scan.json` (project-local)
@@ -127,7 +107,6 @@ AFTER:  6/7 installed (1 failed: kokoro model download — see details above)
   "project": "nexus-tasks",
   "results": {
     "notebooklm-py": {"status": "installed", "version": "0.3.4"},
-    "ffmpeg":        {"status": "missing", "tier": "B", "relevant": true},
     ...
   }
 }

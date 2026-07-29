@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Drift-guard for the v5.1 default-flip (project-master opt-in → default-on)
-// and the claude-mem two-mode memory docs. Asserts the LIVE doc surfaces
-// describe default-on behaviour and do NOT carry the stale opt-in prose.
+// Drift-guard for the v5.1 default-flip (project-master opt-in → default-on).
+// Asserts the LIVE doc surfaces describe default-on behaviour and do NOT
+// carry the stale opt-in prose.
 //
 // Origin: docs/prism/plans/2026-06-02-project-master-default-and-lifecycle.md (P4).
 // House pattern mirrors test-master-orchestrator-v5-architect.mjs.
@@ -46,12 +46,6 @@ test('bootstrap.md: carries NO stale opt-in/skipped-by-default project-master pr
   assert(!/opt-in to phase 6/i.test(bootstrap), 'stale "opt-in to phase 6" must be gone');
   assert(!/skipped by default/i.test(bootstrap), 'stale "skipped by default" must be gone from bootstrap.md');
   assert(!/opt into the project-master phase/i.test(bootstrap), 'stale opt-into prose must be gone');
-});
-
-test('bootstrap.md: documents the claude-mem offer + two memory modes', () => {
-  assert(/detect-claude-mem/.test(bootstrap), 'must call the detect-claude-mem helper');
-  assert(/Memory modes/i.test(bootstrap), 'must have a Memory modes section');
-  assert(/Mode A/.test(bootstrap) && /Mode B/.test(bootstrap), 'must describe Mode A and Mode B');
 });
 
 // ── commands/prism-help.md ──────────────────────────────────────────────────

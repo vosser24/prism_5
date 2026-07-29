@@ -750,6 +750,76 @@ test('renameWithRetry: non-transient error rethrows immediately', () => {
   assertEq(calls, 1, 'fakeFn called exactly once (no retry)');
 });
 
+// ------------------------------------------------------------ health checks_detail (D047 / D058)
+//
+// /prism-health's checks_passed / checks_failed counts had no record of WHICH
+// checks failed. checks_detail is the additive per-check record; these tests
+// cover: consistent detail passes, inconsistent detail is caught (D058: a
+// code gate, not prose), absent detail stays backward compatible (older
+// sessions never populated it), and D047's third state ('unknown' — genuinely
+// unmeasured) round-trips without being folded into the fail count.
+
+test('markPhaseCompleted: checks_detail present and consistent with checks_failed → passes', () => {
+  let s = createInitialState('proj');
+  const detail = [
+    {id: 'step1b-drift', step: '1b', status: 'fail', message: '8 stale files vs repo'},
+    {id: 'step2c-task-api', step: '2c', status: 'unknown', message: 'no Task call observed in window'},
+    {id: 'step3-external-tools', step: '3', status: 'pass', message: 'all Tier 1 tools installed'},
+  ];
+  s = markPhaseCompleted(s, 'health', {
+    health_status: 'red', checks_passed: 16, checks_failed: 1, checks_detail: detail,
+  });
+  assertEq(s.phases.health.checks_detail, detail);
+  assertEq(s.phases.health.checks_failed, 1);
+});
+
+test('markPhaseCompleted: checks_detail inconsistent with checks_failed → throws', () => {
+  const s = createInitialState('proj');
+  const detail = [
+    {id: 'step1b-drift', step: '1b', status: 'fail', message: '8 stale files vs repo'},
+  ];
+  let threw = false;
+  let message = '';
+  try {
+    markPhaseCompleted(s, 'health', {
+      health_status: 'red', checks_passed: 16, checks_failed: 3, checks_detail: detail,
+    });
+  } catch (e) {
+    threw = true;
+    message = e.message;
+  }
+  assert(threw, 'inconsistent checks_detail vs checks_failed must throw');
+  assert(/checks_failed/.test(message), 'error mentions checks_failed: ' + message);
+});
+
+test('markPhaseCompleted: checks_detail absent entirely → still passes (backward compat)', () => {
+  let s = createInitialState('proj');
+  s = markPhaseCompleted(s, 'health', {health_status: 'green', checks_passed: 19, checks_failed: 0});
+  assertEq(s.phases.health.health_status, 'green');
+  assert(!('checks_detail' in s.phases.health), 'no checks_detail key synthesized when absent');
+});
+
+test('markPhaseCompleted: unknown status round-trips and is not counted as a fail', () => {
+  let s = createInitialState('proj');
+  const detail = [
+    {id: 'step2c-task-api', step: '2c', status: 'unknown', message: 'task_calls_observed: 0'},
+    {id: 'step3-external-tools', step: '3', status: 'pass', message: 'all installed'},
+  ];
+  s = markPhaseCompleted(s, 'health', {
+    health_status: 'yellow', checks_passed: 18, checks_failed: 0, checks_detail: detail,
+  });
+  assertEq(s.phases.health.checks_detail[0].status, 'unknown');
+  assertEq(s.phases.health.checks_failed, 0);
+});
+
+test('markPhaseCompleted: checks_detail entry with invalid status value throws', () => {
+  const s = createInitialState('proj');
+  const detail = [{id: 'x', step: '1', status: 'skipped', message: 'n/a'}];
+  let threw = false;
+  try { markPhaseCompleted(s, 'health', {checks_failed: 0, checks_detail: detail}); } catch { threw = true; }
+  assert(threw, 'invalid status value must throw');
+});
+
 // ------------------------------------------------------------ summary
 
 process.stdout.write(`\n${passed} passed, ${failed} failed\n`);

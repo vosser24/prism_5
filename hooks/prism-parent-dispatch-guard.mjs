@@ -85,8 +85,10 @@
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, renameSync} from 'node:fs';
 import {join, dirname} from 'node:path';
+import {prismHome} from './lib/prism-home.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
 const MODE = String(process.env.PRISM_DISPATCH_GUARD ?? 'hard').toLowerCase();
 // v5.7.6 — nested-dispatch guard mode (hard|soft|off). Independent kill switch;
@@ -257,22 +259,38 @@ function readSentinel(sessionId) {
 // from crashes mid-write (disk-full, antivirus interference, or node process
 // kill). Readers downstream (other guards, weekly rollup) never see a
 // partially-written file.
+//
+// The rename step ITSELF is atomic on POSIX + Windows (no reader ever sees a
+// torn file) — but "atomic" is not "cannot fail": task #82 reproduced
+// fs.renameSync throwing EPERM/EACCES/EBUSY under a transient Windows
+// AV/indexer handle lock on this exact destination shape, which is a
+// distinct property from atomicity and was previously mis-stated as covered
+// by it. renameWithRetry (tools/lib/atomic-fs.mjs) absorbs that transient
+// window with bounded retries before falling back to a direct write; the
+// fallback path is logged (not silent) so a real degraded write is
+// observable instead of indistinguishable from success (D046).
 function writeSentinel(sessionId, sentinel) {
+  const p = sentinelPath(sessionId);
+  const tmp = p + '.tmp';
+  const body = JSON.stringify(sentinel, null, 2);
   try {
-    const p = sentinelPath(sessionId);
-    const tmp = p + '.tmp';
-    writeFileSync(tmp, JSON.stringify(sentinel, null, 2));
-    // renameSync is atomic on POSIX + Windows (same filesystem). If the
-    // rename fails mid-operation, either the old file remains (reader gets
-    // stale but valid JSON) or the new file is in place — never both nor
-    // neither.
-    renameSync(tmp, p);
-  } catch {
+    writeFileSync(tmp, body);
+    renameWithRetry(renameSync, tmp, p);
+  } catch (renameErr) {
     // Fallback: direct write. On catastrophic failure (disk full mid-write),
     // this could truncate — but readers have try/catch JSON.parse guards,
     // so worst case is a null sentinel on the next read and one
-    // classifier-floor routing decision. Acceptable degradation.
-    try { writeFileSync(sentinelPath(sessionId), JSON.stringify(sentinel, null, 2)); } catch {}
+    // classifier-floor routing decision. Acceptable degradation — but it
+    // must be LOGGED, not silent (D046): a silent fallback here is exactly
+    // the shape task #82 found in the sibling dedup-write pattern.
+    try {
+      writeFileSync(p, body);
+      appendLog({event: 'parent_dispatch_guard_sentinel_write', session_id: sessionId,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      appendLog({event: 'parent_dispatch_guard_sentinel_write', session_id: sessionId,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -280,6 +298,16 @@ function markDispatched(sessionId, sentinel) {
   sentinel.dispatched = true;
   sentinel.dispatched_ts = new Date().toISOString();
   writeSentinel(sessionId, sentinel);
+}
+
+function logSilentAllow(sessionId, toolName, sentinel, reason) {
+  appendLog({
+    event: 'dispatch_guard', ts: new Date().toISOString(), session_id: sessionId,
+    tool: toolName, tier: sentinel ? sentinel.tier : null, blocked: false, reason,
+    source: sentinel ? sentinel.source : null,
+    sentinel_dispatched: !!(sentinel && sentinel.dispatched === true),
+    teams_mode: IN_AGENT_TEAMS ? TEAMS_MODE : null, mode: MODE,
+  });
 }
 
 function markOrchestratorDispatched(sessionId, sentinel) {
@@ -405,9 +433,44 @@ export function run(input) {
   // FIX-A2 (v5.x): Read MUST be included — the Write tool requires a prior Read
   // when the override file already exists (it does; the router writes it every
   // turn), so omitting Read re-deadlocks the documented escape. (finding #1, live-repro 2026-06-02)
+  // D087 (#44, v6.5.0): the exemption above is NARROWED, not removed. The
+  // sentinel is ONE file keyed by session_id alone; under agent-teams every
+  // teammate shares that id, so an unconditional exemption let a SUBORDINATE
+  // clobber the chair's {tier, summon_panel} (reproduced 2026-07-28: both guards
+  // exit=0, no advisory, no log line). There is NO per-actor identity available
+  // to a hook — but CLAUDE_CODE_CHILD_SESSION is a chair/teammate BINARY that
+  // exists today, so the chair keeps the FIX-A escape and a teammate does not.
+  // FAIL-OPEN is mandatory: absent / non-'1' / unreadable → ALLOW, or we
+  // re-create the FIX-A deadlock and break the D039/D043 fail-safe convention.
+  // The fault path is LOGGED, matching the D086 proposal (Status: Proposed,
+  // not ratified), so a fail-open is never a silent allow.
+  // Escape hatch: PRISM_SENTINEL_CHAIR_ONLY=off restores the prior behavior.
   if (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
     const fp = String(input.tool_input?.file_path || '');
-    if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) return done(0);
+    if (/[/\\]\.prism-turn-tier-[^/\\]*\.json$/.test(fp)) {
+      let childSession, envFault = null;
+      try {
+        childSession = String(process.env.CLAUDE_CODE_CHILD_SESSION ?? '');
+        if (String(process.env.PRISM_SENTINEL_CHAIR_ONLY ?? 'on').toLowerCase() === 'off') childSession = '';
+      } catch (e) { envFault = String(e?.message || e); }
+      if (envFault !== null) {
+        appendLog({event: 'sentinel_write_gate_faultopen', ts: new Date().toISOString(), session_id: sessionId, tool: toolName, error: envFault});
+        write(`PRISM SENTINEL GATE (D087): could not read CLAUDE_CODE_CHILD_SESSION (${envFault}) — failing OPEN and allowing this ${toolName}. If you are a TEAMMATE, do not write the shared tier sentinel; ask the chair.`);
+        return done(0);
+      }
+      // Read is never a clobber (and is already exempt at RO_EXEMPT, line 319 —
+      // this branch is unreachable for it); only writes are gated.
+      if (toolName !== 'Read' && childSession === '1') {
+        appendLog({event: 'sentinel_write_denied_teammate', ts: new Date().toISOString(), session_id: sessionId, tool: toolName, mode: MODE, teams: IN_AGENT_TEAMS});
+        write(JSON.stringify({hookSpecificOutput: {hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: [
+          'PRISM SENTINEL GATE (D087 / #44): the turn-tier sentinel is CHAIR-WRITABLE-ONLY. You are a dispatched teammate (CLAUDE_CODE_CHILD_SESSION=1) and this file is shared session-global state — writing it would silently overwrite the chair\'s {tier, summon_panel} for every other actor in this session.',
+          'Do the work you were dispatched to do. If you genuinely believe the turn is misclassified, say so in your report and let the CHAIR re-classify — the tier-override protocol is the chair\'s, not yours.',
+          'Override (operator): PRISM_SENTINEL_CHAIR_ONLY=off, or PRISM_DISPATCH_GUARD=off.',
+        ].join('\n')}}));
+        return done(2);
+      }
+      return done(0);
+    }
   }
 
   // v5.3.2 — read-only quick-check fast path: a provably non-mutating Bash/
@@ -505,8 +568,8 @@ export function run(input) {
   }
 
   const sentinel = readSentinel(sessionId);
-  if (!sentinel) return done(0);
-  if (sentinel.force_opus) return done(0);
+  if (!sentinel) { logSilentAllow(sessionId, toolName, null, 'no-sentinel'); return done(0); }
+  if (sentinel.force_opus) { logSilentAllow(sessionId, toolName, sentinel, 'force_opus'); return done(0); }
 
   // v2.5.0: NOVEL-tier orchestrator gate.
   // Opus tier with summon_panel requires @master-orchestrator dispatch first.
@@ -565,7 +628,7 @@ export function run(input) {
   }
 
   // Opus tier without panel signal: parent can act directly.
-  if (sentinel.tier === 'opus') return done(0);
+  if (sentinel.tier === 'opus') { logSilentAllow(sessionId, toolName, sentinel, 'opus-tier'); return done(0); }
 
   // v2.2.1 Path 3: haiku/sonnet tier + already dispatched → pass.
   // v6.4.0 (D043) — BORROWED-UNLOCK VISIBILITY. In the single-actor case (no
@@ -601,6 +664,7 @@ export function run(input) {
       }));
       return done(0);
     }
+    logSilentAllow(sessionId, toolName, sentinel, 'dispatched-true');
     return done(0);
   }
 
@@ -640,6 +704,8 @@ export function run(input) {
     mode: MODE,
     teams_mode: IN_AGENT_TEAMS ? TEAMS_MODE : null,
     teams_downgrade: teamsAdvisoryDowngrade || undefined,
+    sentinel_dispatched: sentinel.dispatched === true,
+    reason: 'tier-gate-deny',
   });
 
   // CHANGE 1 (D043): teams advisory-downgrade — allow with an in-band advisory

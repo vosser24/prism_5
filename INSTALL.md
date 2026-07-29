@@ -193,7 +193,6 @@ Useful flags:
 - `--dry-run` — preview every action; makes no changes.
 - `--home <path>` — install into a non-default HOME (handy for testing).
 - `--no-backup` — skip the pre-install backup (not recommended).
-- `--with-pwagent` — also wire the bundled `pwagent` Playwright tool.
 
 The installer reads `tools/install-manifest.json` for the file list and
 `settings.fragment.json` for the hook/env/statusline config it merges — you do

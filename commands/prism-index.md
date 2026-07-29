@@ -17,6 +17,18 @@ PRISM's original discovery path was agent-factory — the heavyweight research-b
 
 ## PROTOCOL
 
+> **Caveat — no backing script (see [[D088]]).** `/prism-index` has no
+> `tools/prism-index.mjs` today — Steps 1-7 below are prose executed fresh by
+> whichever model runs this command, not deterministic code. Its `roster.json`
+> writes (`skills` / `tools` / `mcps` / `index_meta` / `domain_groups`) are
+> therefore model-improvised: NOT guaranteed reproducible run-to-run (keyword
+> extraction, domain-tag normalization, and dedup order are reconstructed from
+> this prose each run, not from a fixed algorithm), and a divergence between
+> runs fails SILENTLY — it does not error, it just leaves state that
+> `blueprint-prompt` and `master-orchestrator`'s pre-dispatch step trust as
+> ground truth. Treat any single run's output as best-effort until a backing
+> script exists.
+
 ### Step 1 — Read current roster and set backup
 
 ```
@@ -35,7 +47,7 @@ If `roster.schema_version` is below `"2.9.0"`, add the missing blocks (`skills`,
 Scan in this order and deduplicate by `name` (first match wins — once a name has been recorded by an earlier tier, later tiers MUST skip it):
 
 0. **Plugin-installed PRISM skills**: scan `${CLAUDE_PLUGIN_ROOT}/skills/**/SKILL.md` (where `${CLAUDE_PLUGIN_ROOT}` is the env var Claude Code sets when running plugin-installed code). Tag `source: "prism"`. If `${CLAUDE_PLUGIN_ROOT}` is unset (manual install), this tier is empty and the scan falls through to tiers 1-3 unchanged.
-1. **PRISM-owned skills (legacy manual-install layout)**: `~/.claude/skills/prism-*/SKILL.md` (and friends — `~/.claude/skills/blueprint-prompt/SKILL.md`, `~/.claude/skills/workflow-orchestration/SKILL.md`, `~/.claude/skills/claude-code-expert/SKILL.md`, `~/.claude/skills/notebooklm/SKILL.md`, `~/.claude/skills/video-production/SKILL.md`) — tag `source: "prism"`. Skip any name already recorded in tier 0.
+1. **PRISM-owned skills (legacy manual-install layout)**: `~/.claude/skills/prism-*/SKILL.md` (and friends — `~/.claude/skills/blueprint-prompt/SKILL.md`, `~/.claude/skills/workflow-orchestration/SKILL.md`, `~/.claude/skills/claude-code-expert/SKILL.md`, `~/.claude/skills/notebooklm/SKILL.md`) — tag `source: "prism"`. Skip any name already recorded in tier 0.
 2. **User skills**: all other `~/.claude/skills/*/SKILL.md` — tag `source: "user"`. Skip any name already recorded in tier 0 or 1.
 3. **Plugin skills (non-PRISM)**: `~/.claude/plugins/*/skills/**/SKILL.md` — tag `source: "plugin:<plugin-dir-name>"`. Skip any name already recorded in tiers 0-2.
 

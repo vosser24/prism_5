@@ -33,8 +33,9 @@ function atomicWrite(path, content) {
 }
 import {openDb, close} from './prism-db.mjs';
 import {COST_MULTIPLIER} from './lib/prism-tier-classify.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const OUT_DIR = join(H, '.claude', '.prism-rollups');
 
 const quiet = process.argv.includes('--quiet');
@@ -292,7 +293,7 @@ function main() {
 // v2.7.0: classifier calibration from .prism-routing.jsonl for the week.
 function computeCalibration() {
   try {
-    const H = process.env.HOME || process.env.USERPROFILE;
+    const H = prismHome();
     const logPath = join(H, '.claude', '.prism-routing.jsonl');
     if (!existsSync(logPath)) return null;
     const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -310,7 +311,15 @@ function computeCalibration() {
         advised[ev.tier]++;
       }
       if (ev.event === 'dispatch_guard_panel' || ev.event === 'dispatch_guard') {
-        if (ev.tier && actual[ev.tier] != null) actual[ev.tier]++;
+        // v-fix (guard-telemetry-skew): dispatch_guard now also fires on silent
+        // ALLOW paths (blocked:false) for visibility (RB-04). Those allow records
+        // carry `tier`, but they are not a routing/enforcement decision — exclude
+        // them (and ONLY them) so dispatch_guard_panel's pre-existing behavior
+        // (counted regardless of blocked) and genuine dispatch_guard DENY records
+        // (blocked:true) are unaffected — mirrors the minimal exclusion used in
+        // tools/prism-telemetry-aggregate.mjs's tier_distribution counter.
+        const isNewGuardAllow = ev.event === 'dispatch_guard' && ev.blocked === false;
+        if (ev.tier && actual[ev.tier] != null && !isNewGuardAllow) actual[ev.tier]++;
       }
       if (ev.event === 'classifier_divergence' || ev.event === 'task_tier_divergence') {
         divergences++;
@@ -354,7 +363,7 @@ function computeCalibration() {
 
 function appendToUpdateLog(calibration, week) {
   try {
-    const H = process.env.HOME || process.env.USERPROFILE;
+    const H = prismHome();
     const logPath = join(H, '.claude', 'skills', 'prism-plan', 'references', 'update-log.json');
     if (!existsSync(logPath)) return;
     const data = JSON.parse(readFileSync(logPath, 'utf-8'));

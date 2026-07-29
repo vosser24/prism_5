@@ -47,6 +47,26 @@ Run: `node ~/.claude/tools/prism-clean.mjs git-stats --since <baseline>`
 (or without `--since`, or with the `HEAD~50` fallback, per the worktree
 case above).
 
+**`--since` accepts exactly two formats (F50, D046 omissive class, task #68)
+— anything else is refused, never silently misread:**
+- **ISO 8601 date/time**, e.g. `2026-07-28T13:45:00Z`.
+- **A git revision** — a full 40-char commit SHA, or an unambiguous 7+ char
+  prefix, e.g. `7e73153e6`. Detected by shape and verified with
+  `git rev-parse --verify <val>^{commit}` before use; on success stats are
+  computed as `<val>..HEAD` directly (never passed to git as a date).
+
+Before this fix, ANY string — including a commit SHA — was passed straight
+to `git log --since=<value>`. git silently fails to parse an unrecognised
+string as a date rather than erroring, so `--since <a real commit SHA>`
+became a no-op date filter and reported full-repo-history stats with
+`warning: null` (filed reproduction: 291 commits / 445 files reported for
+a 5-commit window, `boundary_sha` echoing a DIFFERENT commit than supplied).
+**If you have a commit SHA as your baseline (e.g. the session-boundary
+commit), pass it directly as `--since <sha>` — do not convert it to a date
+yourself.** A SHA-shaped value that does not resolve to a real commit is
+refused with a non-null `warning` naming the expected formats, not silently
+reinterpreted as a date.
+
 The JSON output tells you the rough session size:
 - `commits` — how many landed
 - `files_changed`, `insertions`, `deletions` — diff against the boundary
@@ -184,10 +204,13 @@ For each approved item, write the file with the locked header from
 - Lessons: `YYYY-MM-DD-session.md`. If a file with today's date already exists, APPEND to it under a new `## <session-time>` section instead of clobbering.
 - Smoke: `smoke-<topic>.md` (topic = kebab-cased). If the file exists, ask the user whether to append or rename.
 
-**After each D### adjudication file is written**, append a pointer line to the project-master MEMORY.md so the master agent's "Recent decisions" router reflects the new adjudication:
+**After each D### adjudication file is written**, append a pointer line to the project-master MEMORY.md so the master agent's "Recent decisions" router reflects the new adjudication.
+
+**Always prefix with `MSYS_NO_PATHCONV=1`** (Git Bash / MSYS on Windows rewrites any argument beginning with `/` — e.g. a title like `"/prism-health is an LLM protocol..."` — into a mangled Windows path such as `C:/Program Files/Git/prism-health is an LLM protocol...` before Node ever sees it; this has corrupted MEMORY.md before). **Also resolve the script path via `cygpath -w`** — `MSYS_NO_PATHCONV=1` protects `--title` but also leaves the tilde-expanded script path in POSIX form (`/c/Users/<user>/.claude/tools/prism-clean.mjs`), which Windows `node` then misresolves as drive-relative (`C:\c\Users\...`) and fails with `Cannot find module`:
 
 ```bash
-node ~/.claude/tools/prism-clean.mjs append-decision \
+CLEAN="$(cygpath -w ~/.claude/tools/prism-clean.mjs)"
+MSYS_NO_PATHCONV=1 node "$CLEAN" append-decision \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
   --d-number <NNN> \
   --title "<short title verbatim from the D### file heading>"
@@ -198,18 +221,22 @@ Exit-code handling:
 - Exit 7 (`anchor not found`): the MEMORY.md exists but lacks a `## Recent decisions` anchor — note this and skip.
 - Exit 8 (`>25 KB cap`): suggest `/prism-deep-dive --upgrade <slug>` to re-synthesize the router.
 - Exit 5 (`bad args`): the state file is missing or `project_slug` is null — note this and skip.
+- Exit 9 (`MSYS path-conversion detected`): `--title` was mangled by Git Bash / MSYS (starts with a Windows Git-install path). Re-run the exact same command with `MSYS_NO_PATHCONV=1` set.
 - Exit 0: success; the master agent will surface the pointer on its next subagent dispatch.
 
-**After each session-lessons entry is appended** to `docs/prism/lessons/YYYY-MM-DD-session.md` (L2–L4 items), mirror the lesson title to the project-master MEMORY.md:
+**After each session-lessons entry is appended** to `docs/prism/lessons/YYYY-MM-DD-session.md` (L2–L4 items), mirror the lesson title to the project-master MEMORY.md.
+
+**Always prefix with `MSYS_NO_PATHCONV=1`** — same MSYS leading-slash mangling risk as `append-decision` above applies to `--title` here too. **Also resolve the script path via `cygpath -w`** — same drive-relative misresolution risk as `append-decision` above:
 
 ```bash
-node ~/.claude/tools/prism-clean.mjs append-lesson \
+CLEAN="$(cygpath -w ~/.claude/tools/prism-clean.mjs)"
+MSYS_NO_PATHCONV=1 node "$CLEAN" append-lesson \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
   --date "$(node -e "process.stdout.write(new Date().toISOString().slice(0,10))")" \
   --title "<one-line lesson title>"
 ```
 
-Same exit-code handling as `append-decision` above. Run once per distinct lesson title (not once per file write if multiple lessons land in the same session file).
+Same exit-code handling as `append-decision` above (including exit 9 for MSYS path-conversion). Run once per distinct lesson title (not once per file write if multiple lessons land in the same session file).
 
 **After each D### adjudication or session-lessons entry is written**, also run the knowledge-index upsert so the index stays current incrementally — this is fail-open and idempotent, so errors can be ignored:
 
@@ -220,16 +247,19 @@ node ~/.claude/tools/prism-knowledge-index.mjs append \
   --root <project>
 ```
 
-**After the session summary is finalized** (Step 5), fold a one-line session summary into the project-master MEMORY.md `## Session log` section. This is the **Mode-B** native-memory path — the fallback used when `claude-mem` is NOT installed (see `/prism-bootstrap` § Memory for the two-mode model). When `claude-mem` IS installed (**Mode A**), it owns ambient session memory and this fold is redundant — skip it:
+**After the session summary is finalized** (Step 5), fold a one-line session summary into the project-master MEMORY.md `## Session log` section:
+
+**Always prefix with `MSYS_NO_PATHCONV=1`** — same MSYS leading-slash mangling risk as `append-decision` above applies to `--summary` here too. **Also resolve the script path via `cygpath -w`** — same drive-relative misresolution risk as `append-decision` above:
 
 ```bash
-node ~/.claude/tools/prism-clean.mjs append-summary \
+CLEAN="$(cygpath -w ~/.claude/tools/prism-clean.mjs)"
+MSYS_NO_PATHCONV=1 node "$CLEAN" append-summary \
   --slug "$(node -e "process.stdout.write(require('fs').existsSync('.claude/.prism-state.json') ? JSON.parse(require('fs').readFileSync('.claude/.prism-state.json','utf8')).project_slug || '' : '')")" \
   --date "$(node -e "process.stdout.write(new Date().toISOString().slice(0,10))")" \
   --summary "<one-line session summary — what shipped/decided this session, no newlines>"
 ```
 
-Same exit-code handling as `append-decision` above. Run once per session; the last 10 summaries are kept and older ones roll off (pointer-only router, never the full narrative).
+Same exit-code handling as `append-decision` above (including exit 9 for MSYS path-conversion). Run once per session; the last 10 summaries are kept and older ones roll off (pointer-only router, never the full narrative).
 
 **Deviation files** (`docs/prism/deviations/`) do not have a MEMORY.md pointer step in v4.0 — D004 §H locked the per-decision + per-session rhythms only. A `append-deviation` subcommand is deferred to a future phase.
 
@@ -245,6 +275,23 @@ existing file unless the user explicitly confirmed a rename.
 
 If this session was part of **long-running or multi-session feature work** (an in-flight feature branch, an unfinished multi-step plan, or a TODO backlog the next session must resume), write or update a **session handoff doc** so the next cleared session can resume without re-reconning. Skip this step for one-off sessions with no carry-over.
 
+> ⚠️ **Re-census AFTER Step 4, never before (D103).** If this handoff (or a
+> carried task description, e.g. one tracking "clear the Proposed queue")
+> will report a count of `docs/prism/adjudications/*.md` files by `Status`,
+> that count MUST be taken (or re-taken) here, now, after Step 4's writes
+> have already landed — never reused from a count taken earlier in the
+> session or copied from a prior handoff. Step 4 can itself write new
+> `Status: Proposed` files (the L4 bucket rule, Step 2 above); a count
+> taken before Step 4 runs is stale by construction the moment it does.
+> Exact command, run from repo root:
+> ```
+> grep -l '^**Status:** Proposed' docs/prism/adjudications/*.md | wc -l
+> ```
+> This bit three consecutive sessions (D103) — each undercounted by
+> exactly the number of Proposed adjudications that same session captured,
+> which also means the file most likely to be missed is always the newest
+> one, i.e. the one least likely to have an owner disposition recorded yet.
+
 **Path:** `docs/prism/plans/<YYYY-MM-DD>-SESSION-HANDOFF.md` (use `docs/prism/lessons/` instead if the work is a lesson log rather than an active plan). If a handoff for today already exists, UPDATE it in place rather than clobbering.
 
 **Resume pointer (automatic — no action needed):** the Write/Edit that produces this doc triggers `hooks/prism-handoff-pointer.mjs` (PostToolUse), which records `{path, git HEAD sha, ts}` to `<project>/.claude/.prism-latest-handoff.json`. SessionStart's HANDOFF-RECALL block surfaces that pointer to the next session with a [CURRENT]/[STALE — N commits behind HEAD] staleness label. Do NOT hand-maintain "see handoff" pointer lines in MEMORY.md — the mechanism owns this now.
@@ -254,6 +301,7 @@ If this session was part of **long-running or multi-session feature work** (an i
 **Format** (model-driven — write the actual content, this is the shape):
 - **TL;DR — what to do next session**: a numbered list of the immediate next actions.
 - **Branch + git state**: current branch, last commit SHA, whether work is committed vs working-tree-only.
+- **Proposed-adjudication queue** (MANDATORY, every handoff — not conditional on task content): a line of the exact shape `**Proposed queue:** N (counted after Step 4, YYYY-MM-DD)`, using the command from the callout above, run AFTER Step 4. This line must always be present, even if N is unchanged from the prior handoff — its role is to make a skipped or premature census visible. A handoff missing this line, or carrying a date that predates this session's own commits, is a detectable sign the census step (or its ordering) was skipped — treat that as a defect in the handoff, the same way a missing "Branch + git state" line would be, not as an acceptable omission.
 - **DONE this session**: what shipped (with test status).
 - **PENDING — finish these**: each remaining item, sourced from the `TaskList`/`TaskGet` pull above, in this expanded shape (do not fall back to a bare `file:line` pointer — that was the old, insufficiently-detailed format):
 

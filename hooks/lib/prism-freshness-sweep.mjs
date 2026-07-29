@@ -40,6 +40,12 @@
 //   A2  — roster orphans           → roster entries with no agent file on
 //                                    disk → nudge /prism-bootstrap reconcile
 //   A3  — audit staleness          → /prism-audit marker > 30d → nudge
+// F23 addition (report-only; see checkTurnTierSentinelPrune for full rationale):
+//   G2  — turn-tier sentinel prune  → .prism-turn-tier-*.json older than
+//                                    PRISM_TURN_TIER_PRUNE_DAYS (default 7d,
+//                                    24h hard floor) → nudge the manual
+//                                    `--prune-turn-tier [--apply]` CLI path;
+//                                    never deletes from the automatic sweep
 //
 // Q7 (factory writes globally / only master-<slug> is project-local) is
 // closed by a README + /prism-help prose addition, not a runtime check.
@@ -56,15 +62,22 @@
 // Atomic write, fail-open on every read. Never throws — callers can
 // `try { ... } catch {}` safely; the helper does too.
 
-import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync, rmSync, mkdirSync} from 'fs';
+import {readFileSync, writeFileSync, existsSync, statSync, readdirSync, renameSync, rmSync, mkdirSync, unlinkSync} from 'fs';
 import {join, basename, dirname, isAbsolute} from 'path';
 import {spawnSync} from 'child_process';
 import {projectStatus, evaluateSurvival} from '../../tools/lib/prism-agent-scope.mjs';
+import {renameWithRetry} from '../../tools/lib/atomic-fs.mjs';
+import {prismHome} from './prism-home.mjs';
+import {logAdvisory} from './prism-advisory-log.mjs';
 
 const STALE_AGENT_DAYS = 90;
 const UPDATE_LOG_AGE_DAYS = 15;
 const CLAUDE_MD_AGE_DAYS = 60;
 const AUDIT_AGE_DAYS = 30;
+// F23: turn-tier sentinel prune thresholds (see checkTurnTierSentinelPrune below).
+const TURN_TIER_PRUNE_DAYS_DEFAULT = 7;
+const TURN_TIER_SAFETY_FLOOR_MS = 24 * 60 * 60 * 1000;  // hard floor — never touch anything <24h old
+const TURN_TIER_PRUNE_BUDGET = 5000;  // cap on directory entries scanned per call
 
 const SNAPSHOT_REL = ['.claude', '.prism-freshness-last.json'];
 const VERSION_MARKER_REL = ['.claude', '.prism-version'];
@@ -96,13 +109,24 @@ const REBUILD_TIMEOUT_MS = 60000;        // hard ceiling on a single rebuild
 const REBUILD_LOCK_STALE_MS = 10 * 60 * 1000;  // a lock older than this is abandoned
 const KB_MTIME_TOLERANCE_SEC = 2;  // absorb same-second rebuild/write quantization
 
+// Writes roster.json (line 261) and the freshness-sweep snapshot (line 990).
+// Bounded retry (task #82/#88) absorbs the transient Windows AV/indexer
+// handle-lock window before degrading; the degraded path is logged rather
+// than silent (D046) — roster.json is shared, concurrently-read state.
 function atomicWrite(path, content) {
   try {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
-  } catch {
-    try { writeFileSync(path, content); } catch {}
+    renameWithRetry(renameSync, tmp, path);
+  } catch (renameErr) {
+    try {
+      writeFileSync(path, content);
+      logAdvisory({event: 'freshness_sweep_atomic_write', path,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      logAdvisory({event: 'freshness_sweep_atomic_write', path,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -587,6 +611,131 @@ function checkAuditStaleness(home, now) {
   return `PRISM FRESHNESS: last /prism-audit was ${days}d ago (>${AUDIT_AGE_DAYS}d threshold). Run /prism-audit for a hygiene scan of PRISM's configuration surface.`;
 }
 
+// ── Check G2: bounded prune of stale turn-tier sentinels (F23) ─────────
+// hooks/prism-prompt-tier-router.mjs writes ~/.claude/.prism-turn-tier-<session
+// id>.json on every turn (sentinelPath()) and hooks/prism-parent-dispatch-guard.mjs
+// reads it — but NEITHER file, nor anything else in the codebase, ever deletes
+// one. Confirmed by grep before writing this: no `*prune*` file references
+// "turn-tier"; the only TTL comments in prism-prompt-tier-router.mjs (~line
+// 519-521) describe the SEPARATE prism-panel-latch.mjs sidecar, not this file.
+// Measured 2026-07-27: 382 files under ~/.claude matching this pattern, 167KB,
+// oldest mtime 2026-06-03 (~54 days) — some are real session state, ~42 are
+// synthetic test-fixture session_ids (e.g. `audit-CLF-001`, `anon`, `smoke-test`)
+// written into the REAL ~/.claude by tools/prism-audit-runner.mjs, which spawns
+// hooks with `env: process.env` (no HOME isolation) using session_ids from
+// tests/v3/audit-scenarios.json. That creation site is out of this file's scope
+// (tools/prism-audit* is owned elsewhere this session) — flagged in the report,
+// not fixed here. This prune is name-agnostic by design (see below), so it
+// reclaims both classes of stale file identically without needing to tell them
+// apart.
+//
+// POLICY: age-based (mtime), not count-based keep-last-N. Rationale: with N
+// concurrent sessions, "keep the N most-recently-modified" is a moving target —
+// a burst of unrelated sessions touching their sentinels can shove a merely-
+// quiet-for-a-few-minutes session out of the "keep" set. Pure mtime-age doesn't
+// have that failure mode: a live session's sentinel is REWRITTEN by the tier
+// router on every turn, so it can never look old to begin with, no matter how
+// many other sessions exist. This mirrors the codebase's one working precedent
+// for this class of file — `.prism-routing.jsonl` rotates on a time/size basis
+// (`.bak`, `.bak-2026-07-23.gz` are on disk right now) rather than a count.
+// (Unlike the routing log — which prism-telemetry-aggregate.mjs and
+// prism-rollup-weekly.mjs read historically and therefore gzip-archive — a
+// stale turn-tier sentinel has no downstream reader once its session is gone,
+// so straight deletion, not archival, is the right disposal for this file
+// class.)
+//
+// CONCURRENCY / LIVENESS SAFETY — read this before touching the threshold:
+//   - Liveness is decided ONLY from stat() mtime, never file contents. This
+//     avoids a TOCTOU window: mtime is the one signal that can't be raced
+//     between "list" and "unlink" in a way that corrupts anything — if a
+//     session writes its sentinel AFTER our stat() but BEFORE our unlink(),
+//     the file just gets deleted then rewritten fresh on the session's very
+//     next turn. The tier router's own readSentinel() already fail-opens on a
+//     missing file (treats it as "no prior turn"), so this is self-healing,
+//     not data loss.
+//   - TURN_TIER_SAFETY_FLOOR_MS (24h) is a hard floor independent of the
+//     configurable age threshold (PRISM_TURN_TIER_PRUNE_DAYS / default 7d) —
+//     even a misconfigured threshold below 1 day cannot make same-day session
+//     state eligible.
+//   - Two sessions sweeping simultaneously: both compute the same stale set
+//     from the same on-disk mtimes (nothing recent is ever in it) and both
+//     call unlinkSync on the same paths; the loser's unlinkSync throws ENOENT
+//     on an already-removed file, which is caught per-file and skipped. No
+//     file can be "live" in one sweep's view and "stale" in the other's,
+//     because both read the same filesystem truth.
+//   - This function only ever DELETES; it never rewrites a sentinel. The tier
+//     router owns 100% of writes, so there is no read-delete-rewrite
+//     interleaving between this prune and the router to reason about.
+//
+// D008 note: the freshness sweep already has one mutating check (scope-aware
+// agent survival) and is explicit that mutation there is justified by
+// reversibility (agent files are MOVED to retired/, never deleted) — future
+// mutating checks are NOT presumed to inherit that exception by default.
+// Deleting a turn-tier sentinel is genuinely irreversible (there is nothing to
+// "restore" — it's disposable per-turn routing scratch, not user content — but
+// irreversible is irreversible). So this check stays REPORT-ONLY in the
+// automatic daily sweep (both runFreshnessSweep and freshnessSweepDryRun call
+// it with apply:false) — it never deletes anything unless a human explicitly
+// invokes `node hooks/lib/prism-freshness-sweep.mjs --prune-turn-tier --apply`.
+// That CLI entry point is fully implemented and unit-tested (apply:true path),
+// per the task's explicit instruction not to prune the real directory as part
+// of this change — the owner decides when to pull the trigger.
+const TURN_TIER_RE = /^\.prism-turn-tier-.*\.json$/;
+
+function turnTierPruneDays() {
+  // parseFloat (not parseInt) — a fractional override (e.g. "0.5") is legal so
+  // the 24h TURN_TIER_SAFETY_FLOOR_MS below has something real to clamp
+  // against; a misconfigured sub-day value can never bypass the floor.
+  const parsed = parseFloat(process.env.PRISM_TURN_TIER_PRUNE_DAYS || '');
+  return (Number.isFinite(parsed) && parsed > 0) ? parsed : TURN_TIER_PRUNE_DAYS_DEFAULT;
+}
+
+// Pure read: lists turn-tier sentinels older than the effective cutoff
+// (max(configured age, 24h safety floor)). Never touches the filesystem.
+export function listStaleTurnTierSentinels(home, now, {dir} = {}) {
+  const scanDir = dir || join(home, '.claude');
+  let entries;
+  try { entries = readdirSync(scanDir, {withFileTypes: true}); } catch { return {scanned: 0, stale: []}; }
+  const cutoffMs = Math.max(turnTierPruneDays() * 24 * 60 * 60 * 1000, TURN_TIER_SAFETY_FLOOR_MS);
+  const stale = [];
+  let scanned = 0;
+  for (const e of entries) {
+    if (scanned >= TURN_TIER_PRUNE_BUDGET) break;
+    if (!e.isFile || !e.isFile()) continue;
+    if (!TURN_TIER_RE.test(e.name)) continue;
+    scanned++;
+    const full = join(scanDir, e.name);
+    const m = safeMtime(full);
+    if (m === null) continue;              // can't stat → leave it alone (fail-safe)
+    const ageMs = now - m;
+    if (ageMs < cutoffMs) continue;        // within the safe window → leave it alone
+    stale.push({name: e.name, path: full, mtime: m, ageMs});
+  }
+  return {scanned, stale};
+}
+
+// apply=false (default): report-only, zero mutation — safe to call from the
+// automatic sweep or a dry-run preview. apply=true: unlinkSync every stale
+// candidate, per-file try/catch (a race with another sweep, or the file
+// vanishing between list and unlink, just gets skipped — never throws).
+export function pruneTurnTierSentinels(home, now, {apply = false, dir} = {}) {
+  const {scanned, stale} = listStaleTurnTierSentinels(home, now, {dir});
+  if (!apply) return {scanned, candidates: stale, deleted: []};
+  const deleted = [];
+  for (const c of stale) {
+    try { unlinkSync(c.path); deleted.push(c.name); } catch { /* already gone / transient — skip, never retry */ }
+  }
+  return {scanned, candidates: stale, deleted};
+}
+
+export function checkTurnTierSentinelPrune(home, now) {
+  const {candidates} = pruneTurnTierSentinels(home, now, {apply: false});
+  if (!candidates.length) return null;
+  const days = turnTierPruneDays();
+  const oldestDays = Math.max(...candidates.map((c) => Math.floor(c.ageMs / (24 * 60 * 60 * 1000))));
+  return `PRISM FRESHNESS: ${candidates.length} stale turn-tier sentinel(s) (.prism-turn-tier-*.json, >${days}d untouched, oldest ${oldestDays}d) found under ~/.claude — report-only (deletion is irreversible, so this stays manual). Run \`node ~/.claude/hooks/lib/prism-freshness-sweep.mjs --prune-turn-tier\` to preview, add --apply to delete.`;
+}
+
 // ── Check A1: hook-integrity + settings-wiring ────────────────────────
 // Mirrors the routine structural part of /prism-doctor so the daily sweep
 // catches a broken hook before it silently no-ops a whole session. Three
@@ -832,6 +981,12 @@ export function runFreshnessSweep({home, throttleHours = 24, now = Date.now(), f
     if (n) notices.push(n);
   } catch {}
 
+  // G2 — stale turn-tier sentinel prune (F23) — report-only, never mutates here
+  try {
+    const n = checkTurnTierSentinelPrune(home, now);
+    if (n) notices.push(n);
+  } catch {}
+
   // A1 — hook-integrity + settings-wiring (change-gated syntax pass)
   try {
     const r = checkHookIntegrity(home, prior);
@@ -878,6 +1033,7 @@ export function freshnessSweepDryRun({home, now = Date.now(), cwd = undefined} =
   try { const n = checkRosterOrphans(home); if (n) notices.push(n); } catch {}
   try { const n = checkSkillPathsExist(home); if (n) notices.push(n); } catch {}
   try { const n = checkAuditStaleness(home, now); if (n) notices.push(n); } catch {}
+  try { const n = checkTurnTierSentinelPrune(home, now); if (n) notices.push(n); } catch {}
   try { const r = checkHookIntegrity(home, prior); if (r.notice) notices.push(r.notice); } catch {}
   try { const n = checkMemoryRecallStale(cwd); if (n) notices.push(n); } catch {}
 
@@ -892,19 +1048,46 @@ export const THRESHOLDS = {STALE_AGENT_DAYS, UPDATE_LOG_AGE_DAYS, CLAUDE_MD_AGE_
 // the orchestrator can run a pre-PROPOSAL check mid-session (the daily
 // SessionStart sweep may have already consumed today's throttle window).
 // Uses the dry-run path: all checks, no snapshot write. Importing this module
-// (session-start does) never triggers this block — argv[1] won't end with
-// this filename.
+// (session-start does) never triggers this block — argv[1] isn't this file.
+//
+// basename equality, NOT .endsWith(): a plain suffix check false-positives on
+// any caller whose OWN script path happens to end in this filename — e.g.
+// tests/v3/state/test-prism-freshness-sweep.mjs ends with "prism-freshness-
+// sweep.mjs" as a literal substring. That false match was firing this whole
+// preview block (a live, real-HOME read) on every dynamic `import()` of this
+// module from inside that test process — harmless (preview never mutates,
+// and apply requires an explicit --apply argv flag no test passes) but noisy
+// and reads outside the test's isolated tmp HOME for no reason. Found via the
+// F23 turn-tier-prune work when a new preview notice line made the spam
+// visible in that test's output.
 const invokedDirectly =
   import.meta.url === `file://${(process.argv[1] || '').replace(/\\/g, '/')}` ||
-  (process.argv[1] || '').endsWith('prism-freshness-sweep.mjs');
+  basename(process.argv[1] || '') === 'prism-freshness-sweep.mjs';
 
 if (invokedDirectly) {
-  const HOME = process.env.HOME || process.env.USERPROFILE;
-  const {notices} = freshnessSweepDryRun({home: HOME, cwd: process.cwd()});
-  if (notices.length) {
-    process.stdout.write(`PRISM staleness preview — ${notices.length} signal(s):\n`);
-    for (const n of notices) process.stdout.write(`  • ${n}\n`);
+  const HOME = prismHome();
+  const argv = process.argv.slice(2);
+  if (argv.includes('--prune-turn-tier')) {
+    // F23: manual trigger for the turn-tier sentinel prune. Without --apply
+    // this is a pure dry-run report (identical to the automatic sweep's
+    // notice, just verbose); --apply actually unlinks the stale candidates.
+    const apply = argv.includes('--apply');
+    const {scanned, candidates, deleted} = pruneTurnTierSentinels(HOME, Date.now(), {apply});
+    if (apply) {
+      process.stdout.write(`PRISM turn-tier prune: scanned ${scanned} sentinel(s) under ~/.claude, deleted ${deleted.length}.\n`);
+      for (const n of deleted) process.stdout.write(`  - ${n}\n`);
+    } else {
+      process.stdout.write(`PRISM turn-tier prune (dry run — no files touched): scanned ${scanned} sentinel(s) under ~/.claude, ${candidates.length} would be deleted.\n`);
+      for (const c of candidates) process.stdout.write(`  - ${c.name} (age ${Math.floor(c.ageMs / (24 * 60 * 60 * 1000))}d)\n`);
+      if (candidates.length) process.stdout.write('Re-run with --apply to actually delete these.\n');
+    }
   } else {
-    process.stdout.write('PRISM staleness preview: no staleness signals — sources, registry, KB index, and installed version look current.\n');
+    const {notices} = freshnessSweepDryRun({home: HOME, cwd: process.cwd()});
+    if (notices.length) {
+      process.stdout.write(`PRISM staleness preview — ${notices.length} signal(s):\n`);
+      for (const n of notices) process.stdout.write(`  • ${n}\n`);
+    } else {
+      process.stdout.write('PRISM staleness preview: no staleness signals — sources, registry, KB index, and installed version look current.\n');
+    }
   }
 }

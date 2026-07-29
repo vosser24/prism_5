@@ -3,7 +3,7 @@
 //
 // v2.9.1 (ATOMIC-WRITE-001): counter-file writes now use tempfile + renameSync
 // with catch-fallback to direct writeFileSync. Matches v2.8.0 sentinel-write
-// pattern in prism-parent-dispatch-guard.mjs:90-107. Prevents truncated
+// pattern in writeSentinel() (hooks/prism-parent-dispatch-guard.mjs). Prevents truncated
 // counter JSON from a mid-write crash (disk-full, antivirus interference,
 // process kill) — readers on next turn would otherwise see a parse error
 // and reset the counter to 0, suppressing a due nudge.
@@ -23,7 +23,7 @@
 
 import {readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, appendFileSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {claudeMemInstalled, claudeMemHealthy} from './lib/prism-claude-mem-detect.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
 const FIRST = parseInt(process.env.PRISM_MEMORY_NUDGE_FIRST ?? '15', 10);
 const INTERVAL = parseInt(process.env.PRISM_MEMORY_NUDGE_INTERVAL ?? '5', 10);
@@ -57,8 +57,14 @@ function writeCounter(H, sessionId, data) {
     mkdirSync(dirname(p), {recursive: true});
     const tmp = p + '.tmp';
     writeFileSync(tmp, JSON.stringify(data, null, 2));
-    // renameSync is atomic on POSIX + Windows (same filesystem). Readers
-    // either see the previous valid file or the new one — never a partial.
+    // The rename step itself is atomic on POSIX + Windows — readers either
+    // see the previous valid file or the new one, never a partial. That is
+    // NOT the same claim as "cannot fail": task #82 reproduced renameSync
+    // throwing EPERM/EACCES/EBUSY under a transient Windows AV/indexer
+    // handle lock, handled below by falling back to a direct write. This
+    // site is deliberately left on the bare fallback (not renameWithRetry)
+    // — see docs/prism/plans/2026-07-29-task88-rename-census.md: worst case
+    // on total failure is a one-turn counter reset, self-correcting.
     renameSync(tmp, p);
   } catch {
     // Fallback: direct write. On catastrophic failure (e.g. Windows EBUSY
@@ -73,22 +79,8 @@ export async function run(payload) {
   try {
     if (MODE === 'off') return {exit: 0, stdout: '', stderr: ''};
 
-    const H = process.env.HOME || process.env.USERPROFILE;
+    const H = prismHome();
     const LOG = join(H, '.claude', '.prism-routing.jsonl');
-
-    // v5.x (F7): only stand down when claude-mem is installed AND its worker is
-    // HEALTHY. If installed-but-unhealthy (worker down / consecutiveFailures>0 /
-    // no heartbeat), claude-mem captures nothing — re-enable PRISM's native nudge
-    // so the fallback fires. (Standdown still prevents the double-injector when
-    // claude-mem is actually serving.)
-    if (claudeMemInstalled(H) && claudeMemHealthy(H)) {
-      appendLog(LOG, {event: 'memory_save_nudge', action: 'standdown-claude-mem-healthy'});
-      return {exit: 0, stdout: '', stderr: ''};
-    }
-    if (claudeMemInstalled(H)) {
-      appendLog(LOG, {event: 'memory_save_nudge', action: 'fallback-claude-mem-unhealthy'});
-      // fall through — native nudge proceeds
-    }
 
     const input = payload || {};
     const sessionId = input.session_id || 'anon';
@@ -122,7 +114,7 @@ export async function run(payload) {
     writeCounter(H, sessionId, state);
     return {exit: 0, stdout: '', stderr: ''};
   } catch (e) {
-    const H = process.env.HOME || process.env.USERPROFILE;
+    const H = prismHome();
     const LOG = join(H, '.claude', '.prism-routing.jsonl');
     appendLog(LOG, {event: 'memory_save_nudge', error: String(e)});
     return {exit: 0, stdout: '', stderr: ''};

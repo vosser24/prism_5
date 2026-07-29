@@ -52,6 +52,27 @@ try {
     assert(/NEVER a valid fill/.test(ctx), 'must inject the ad-hoc-persona prohibition');
     assert(/Rostered specialists that fit/.test(ctx), 'must inject the deterministic fit-line');
     assert(/greek-ecommerce-conversion-specialist/.test(ctx), 'fit-line must NAME the seeded roster agent');
+    // RB-07 Fix 2: seat_source is documented ONLY as "rostered"|"factory-created"
+    // (skills/master-orchestrator/references/phase-0d-adversarial.md line 126)
+    // — a real panel.json was seen emitting invented "archetype"/"generic"
+    // labels the guard doesn't recognize. Since those are NOT canonical, the
+    // fix is the writer-side schema explicitly enumerating the allowed set
+    // and forbidding invention, not teaching the guard to accept them.
+    assert(/ONLY these two values/.test(ctx), 'must explicitly enumerate the canonical seat_source vocabulary');
+    assert(/never invent others like "archetype" or "generic"/.test(ctx), 'must explicitly forbid the observed invented seat_source labels');
+    assert(/omit seat_source entirely, do not set it to "archetype"/.test(ctx), 'must clarify that untagged means OMIT the field, not set it to "archetype"');
+    // F1: nameless seat dispatch — a named Agent() call becomes an Agent-Teams
+    // teammate whose position never returns as the tool result (D062).
+    assert(/WITHOUT a "?name:"? field/.test(ctx), 'must instruct dispatching seats WITHOUT a name: field (F1/D062)');
+    // F3: domain+archetype compound titles (e.g. "Concurrency & Crash-Recovery")
+    // are VERTICAL — the provenance gate infers vertical on these regardless of
+    // the tag, so leaving vertical:false only produces a logged mismatch.
+    assert(/domain noun with an archetype suffix[\s\S]*is VERTICAL/.test(ctx), 'must inject the domain+archetype "is VERTICAL" guidance (F3)');
+    assert(/Concurrency & Crash-Recovery/.test(ctx), 'must inject the concrete F3 example title');
+    // F4: <task-id> must be freshly generated per panel — never reused from an
+    // earlier or declined panel in the same session.
+    assert(/freshly generated for THIS panel/.test(ctx), 'must inject the fresh-task-id guidance (F4)');
+    assert(/never reuse an id minted for an earlier or declined panel/.test(ctx), 'must inject the no-reuse rationale for the fresh-task-id guidance (F4)');
   });
 
   await test('quiet-on-non-panel: routine turn injects NEITHER block NOR fit-list', async () => {

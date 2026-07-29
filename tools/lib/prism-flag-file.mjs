@@ -30,8 +30,10 @@
 import {writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync, readdirSync, statSync} from 'fs';
 import {join, basename, resolve} from 'path';
 import {createHash} from 'crypto';
+import {prismHome} from '../../hooks/lib/prism-home.mjs';
+import {renameWithRetry} from './atomic-fs.mjs';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME = prismHome();
 const FLAGS_DIR = join(HOME, '.claude', '.prism-flags');
 
 export function ensureFlagsDir() {
@@ -52,13 +54,22 @@ function flagPath(flagName, key) {
   return join(FLAGS_DIR, `${flagName}__${key}.json`);
 }
 
+// Shared library helper — every caller listed above goes through this one
+// function. Bounded retry (task #82/#88) absorbs the transient Windows
+// AV/indexer handle-lock window before degrading; the degraded path is
+// logged to stderr rather than silent (D046).
 function atomicWrite(path, content) {
   try {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
-  } catch {
-    try { writeFileSync(path, content); } catch {}
+    renameWithRetry(renameSync, tmp, path);
+  } catch (renameErr) {
+    try {
+      writeFileSync(path, content);
+      process.stderr.write(`PRISM flag-file: atomic rename failed for ${path} (${(renameErr && renameErr.code) || 'unknown'}); wrote directly instead\n`);
+    } catch (fallbackErr) {
+      process.stderr.write(`PRISM flag-file: write failed for ${path}: ${fallbackErr && fallbackErr.message}\n`);
+    }
   }
 }
 

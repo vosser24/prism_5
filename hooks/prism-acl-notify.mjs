@@ -14,6 +14,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { prismHome } from './lib/prism-home.mjs';
 
 // ── getNotice(home) — read the ACL digest, build the learn-notice, clear it ──
 // Exported so prism-session-start.mjs can fold the notice into its aggregated
@@ -70,7 +71,7 @@ const isMainModule = (() => {
 
 if (isMainModule) {
   try {
-    const home = process.env.HOME || process.env.USERPROFILE;
+    const home = prismHome();
     const notice = getNotice(home);
     if (notice) {
       // Emit via hookSpecificOutput.additionalContext (non-blocking, SessionStart)

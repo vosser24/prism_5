@@ -84,6 +84,15 @@ const MUTATION_TOOLS = new Set();
 // Non-exhaustive by design — we want false negatives (let some edge cases
 // through) over false positives (blocking non-write Bash like `git status`
 // or `ls`). Focus on common, unambiguous write patterns.
+//
+// CP_MV_MOVE_COPY_RE (F49, task #67) is broken out to a named const —
+// rather than inlined anonymously in the array below — so classifyBashCommand()
+// can identify it by reference and test it against a specially-scrubbed
+// probe string (heredoc bodies + -m/--message values stripped) instead of
+// the shared `scrubbed` string every other pattern uses. See the long
+// comment at its definition site for the why.
+const CP_MV_MOVE_COPY_RE = /(^|[;&|(\n]\s*)\b(cp|mv|move|copy)\b[^|&;]*?(\b|\\)(src|app|lib|components|hooks|agents|commands|skills|tests|docs|\.claude)\b/;
+
 const BASH_WRITE_PATTERNS = [
   // PowerShell explicit writers
   /\b(Set-Content|Add-Content|Out-File|Export-Csv|Export-Clixml)\b/i,
@@ -127,7 +136,46 @@ const BASH_WRITE_PATTERNS = [
 
   // cp / mv into project paths (not /tmp, /dev, ~/.cache, etc.)
   // These are real file mutations the orchestrator should know about.
-  /\b(cp|mv|move|copy)\b[^|&;]*?(\b|\\)(src|app|lib|components|hooks|agents|commands|skills|tests|docs|\.claude)\b/,
+  //
+  // F49 fix (task #67): the verb alternation used to have no positional
+  // anchor at all, so it matched `cp`/`mv`/`move`/`copy` ANYWHERE in the
+  // scanned string — including prose inside a `git commit -F -` heredoc
+  // body (e.g. a commit message that says "...exercises a copy of the
+  // residue scenario... references lib/prism-home.mjs..."). Because the
+  // `[^|&;]*?` gap is a character class, it matches newlines too, so the
+  // verb and the src/app/lib path token could be pulled from two different
+  // sentences, even different lines, of an unrelated commit message body.
+  // This is the same "a document describing an operation gets treated as
+  // performing it" class as F48 / D098. Root-caused live: a legitimate
+  // `git add && git commit -F -` was hard-blocked this way (F49).
+  //
+  // Fix: option (c) from the F49 write-up — require the verb to sit in
+  // COMMAND POSITION (string start, or immediately after `;`, `&`, `|`, `(`,
+  // or a NEWLINE, modulo horizontal whitespace) rather than matching
+  // anywhere. Real invocations (`cp a.txt src/b.txt`, `foo && mv x lib/y`,
+  // or a `cp`/`mv` on its own line in a multi-line Bash block) still anchor
+  // correctly.
+  //
+  // v2 (task #67, coordinator challenge): the first cut of this fix
+  // deliberately excluded bare newline from the separator class, reasoning
+  // that a heredoc body's lines also start after a newline and there was
+  // "no lexical way" to tell them apart. That premise was tested and does
+  // NOT hold — heredoc extents ARE lexically bounded (`<<`/`<<-` + an
+  // optionally-quoted delimiter word, body running to a line that IS the
+  // delimiter, tab-stripped for `<<-`) — see stripHeredocBodies() below.
+  // Excluding newline entirely was too big a concession: multi-line Bash
+  // blocks are this project's normal shape, and a `cp`/`mv` starting its
+  // own line with no leading `;`/`&&` is a REAL parent-context mutation,
+  // exactly what this guard exists to catch — that gap is larger than the
+  // file's stated "false negatives over false positives" philosophy (line
+  // 84-86) is meant to cover. Newline is now IN the separator class, and
+  // heredoc bodies (plus `-m`/`--message` quoted values) are stripped out
+  // of the text this ONE pattern is tested against BEFORE matching — see
+  // classifyBashCommand()'s `cpMvProbe`. Every other pattern in this array
+  // keeps scanning the original `scrubbed` string, unchanged; this is a
+  // targeted fix for the pattern that broke, not a rescan-everything
+  // rewrite.
+  CP_MV_MOVE_COPY_RE,
 
   // git restore / checkout that overwrites files
   /\bgit\s+(restore|checkout)\b[^|&;]*?(--|[^-]\s*)[a-zA-Z_\-./\\]+\.(md|json|ts|tsx|js|jsx|mjs|py|sh|ps1)\b/,
@@ -152,6 +200,96 @@ const SCRATCH_TARGET_RE = /[/\\]te?mp[/\\]|AppData[/\\]Local[/\\]Temp|\$(?:TMPDI
 function stripScratchRedirects(cmd) {
   return String(cmd).replace(/\d*>>?\s*["']?([^\s|&;<>"']+)["']?/g,
     (m, target) => (SCRATCH_TARGET_RE.test(target) ? ' ' : m));
+}
+
+// F15 fix (task #23): `<`/`>` characters INSIDE a quoted argument are DATA
+// (a JS/comparison operator in a `node -e`/`-p` payload, log text, a commit
+// message), never shell redirection syntax — only a `<`/`>` the SHELL itself
+// sees (i.e. one that sits OUTSIDE any quotes) can mean "write to a file".
+// This guard never stripped quotes at all (unlike the sibling
+// hooks/prism-bash-hang-guard.mjs, which strips whole quoted segments via its
+// own stripQuotesAndHeredocs()) — reported live: `echo "checking t>=1000" &&
+// node -e "..."` was read as a redirect to a file named `=1000` because the
+// `>` inside the echo string satisfied the echo/printf/cat write-pattern's
+// bare `>` requirement.
+//
+// DELIBERATELY NOT a blanket quote-strip like bash-hang-guard's: this guard's
+// OWN write patterns legitimately need to see file-extension text INSIDE a
+// quoted redirect target (e.g. `echo "x" > "output.json"` — the target's
+// `.json` extension must survive for the extension-based rule below to
+// fire). Stripping the whole quoted span would blind that detection.
+// Instead, only the `<`/`>` METACHARACTERS found inside a quote are
+// neutralized (swapped for `_`); every other character in the quoted text —
+// including a legitimate quoted redirect target's extension — is untouched.
+// A REAL shell redirect (`>`/`<` sitting between two quoted spans, or with
+// no quotes at all) is never inside a quote match, so it is never touched.
+//
+// Same unsophistication level as stripQuotesAndHeredocs(): a simple
+// '...'/"..." pair scan, no escaped-quote handling — consistent with this
+// project's existing quote-handling, not a new gap relative to it.
+function neutralizeQuotedShellMetachars(cmd) {
+  return String(cmd).replace(/'[^']*'|"[^"]*"/g, (q) => q.replace(/[<>]/g, '_'));
+}
+
+// F49 fix v2 (task #67, coordinator challenge): heredoc extents ARE
+// lexically bounded — `<<` or `<<-` followed by an optionally-quoted
+// delimiter word (`<<EOF`, `<<'EOF'`, `<<"EOF"`, `<<-EOF`), with the body
+// running until a line that IS the delimiter exactly (leading tabs
+// stripped first when the `-` variant is used). That is a small, bounded
+// line-by-line scan — NOT full shell parsing — so the premise that "there's
+// no lexical way to tell a heredoc body line from a new command" does not
+// hold, and this replaces the v1 fix's newline-exclusion tradeoff.
+//
+// Bounded, not exhaustive: multiple heredocs on one opener line are
+// consumed in the order their `<<` operators appear (matches real bash
+// semantics for `cmd <<A <<B`); an unterminated heredoc (no matching
+// delimiter line before EOF) consumes the rest of the string as body —
+// which mirrors what bash itself would do (read until end of input), so
+// there is no real trailing command being silently dropped in that case.
+// Nested-looking `<<WORD` text INSIDE a body is never re-parsed as a new
+// heredoc open — body lines are treated as opaque data, exactly like bash.
+//
+// Used ONLY to build the probe string the cp/mv/move/copy pattern is
+// tested against (see classifyBashCommand's `cpMvProbe`) — every other
+// BASH_WRITE_PATTERNS entry still scans the original `scrubbed` string,
+// so the well-tested heredoc-to-file / echo-arrow logic above is untouched.
+function stripHeredocBodies(cmd) {
+  const lines = String(cmd).split('\n');
+  const openRe = /<<(-?)\s*(?:(['"])([A-Za-z_]\w*)\2|\\?([A-Za-z_]\w*))/g;
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    out.push(line);
+    i++;
+    openRe.lastIndex = 0;
+    let m;
+    const openers = [];
+    while ((m = openRe.exec(line))) {
+      const delim = m[3] || m[4];
+      if (delim) openers.push({ delim, dash: m[1] === '-' });
+    }
+    for (const { delim, dash } of openers) {
+      while (i < lines.length) {
+        const raw = lines[i];
+        const check = dash ? raw.replace(/^\t+/, '') : raw;
+        i++;
+        if (check === delim) break; // terminator line consumed, not re-added
+      }
+    }
+  }
+  return out.join('\n');
+}
+
+// F49 fix v2 companion: strip `-m`/`--message` quoted VALUES (git commit,
+// git tag, etc.) so prose in a single-line commit message can't feed the
+// cp/mv/move/copy pattern either — same reasoning, same narrow scope as
+// stripHeredocBodies() above (only used for the cp/mv probe string).
+// Non-greedy `[\s\S]*?` so a quoted value spanning literal newlines (bash
+// allows this) is fully consumed up to its own matching close-quote.
+function stripCommitMessageArgs(cmd) {
+  return String(cmd).replace(/(-m|--message)(=|\s+)(['"])[\s\S]*?\3/g,
+    (_m, flag, sep, q) => `${flag}${sep}${q}${q}`);
 }
 
 // PowerShell-specific write patterns that are safe from BOM IF the user
@@ -210,12 +348,25 @@ function getFilePath(toolInput) {
 export function classifyBashCommand(cmd) {
   if (!cmd) return { isWrite: false };
   const s = String(cmd);
+  // F15 fix (task #23): neutralize `<`/`>` metacharacters that occur INSIDE a
+  // quoted argument FIRST — before scratch-redirect stripping or write-pattern
+  // matching — so a comparison operator quoted inside a `node -e`/`-p`
+  // payload (or any other quoted text) is never misread as shell redirection.
+  const quoteSafe = neutralizeQuotedShellMetachars(s);
   // v5.10.1: neutralize scratch/temp-dir redirects so benign output capture
   // (`pytest … > /c/tmp/x.out`, `echo done >> /tmp/run.log`) doesn't fire. Real
   // writers and redirects to source/config/cwd files survive the strip.
-  const scrubbed = stripScratchRedirects(s);
+  const scrubbed = stripScratchRedirects(quoteSafe);
+  // F49 fix v2 (task #67): a SEPARATE probe string, used only for
+  // CP_MV_MOVE_COPY_RE, with heredoc bodies and -m/--message quoted values
+  // stripped out. This lets that one pattern safely treat a bare newline as
+  // a command-position separator (see its comment at the definition site)
+  // without reopening the F49 heredoc/commit-message prose hole. Every
+  // other pattern below still tests against `scrubbed`, unchanged.
+  const cpMvProbe = stripCommitMessageArgs(stripHeredocBodies(scrubbed));
   for (const re of BASH_WRITE_PATTERNS) {
-    if (re.test(scrubbed)) {
+    const target = re === CP_MV_MOVE_COPY_RE ? cpMvProbe : scrubbed;
+    if (re.test(target)) {
       return {
         isWrite: true,
         matchedPattern: re.source.slice(0, 60),
@@ -362,7 +513,7 @@ export function run(input) {
   // PreToolUse. Keep this as defense-in-depth so the prefix works even in
   // environments where the sentinel write somehow raced this hook.
   const userPrompt = input.user_prompt || input.prompt || '';
-  if (String(userPrompt).includes('!opus-force:')) {
+  if (String(userPrompt).trimStart().startsWith('!opus-force:')) {
     appendLog({
       ts: new Date().toISOString(),
       event: 'mutation_guard',

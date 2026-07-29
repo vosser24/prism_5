@@ -13,8 +13,9 @@
 
 import {readFileSync, readdirSync, statSync, existsSync, writeFileSync} from 'fs';
 import {join} from 'path';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const SETTINGS = join(H, '.claude', 'settings.json');
 const PLUGIN_CACHE = join(H, '.claude', 'plugins', 'cache');
 const CACHE_OUT = join(H, '.claude', '.prism-context-audit.json');

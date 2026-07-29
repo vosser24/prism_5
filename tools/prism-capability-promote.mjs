@@ -27,6 +27,7 @@ import { pathToFileURL } from 'node:url';
 import {
   stagingPath, versionsPath, digestPath, withRosterLock,
 } from './lib/prism-acl-store.mjs';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
 
 // ── Name derivation ──────────────────────────────────────────────────────────
 
@@ -113,6 +114,17 @@ export async function promote(candidate, { home, factory }) {
   const type = candidate.suggestedType || 'skill'; // 'skill' | 'agent'
   const name = deriveName(candidate.label);
 
+  // Manifest/flat-owned guard: never promote over an existing flat agent file.
+  // The ACL promoter writes the nested agents/<name>/ layout; a flat
+  // agents/<name>.md already on disk means the name is owned outside ACL (the
+  // install manifest or a hand-authored agent). Promoting would create a
+  // duplicate frontmatter `name:` collision in the same user scope. Refuse.
+  // The caller wraps promote() in try/catch (see hooks/prism-acl-worker.mjs),
+  // so this skips one candidate without aborting the batch.
+  if (type === 'agent' && existsSync(join(home, '.claude', 'agents', `${name}.md`))) {
+    throw new Error(`promote: '${name}' is a flat-owned agent (agents/${name}.md exists) — ACL will not promote over it`);
+  }
+
   const spec = {
     name,
     description: `Auto-detected capability: ${candidate.label.replace(/-/g, ' ')}`,
@@ -149,7 +161,8 @@ export async function promote(candidate, { home, factory }) {
   // Atomic: write to a .tmp first, then rename over live
   const tmpLive = livePath + '.tmp';
   copyFileSync(stagingFile, tmpLive);
-  renameSync(tmpLive, livePath);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmpLive, livePath);
 
   // 6. Register in GLOBAL roster (the path the orchestrator reads)
   const rosterPath = join(home, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
@@ -172,10 +185,21 @@ export async function promote(candidate, { home, factory }) {
       keywords: candidate.label.split('-').filter(t => t.length > 2),
     };
 
+    // F35/D088 Part B: spread-merge over any existing entry rather than a bare
+    // replace. roster.skills[<name>]/roster.agents[<name>] is a shared
+    // namespace with hooks/prism-skill-write-register.mjs (indexer schema:
+    // type/source/domains/keywords/trigger_phrases/...) and
+    // tools/prism-capability-learn.mjs (corrections_*/pending_upgrade/
+    // last_upgraded_at). This writer's own schema (description/version/path/
+    // created_at/acl_promoted/keywords) is not a superset of either, so a bare
+    // replace here would silently wipe whichever of those fields already
+    // exist on the entry. See
+    // docs/prism/plans/2026-07-28-prism-index-options-and-schema-reconciliation.md
+    // Part B.
     if (type === 'agent') {
-      roster.agents[name] = entry;
+      roster.agents[name] = { ...(roster.agents[name] || {}), ...entry };
     } else {
-      roster.skills[name] = entry;
+      roster.skills[name] = { ...(roster.skills[name] || {}), ...entry };
     }
 
     writeFileSync(rosterPath, JSON.stringify(roster, null, 2), 'utf-8');

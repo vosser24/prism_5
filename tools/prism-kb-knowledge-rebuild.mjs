@@ -25,6 +25,7 @@ import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join, dirname, basename } from 'path';
 
 import { buildKnowledgeIndex } from './prism-kb-knowledge-indexer.mjs';
+import { prismHome } from '../hooks/lib/prism-home.mjs';
 
 // ── exported path helper ──────────────────────────────────────────────────────
 // The dedicated knowledge dirty flag lives next to the resource-index dirty flag,
@@ -113,7 +114,7 @@ if (invokedDirectly) {
     process.exit(0);
   }
   const quiet = args.includes('--quiet');
-  const home = process.env.HOME || process.env.USERPROFILE;
+  const home = prismHome();
   const { roots, index } = runKnowledgeRebuild({ home });
   if (!quiet) {
     console.log(`PRISM knowledge index rebuilt: ${index ? index.doc_count : 0} entries across ${roots.length} project root(s).`);

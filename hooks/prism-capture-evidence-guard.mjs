@@ -186,21 +186,46 @@ function addedMaterial(toolName, toolInput) {
 // inside an existing one) — the ratchet gate below only fires on this class.
 const NEW_HEADING_RE = /^#{1,6}\s/m;
 
-function denyMessage(filePath, matched) {
+// `scoped` distinguishes the two conditions this gate can fire on — they are
+// NOT the same claim and must not share wording (see the D060 owner-report:
+// the old single-template message asserted "the file carries no **Verified:**
+// field" even when the file plainly had one, just not inside the newly-added
+// entry — an author who greps the file, finds the field, and gets denied
+// again anyway burns retries decoding a message that lied about which scope
+// was checked):
+//   - scoped=false: EVIDENCE_FIELD_RE found no **Verified:** ANYWHERE in the
+//     resulting file. "the file carries no **Verified:** field" is accurate.
+//   - scoped=true: the per-entry ratchet fired — a **Verified:** field DOES
+//     exist elsewhere in the file (that's why the whole-file branch was
+//     entered at all), but the newly-added block introduces its own new
+//     heading + claim with no **Verified:** field of its own. The message
+//     must name that scope explicitly, not claim absence.
+function denyMessage(filePath, matched, scoped) {
+  const claimLine = scoped
+    ? [
+        `PRISM CAPTURE-EVIDENCE GATE: this write to ${filePath} adds a new entry`,
+        `(new heading) that asserts a factual claim (matched: "${matched}"), but`,
+        `the ADDED block carries no **Verified:** field of its own. A`,
+        `**Verified:** field elsewhere in the file (e.g. the header) attests to`,
+        `THAT original capture — it does not cover a new section appended later.`,
+      ]
+    : [
+        `PRISM CAPTURE-EVIDENCE GATE: this write to ${filePath} asserts a factual`,
+        `claim (matched: "${matched}") but the file carries no **Verified:** field.`,
+      ];
   return [
-    `PRISM CAPTURE-EVIDENCE GATE: this write to ${filePath} asserts a factual`,
-    `claim (matched: "${matched}") but the file carries no **Verified:** field.`,
+    ...claimLine,
     ``,
     `Per .claude/rules/capture-conventions.md ("Verify ground truth before you`,
     `capture 'it works'"): confirm ground truth before capturing a claim — the`,
     `files changed, the claimed paths exist, the relevant tests pass — then`,
-    `record HOW you checked. Add a line to the header block, e.g.:`,
+    `record HOW you checked. Add a line ${scoped ? 'to the new block' : 'to the header block'}, e.g.:`,
     `  **Verified:** <command> -> <real output>`,
     `If you did NOT check it, say so — that is a valid, honest capture:`,
     `  **Verified:** NOT REPRODUCED -- inherited claim, unconfirmed`,
     ``,
     `Fixes:`,
-    `  1. Add a **Verified:** field (real evidence OR an explicit disclaimer) and retry.`,
+    `  1. Add a **Verified:** field (real evidence OR an explicit disclaimer)${scoped ? ' to the new entry' : ''} and retry.`,
     `  2. Disable this gate for the session: set PRISM_CAPTURE_EVIDENCE_GATE=off.`,
   ].join('\n');
 }
@@ -260,7 +285,7 @@ export function run(input) {
   }
 
   const matchedClaim = ratchetClaim || claimMatch[0];
-  const notice = denyMessage(filePath, matchedClaim);
+  const notice = denyMessage(filePath, matchedClaim, !!ratchetClaim);
   const ratchetField = ratchetClaim ? {ratchet: 'per-entry'} : {};
 
   if (mode === 'soft') {

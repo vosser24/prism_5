@@ -8,7 +8,7 @@ description: Curated index of PRISM slash commands and skills. Lists active comm
 This is the user-facing index for PRISM as of v5.1. Commands are grouped by
 workflow; the most common entry points come first.
 
-Active version: **v5.1** — lifecycle + command-consolidation. The project-master is now **default-on** in `/prism-bootstrap` (`--no-master` opts out), with claude-mem-aware two-mode memory. The SessionStart freshness sweep (24h-throttled) gained **detection** automations — hook-integrity, roster-orphan, and audit-staleness checks — and now **auto-rebuilds** the KB / cross-project knowledge index inline when it falls behind out-of-band (replacing the old E1/F4 manual-rebuild nudge). New `/prism-fresh` is a refresh-only alias for `/prism-deep-dive --refresh`, and the occasional-upkeep commands are grouped under **Maintenance**. Built on the v5.0 cross-project knowledge index (F4): opt-in, dep-free, offline BM25 retrieval + default-on `claude -p` re-rank (silent BM25 fallback), default-deny per-corpus-type sharing via `/prism-recall --share-project`, consumed via `/prism-recall --cross-project`, plus a stable `queryKnowledge()` API. The verdict-regression scanner that consumes the F4 index remains deferred. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
+Active version: **v5.1** — lifecycle + command-consolidation. The project-master is now **default-on** in `/prism-bootstrap` (`--no-master` opts out). The SessionStart freshness sweep (24h-throttled) gained **detection** automations — hook-integrity, roster-orphan, and audit-staleness checks — and now **auto-rebuilds** the KB / cross-project knowledge index inline when it falls behind out-of-band (replacing the old E1/F4 manual-rebuild nudge). New `/prism-fresh` is a refresh-only alias for `/prism-deep-dive --refresh`, and the occasional-upkeep commands are grouped under **Maintenance**. Built on the v5.0 cross-project knowledge index (F4): opt-in, dep-free, offline BM25 retrieval + default-on `claude -p` re-rank (silent BM25 fallback), default-deny per-corpus-type sharing via `/prism-recall --share-project`, consumed via `/prism-recall --cross-project`, plus a stable `queryKnowledge()` API. The verdict-regression scanner that consumes the F4 index remains deferred. For migration see [`docs/prism/MIGRATION.md`](../docs/prism/MIGRATION.md).
 
 ---
 
@@ -40,7 +40,6 @@ reference files replacing the previous 770-line monolith).
 
 | Command | What it does |
 |---|---|
-| `/prism-app-expert` | Create or update an app expert agent for a specific application. |
 | `/prism-roster` | Display the PRISM agent talent pool. Modes: default (table), `--team <id>` (filter by team), `--by-domain` (v4.1 — group by domain tag, reads `roster.domain_groups`). The `--reconcile` mode is now part of `/prism-bootstrap`'s roster phase. |
 | `/prism-retire` | Archive an unused PRISM agent. |
 | `/prism-recommend` | Scan project and recommend external tools with fit-scoring. |
@@ -77,7 +76,7 @@ the corpus changes. All remain callable on demand.
 
 These are CLI tools for install/upgrade/verify. Run directly from the repo root or the installed copy. All subcommands accept `--target <dir>` (v4.5) to point at a `.claude/` directory other than `~/.claude/`.
 
-- `node tools/prism-installer.mjs verify [--target <dir>]` — check that all manifest files are present and hooks are wired in `settings.json`. **First diagnostic to run** when PRISM feels broken. Exit 0 = healthy; exit 1 = prints which files or hooks are missing.
+- `node tools/prism-installer.mjs verify [--target <dir>]` — check that all manifest files are present and hooks are wired in `settings.json`, then shells out to `tools/prism-drift-check.mjs` for content-drift. **First diagnostic to run** when PRISM feels broken. Exit 0 = healthy; exit 1 = prints which files or hooks are missing, or reports content drift (installed file differs from the committed repo).
 - `node tools/prism-installer.mjs detect [--target <dir>]` — print JSON of current install state (files found, hooks registered, roster schema version, `.prism-version` marker). No changes.
 - `node tools/prism-installer.mjs install [--target <dir>] [--dry-run]` — install/upgrade PRISM. Idempotent. Writes a `.prism-version` marker (v4.5) on success.
 - `node tools/prism-installer.mjs update [--target <dir>] [--dry-run]` — *(v4.5)* detect + backup + install in one command. No-op when installed version matches shipped (`Already at vX; nothing to do.`).

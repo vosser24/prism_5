@@ -38,6 +38,9 @@ ALWAYS:
   - If HIGH STAKES: show checkpoint locations
   - Generate task-id: date + short-hash (e.g., "20260414-a3f7")
     Use for: workspace dir, model-log, roster task tracking.
+    Generate a FRESH id per new plan/topic — never reuse a task-id minted for
+    an earlier or declined plan/topic in the same session; reusing silently
+    aliases the wrong `~/.claude/.prism-task-<id>/` workspace.
   WAIT for: "go" / "go A" / "adjust" / "explain" / "abort"
 
 ## Single Plan (when one approach is clearly best)
@@ -161,6 +164,17 @@ test -f <claimed/path> && echo OK || echo MISSING
 node <the relevant test(s)>                  # pass-count is the real signal
 ```
 
+**Exception — `docs/` and `.claude/references/` claims: `git status` is silent
+by construction.** Both paths are gitignored (`.gitignore:26` = `/docs/`;
+`.gitignore:19` = `.claude/references/`), so a worker claiming it wrote a
+lesson, adjudication, or discovery-index file there will show as a clean tree
+above — that proves nothing, it's the absence of a signal, indistinguishable
+from "landed correctly" / "never written" / "write silently failed". For those
+paths, drop the `git status`/`git diff` step and go straight to `test -f
+<claimed/path>` (or `ls -la`) PLUS reading the file back to confirm the actual
+content is there. See `.claude/rules/capture-conventions.md` ("Verify ground
+truth before you capture 'it works'").
+
 Equip the worker to make this cheap: end its prompt with "list every file you
 created/edited by absolute path and run the test suite; report the pass count,"
 so the master only checks paths-exist + tests-pass. True per-worker tool count, if
@@ -175,8 +189,12 @@ worker is ~0.02% overhead. **Scope it to output-producing dispatches only** — 
 verification after read-only/research workers (nothing to diff). **Do NOT wire it
 as an unconditional `SubagentStop` hook** — that would git-diff on *every*
 completion (incl. read-only) and tax the dispatches that produced nothing. It is
-conditional ORCHESTRATOR DISCIPLINE, not a runtime feature. (Windows/SMB: clear a
-stale `.git/index.lock` if `git status` stalls.) Pairs with WS-3's wiring guard —
+conditional ORCHESTRATOR DISCIPLINE, not a runtime feature. (Windows/SMB: the
+index.lock-orphaning root cause is fixed — read-only `git status` calls on the
+hot/background paths now pass `--no-optional-locks`, so this hook's own check
+should never take the lock. Routinely deleting `.git/index.lock` is NOT normal
+practice; if one recurs here, investigate — a live git process, an unpatched
+call site — rather than deleting it.) Pairs with WS-3's wiring guard —
 both assert ground truth over green/self-report: *a green component suite does not
 prove the component is wired or that it works end-to-end.*
 

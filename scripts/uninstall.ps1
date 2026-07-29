@@ -120,7 +120,7 @@ if ($Help) {
     Write-Host '  3   Inventory: count files per category'
     Write-Host '  4   Remove PRISM hooks'
     Write-Host '  5   Remove PRISM commands'
-    Write-Host '  6   Remove 8 PRISM-owned skills (by exact name)'
+    Write-Host '  6   Remove 7 PRISM-owned skills (by exact name)'
     Write-Host '  7   Remove 3 PRISM core agents (by exact name)'
     Write-Host '  8   Remove PRISM tools'
     Write-Host '  9   Remove misc files (statusline-command.sh, prism.env, plans)'
@@ -136,16 +136,15 @@ if ($Help) {
 $IsDryRun  = -not $Purge
 $ClaudeDir = Join-Path $env:USERPROFILE '.claude'
 
-# 8 PRISM-owned skills (by exact name; never glob)
+# 7 PRISM-owned skills (by exact name; never glob)
 $PrismSkills = @(
+    'master-orchestrator',
     'prism-plan',
     'prism-discover',
     'prism-chat',
     'blueprint-prompt',
-    'workflow-orchestration',
-    'claude-code-expert',
     'notebooklm',
-    'video-production'
+    'workflow-orchestration'
 )
 
 # 3 PRISM-owned core agents (by exact filename)
@@ -299,7 +298,7 @@ if (Test-Path -LiteralPath (Join-Path $ClaudeDir '.prism-rollups'))  { $invMemor
 
 Log-Line ('  hooks            : ' + $invHooks)
 Log-Line ('  commands         : ' + $invCommands)
-Log-Line ('  skills (of 8)    : ' + $invSkills)
+Log-Line ('  skills (of 7)    : ' + $invSkills)
 Log-Line ('  agents (of 3)    : ' + $invAgents)
 Log-Line ('  tools            : ' + $invTools)
 Log-Line ('  misc             : ' + $invMisc)
@@ -359,7 +358,7 @@ if ($preservedCount -gt 0) {
     Log-Line ('  preserved ' + $preservedCount + ' user-data file(s) to ' + $PreserveTemp)
 }
 
-# --- Step 6: Skills (8 by exact name) ------------------------------------
+# --- Step 6: Skills (7 by exact name) ------------------------------------
 Log-Line 'step 6: removing PRISM-owned skills (by exact name)'
 foreach ($s in $PrismSkills) {
     $skillDir = Join-Path $ClaudeDir ('skills\' + $s)

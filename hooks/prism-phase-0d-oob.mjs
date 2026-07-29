@@ -25,32 +25,40 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from '
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
 import { createHash } from 'node:crypto';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
 import { writeVerdict } from '../tools/lib/prism-verdict-flag.mjs';
+import { resolveClaudeBin, OOB_REVIEWER_TIMEOUT_MS } from './lib/prism-oob-spawn.mjs';
+import { extractDeliberation, resolveMaxBytes } from './lib/prism-transcript-extract.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __thisfile = __filename;
 const repoRoot = dirname(dirname(__filename));
 const PROMPT_PATH = join(repoRoot, 'agents', 'phase-0d-oob-reviewer.md');
-const TRANSCRIPT_WINDOW_LINES = 200;
+// F7 Phase 3: widened 200 -> 600. On the hook-recorded (structural) panel path
+// the panel.json carries STRUCTURE only — every position's challenges[] is empty
+// by construction — so ALL challenge substance the reviewer grades now lives in
+// this transcript window, not in the artifact. 200 lines routinely truncated the
+// deliberation; 600 gives the reviewer enough to grade (or to correctly return
+// INSUFFICIENT). The call is backgrounded + 240s-bounded, so the larger payload
+// costs no master-session latency.
+//
+// F7 Phase 3 FOLLOW-UP: 600 lines here is only a SCAN WINDOW, no longer the raw
+// payload. On a real long tool-heavy session 600 raw JSONL lines = ~1.2 MB
+// (each line is a full event: tool_use inputs, tool_result outputs, system
+// reminders) → `claude -p` returns "Prompt is too long" → severity:"ERROR" is
+// surfaced by SessionStart (cry-wolf). We now feed this window through
+// extractDeliberation() (assistant-turn text only) and hard-cap the transcript
+// portion by BYTES (PHASE_0D_MAX_INPUT_BYTES) — the byte cap is the real
+// guarantee that an oversized reviewer prompt is impossible.
+const TRANSCRIPT_WINDOW_LINES = 600;
 
-// H4: resolve the claude executable to an absolute path. On Windows, spawnSync
-// without shell:true does not append PATHEXT (.cmd/.exe), so a bare 'claude'
-// silently fails. Probe PATH for claude(.cmd|.exe). Falls back to 'claude'.
-function resolveClaudeBin() {
-  if (process.env.PRISM_CLAUDE_BIN) return process.env.PRISM_CLAUDE_BIN;
-  const isWin = process.platform === 'win32';
-  const exts = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
-  const pathDirs = (process.env.PATH || '').split(isWin ? ';' : ':');
-  for (const dir of pathDirs) {
-    for (const ext of exts) {
-      const cand = join(dir, 'claude' + ext);
-      try { if (existsSync(cand)) return cand; } catch {}
-    }
-  }
-  return 'claude';
-}
+// Backstop byte cap on the transcript portion of the reviewer prompt. The
+// dominant term (panel.json + roster are small on the structural path), so
+// capping the transcript alone bounds the whole payload well under the model
+// context window. Env-overridable via PRISM_PHASE_0D_MAX_INPUT_BYTES.
+const PHASE_0D_MAX_INPUT_BYTES = resolveMaxBytes('PRISM_PHASE_0D_MAX_INPUT_BYTES');
 
 // ─── pending-file helpers (verdict result goes through the shared lib) ───────
 
@@ -64,9 +72,15 @@ function atomicWrite(filePath, content) {
   try {
     const tmp = filePath + '.tmp';
     writeFileSync(tmp, content, 'utf-8');
-    renameSync(tmp, filePath);
-  } catch {
-    writeFileSync(filePath, content, 'utf-8'); // direct fallback
+    renameWithRetry(renameSync, tmp, filePath);
+  } catch (renameErr) {
+    try {
+      writeFileSync(filePath, content, 'utf-8'); // direct fallback
+      process.stderr.write(`[phase-0d-oob] atomic rename failed for ${filePath} (${(renameErr && renameErr.code) || 'unknown'}); wrote directly instead\n`);
+    } catch (fallbackErr) {
+      process.stderr.write(`[phase-0d-oob] write failed for ${filePath}: ${fallbackErr.message}\n`);
+      throw fallbackErr;
+    }
   }
 }
 
@@ -159,7 +173,24 @@ async function runReviewerInProcess(payload, panelPath, taskSha) {
     return;
   }
 
-  const transcriptTail = readTranscriptTail(payload?.transcript_path, TRANSCRIPT_WINDOW_LINES);
+  // S6 transcript hardening: transcript_path is load-bearing and not always
+  // present on every event shape. Mirror phase-1-5-oob.mjs's fallback chain
+  // (transcript_path || agent_transcript_path). The Stop-gated trigger already
+  // refuses to fire when NO transcript exists (it logs no_transcript_path), so
+  // by here we should have one; the fallback is defense-in-depth.
+  const rawTranscriptWindow = readTranscriptTail(
+    payload?.transcript_path || payload?.agent_transcript_path,
+    TRANSCRIPT_WINDOW_LINES,
+  );
+  // Bound the payload: extract assistant-turn deliberation (drop tool_use /
+  // tool_result / thinking / system-reminder noise) from the 600-line scan
+  // window, then hard-cap by bytes. This is the F7 Phase 3 follow-up fix — the
+  // byte cap makes a "Prompt is too long" reviewer failure impossible even on a
+  // multi-MB long-session transcript. Fail-open: a parse failure inside
+  // extractDeliberation falls back to a byte-capped raw tail.
+  const transcriptTail = extractDeliberation(rawTranscriptWindow, {
+    maxBytes: PHASE_0D_MAX_INPUT_BYTES,
+  });
 
   const combinedInput = [
     '---PANEL.JSON---',
@@ -170,8 +201,17 @@ async function runReviewerInProcess(payload, panelPath, taskSha) {
     JSON.stringify(relevantAgents, null, 2),
   ].join('\n\n');
 
-  // Per-dispatch SHA (unique enough for concurrent panel writes in same session)
-  const dispatchSha = createHash('sha256')
+  // Dispatch SHA — names the verdict/pending files.
+  //   • Write path (model-authored panel.json): no caller sha → a per-dispatch
+  //     unique sha (Date.now()) so concurrent writes don't collide.
+  //   • Stop-gated path (F7 Phase 3): the caller supplies a STABLE per-latch sha
+  //     (payload.stable_sha) so every turn-end fire OVERWRITES the same verdict
+  //     file with a progressively richer review (final fire = post-challenge),
+  //     instead of leaking one verdict file per turn.
+  const suppliedSha = (typeof payload?.stable_sha === 'string' && /^[a-f0-9]{8,64}$/i.test(payload.stable_sha))
+    ? payload.stable_sha
+    : null;
+  const dispatchSha = suppliedSha || createHash('sha256')
     .update(taskSha + Date.now() + panelPath)
     .digest('hex')
     .slice(0, 16);
@@ -210,7 +250,7 @@ async function runReviewerInProcess(payload, panelPath, taskSha) {
   const child = mockVerdict ? null : spawnSync(resolveClaudeBin(), ['-p', '--model', 'claude-sonnet-4-6'], {
     input: promptText + '\n\n' + combinedInput,
     env: { ...process.env, PRISM_PHASE_0D_OOB_PROCESS: '1' },
-    timeout: 90_000,
+    timeout: OOB_REVIEWER_TIMEOUT_MS,
     encoding: 'utf-8',
     windowsHide: true,
   });
@@ -291,7 +331,7 @@ export async function run(payload) {
   }
 
   // PRODUCTION: R4 fire-and-forget. Re-invoke THIS file detached so the (blocking,
-  // up-to-90s) claude -p reviewer runs in its own process; dispatcher returns now.
+  // up-to-240s, OOB_REVIEWER_TIMEOUT_MS) claude -p reviewer runs in its own process; dispatcher returns now.
   // PRISM_PHASE_0D_OOB_CHILD=1 signals the detached child to run the reviewer body
   // exactly once. The existing PRISM_PHASE_0D_OOB_PROCESS=1 guard (set inside
   // runReviewerInProcess when spawning claude -p) prevents further hook re-fires

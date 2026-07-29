@@ -49,7 +49,7 @@ cd your-project
 
 ## Installation
 
-**Requirements:** Node.js ≥ 18, `git`, and an agentic coding CLI (the `claude` command) on your PATH. Optional: `python` ≥ 3.10 (and 3.12 for the bundled `pwagent` tool), plus the `notebooklm` / `gh` CLIs for the cross-project knowledge and research tiers.
+**Requirements:** Node.js ≥ 18, `git`, and an agentic coding CLI (the `claude` command) on your PATH. Optional: `python` ≥ 3.10, plus the `notebooklm` / `gh` CLIs for the cross-project knowledge and research tiers.
 
 ### 1. Clone
 
@@ -87,7 +87,6 @@ Every check should print `PASS`. If any print `FAIL`, re-run the installer.
 | `--dry-run` | Print what would happen; change nothing |
 | `--no-backup` | Skip backing up existing settings/roster |
 | `--quiet` | Suppress progress output |
-| `--with-pwagent` | During install/update, also wire the bundled `pwagent` Playwright tool (PATH + first-run provisioning) without prompting |
 | `--home <path>` | Override the install HOME (for testing) |
 
 ### Upgrade an existing install
@@ -123,10 +122,9 @@ See [UNINSTALL.md](UNINSTALL.md) for the tiered procedure (transient-state reset
 | **Mutation guard** | Blocks direct file mutation from the main loop on non-trivial turns, steering edits through reviewed subagents. |
 | **Safety gate** | Blocks genuinely dangerous shell commands (`rm -rf /`, `curl … \| bash`, `DROP TABLE`, force-push) while allowing routine ones (`rm -rf ./build`). Scans a de-quoted view so a dangerous token merely *mentioned* in a commit message or data doesn't trip it. |
 | **Project-master memory** | Each project gets a `master-<slug>` agent whose `MEMORY.md` router carries forward recent decisions, lessons, and a session log — auto-injected at the start of every subagent so work resumes already informed. |
-| **Two-mode session memory** | If the optional `claude-mem` tier is present it owns ambient capture; otherwise PRISM's native nudge + `/prism-clean` fold keeps a durable record. Nothing is lost either way. |
+| **Session memory** | PRISM's native nudge (starting turn 15, every 5 turns thereafter) reminds you to capture before `/clear`; `/prism-clean` folds the session summary into the project-master's MEMORY.md for a durable record. |
 | **Cross-project knowledge index** | An opt-in, offline BM25 + re-rank index over your adjudications / lessons / plans, queryable with `/prism-recall --cross-project`. |
 | **Python venv discipline** | For Python projects, bootstrap provisions a project-root `.venv` and records a rule to run Python under it (no system Python). |
-| **pwagent (optional)** | A bundled Playwright CLI that keeps a Chromium alive across calls for on-demand DOM / text / a11y-snapshot / screenshot / network dumps. Self-provisions its own isolated venv on first run. See the FAQ. |
 | **Research-backed agent factory** | When a real domain specialist is needed, the factory **researches** it (free, via NotebookLM) into a grounded expert — not a generic persona — then registers it in the roster and reuses it across sessions. `/prism-roster` and `/prism-retire` manage the talent pool. |
 | **Expert skill toolkit** | Each expert can distil its method into reusable, versioned **skills** (`SKILL.md`) that the master equips to cheaper workers. The toolkit compounds across sessions; if a needed skill is missing, the factory's `--skill-research` finds the best existing one before authoring custom. |
 | **Knowledge-growth loop** | The master **recalls** what the project already knows before designing, and **archives** decisions/lessons after — so each session starts smarter than the last, not from zero. |
@@ -188,7 +186,6 @@ Run `/prism-help` in-session for the live index. Commands are grouped by **when 
 | `/prism-roster` | Inspect the talent pool; `--reconcile` registers agent files created outside the factory. | `--by-domain`, `--team <id>`, `--reconcile` |
 | `/prism-retire @agent` | Cleanly archive a stale or wrong specialist — removes its directory and roster entry atomically. | — |
 | `/prism-archive @agent` | Consolidate a specialist's accumulated research notes into one RAG-queryable document. | `--list`, `--threshold N`, `--cleanup` |
-| `/prism-app-expert <app>` | Before a UI/screenshot/video task, create a Playwright-driven specialist that knows one running app as a power user. *(For a code/domain expert, ask the project-master to spin up `@agent-factory` instead.)* | `--update`, `--list` |
 | `/prism-telemetry` | Enable local routing/cost telemetry, inspect tier distribution and guard fire-rates, or export an anonymized rollup. **No network.** | `--opt-in`, `--opt-out`, `--status`, `--aggregate`, `--export <path>` |
 | `/prism-uninstall-cleanup` | Before removing PRISM-as-plugin, clear agents that were factory-created under the plugin. | `--dry-run`, `--mode=remove-all\|keep-all` |
 
@@ -214,13 +211,6 @@ Yes — PRISM is **Windows-first** (PowerShell + Git Bash both supported) and al
 **My project suddenly has a `.venv` — what is that?**
 For Python projects, `/prism-bootstrap` creates a project-root `.venv` and adds an operating rule to run Python under it (never system Python). On an empty folder it asks first; answer `--no-python` (or decline) for non-Python projects and it won't create one.
 
-**What is `pwagent`?**
-An optional Playwright CLI bundled with PRISM. It keeps a headed/headless Chromium alive across CLI calls so you can dump a page's DOM, visible text, accessibility tree, network, or a screenshot on demand (`pwagent open <url>`, `pwagent dom`, `pwagent screenshot`, …). It ships as source and **self-provisions its own isolated venv + Chromium on first run**. Enable it with:
-```bash
-node tools/prism-installer.mjs setup-pwagent --with-pwagent
-```
-(That adds it to your PATH and warms it. Requires Python 3.12.) It is independent of your project's `.venv`.
-
 **How do I update PRISM itself?**
 `node tools/prism-installer.mjs update` upgrades the install in place (idempotent; backs up first). Separately, `/prism-update` refreshes the model matrix, registries, and agent bodies on a ~15-day cadence.
 
@@ -240,7 +230,7 @@ See [UNINSTALL.md](UNINSTALL.md). Quick path: `bash scripts/uninstall.sh --purge
 - **Hooks** (`~/.claude/hooks/*.mjs`) — deterministic Node scripts wired to session events: a tier router on every prompt, guards on tool calls (dispatch / mutation / safety / parallel / config), and lifecycle capture on session start/stop.
 - **Skills** — the orchestration protocol (`master-orchestrator`), planning, recall, discovery, and the project lifecycle commands.
 - **Agents** — a reusable roster of specialists plus the per-project `master-<slug>`.
-- **Tools** (`tools/*.mjs`) — the deterministic engines behind the commands (bootstrap state machine, installer, knowledge indexer, recall, telemetry aggregation), plus the bundled `pwagent` Playwright CLI.
+- **Tools** (`tools/*.mjs`) — the deterministic engines behind the commands (bootstrap state machine, installer, knowledge indexer, recall, telemetry aggregation).
 - **State** — per-project under `.claude/`, machine-global under `~/.claude/`. JSON manifests, no database.
 
 ---
@@ -252,7 +242,7 @@ See [UNINSTALL.md](UNINSTALL.md). Quick path: `bash scripts/uninstall.sh --purge
   hooks/            # the guards + router + lifecycle hooks
   skills/           # orchestration + command skills
   agents/           # global specialist roster
-  tools/            # deterministic command engines (+ tools/pwagent/)
+  tools/            # deterministic command engines
   commands/         # slash-command definitions
 
 <your-project>/

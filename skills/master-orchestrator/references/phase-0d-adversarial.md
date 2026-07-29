@@ -67,6 +67,12 @@ you DISPATCH one real subagent per seat:
    memory. Separate context windows produce genuine disagreement, not self-critique.
    Record the real agentId each dispatch returns as that position's
    `dispatched_agent_id`.
+
+   **Dispatch each seat with a plain, NAMELESS `Agent()` call — do NOT pass
+   `name:`.** A named call becomes an Agent-Teams teammate whose written
+   position does NOT return as your tool result — you receive only a
+   payload-free `idle_notification` — so the seat's challenges are lost and
+   must NEVER be chair-authored to fill the gap ([[D062]]).
 2. **Cross-challenge round** — give each expert the OTHERS' positions and require
    ≥2 substantive challenges to other seats (the floor above). Because the experts
    are independent contexts, these are real challenges, not one model arguing with
@@ -108,6 +114,8 @@ so a session-level master can chair a real dispatched panel.
 
 At end of PHASE 0d, BEFORE proceeding to tensions and synthesis, write the panel state to `~/.claude/.prism-task-<task-id>/panel.json` for downstream OOB PHASE 1.5 reviewer pickup. Atomic write (tempfile + rename); fail-open (if write fails, log to stderr but continue).
 
+**`<task-id>` must be freshly generated for THIS panel's subject** — reusing an id from an earlier different-topic panel in the same session silently aliases the wrong workspace.
+
 **OOB activation caveat:** the tempfile+rename recipe below is for reference only — the Phase 0d/1.5 hooks fire on a PostToolUse **Write tool** event to a path ending exactly `panel.json`, so for the hooks to actually fire you must write it with a single direct Write tool call to that final path, not the Bash heredoc/rename shown here.
 
 Schema:
@@ -130,6 +138,7 @@ Schema:
         {
           "id": "ch-1",
           "text": "this fails when the user has no MCP servers configured",
+          "evidence_class": "PRECEDENT",
           "response": "ACCEPT",
           "verdict": "SURVIVES (revised)"
         }
@@ -155,6 +164,41 @@ EOF
 ```
 
 If no panel was assembled (standalone master-orchestrator session with no 0d), do NOT write panel.json — OOB reviewer's pending file gets `phase_0d_challenges: []`.
+
+## Seat bookkeeping — positions[] vs dropped_positions[] (v5.x, F8)
+
+`dropped_positions[]` is a MECHANICALLY-GENERATED annotation log — `hooks/prism-panel-guard.mjs`
+appends to it on the panel.json write; `positions[]` is append-only and a seat is never removed from
+it. You never write `dropped_positions[]` yourself; your job is to construct `positions[]` so a seat
+doesn't end up qualifying for both records at once.
+
+1. **A seat is `positions[]` XOR `dropped_positions[]` by construction — never both.** A seat
+   auto-drops into `dropped_positions[]` (`reason:"specialist_unknown"`) when it READS as vertical (a
+   vertical-sounding title, or `vertical:true`) but resolves to no rostered `specialist` — while its
+   real challenges stay untouched in `positions[]`. That split record is the F8 defect
+   (`panel_guard_consistency` advisory). Fix it at construction time: either back a vertical-sounding
+   seat with a real `specialist` (rostered or factory-created), or title it as a pure cross-cutting
+   archetype ("Skeptic — attack the premise", not "… & Measurement …") so the provenance gate does not
+   infer it vertical.
+2. **A failed / non-delivering seat gets an honest record, never a synthesized one.** If a dispatched
+   seat returns a holding string, times out, or otherwise produces no position, say so plainly in its
+   `position` field (e.g. `"INCOMPLETE - seat failed to deliver"`). Do NOT author a position on the
+   seat's behalf — a seat that failed is a finding, not a gap to paper over. If you carry forward any
+   material against that seat (its own prior written stance, or your own re-measurement standing in
+   for it), label the challenge text itself as chair-proxied/degraded (e.g. "PARTIAL/UNVERIFIED at
+   seat level, then independently re-measured by chair"). A transparently degraded record is supposed
+   to score low on independent review — that's correct, not a defect to fix.
+3. **Carried-forward material is not a live seat response — mark the difference.** A prior written
+   position pulled forward because the seat didn't respond this round must read as distinct from a
+   challenge the seat actually produced live in this dispatch — label it (e.g. "Carried forward from
+   this seat's prior written position") rather than presenting it at the same weight as a fresh
+   response.
+
+Worked example (rules 2–3): RB-16, `docs/prism/plans/2026-07-23-cotest-findings-tracker.md` §"RB-16",
+sub-observation (a) — a `software-architecture-expert` seat failed to deliver after 36 tool calls; the
+chair recorded it per the rules above and the OOB reviewer independently scored it lowest. See D072
+(`docs/prism/adjudications/D072-panel-instrumentation-off-agent-dispatch-not-model-panel-json.md`) for
+why panel instrumentation keys off the deterministic Agent-dispatch event, not model prose.
 
 ## v4.5 — alternatives-considered logging
 

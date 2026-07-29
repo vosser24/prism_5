@@ -16,25 +16,54 @@
 // Subprocess-only harness, matching the sibling hook tests in this dir.
 
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync, copyFileSync, readFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {makeFixtureHome} from '../lib/make-fixture-home.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(__dirname, '..', '..', '..', 'hooks');
 const HOOK = join(HOOKS, 'prism-session-start.mjs');
 const CATALOG_LIB_SRC = join(HOOKS, 'lib', 'prism-capability-catalog.mjs');
+// F38 instance (found live 2026-07-28, hours after F38/#55 was carried
+// forward unfixed): #63 added `import { isLiveStatus, statusCensus } from
+// '../prism-specialist-routing-guard.mjs'` to prism-capability-catalog.mjs
+// (hooks/lib/prism-capability-catalog.mjs:21). That file in turn imports
+// `./lib/prism-home.mjs` (hooks/prism-specialist-routing-guard.mjs:66). This
+// fixture only ever copied the catalog lib itself, so BOTH transitive
+// dependencies were missing — the dynamic import failed, and because
+// buildCapabilityCatalog is documented "Never throws", the failure was
+// swallowed and rendered as a plausible EMPTY catalog rather than a loud
+// module-resolution error (the exact D046 omissive-failure class, worse
+// than F38's original throw-loud cases). PRODUCTION IS NOT AFFECTED — the
+// real install (tools/install-manifest.json:44,60) ships both files
+// side-by-side under the real ~/.claude/hooks tree, where the relative
+// imports resolve correctly; only this synthetic fixture was short two files.
+const SPECIALIST_GUARD_SRC = join(HOOKS, 'prism-specialist-routing-guard.mjs');
+const PRISM_HOME_LIB_SRC = join(HOOKS, 'lib', 'prism-home.mjs');
 
-// The hook resolves the catalog lib relative to the (fake) HOME the test
+// MIGRATED (task #55/F38 worked example) to tests/v3/lib/make-fixture-home.mjs:
+// the hook resolves the catalog lib relative to the (fake) HOME the test
 // gives it — join(H, '.claude', 'hooks', 'lib', 'prism-capability-catalog.mjs')
-// — NOT relative to this repo. Catalog-related fixtures must copy the real
-// lib in, or the dynamic import silently fails (.catch(() => null)) and the
-// whole catalog block becomes a silent no-op.
-function installCatalogLib(home) {
-  const dir = join(home, '.claude', 'hooks', 'lib');
-  mkdirSync(dir, {recursive: true});
-  copyFileSync(CATALOG_LIB_SRC, join(dir, 'prism-capability-catalog.mjs'));
+// — NOT relative to this repo. The explicit deps list below is exactly the
+// same three files the hand-rolled installCatalogLib() used to copy, but now
+// makeFixtureHome() STATICALLY SCANS prism-capability-catalog.mjs's own
+// `./`/`../` import graph at fixture-build time and THROWS if this list is
+// ever incomplete again — the #66 failure mode (silent under-population,
+// swallowed by buildCapabilityCatalog's "Never throws" contract) becomes a
+// loud, named error instead of a plausible-looking empty catalog.
+const CATALOG_DEPS = [
+  {src: CATALOG_LIB_SRC, dest: join('.claude', 'hooks', 'lib', 'prism-capability-catalog.mjs')},
+  {src: SPECIALIST_GUARD_SRC, dest: join('.claude', 'hooks', 'prism-specialist-routing-guard.mjs')},
+  {src: PRISM_HOME_LIB_SRC, dest: join('.claude', 'hooks', 'lib', 'prism-home.mjs')},
+];
+
+function makeCatalogFixture(label) {
+  const {home} = makeFixtureHome(CATALOG_DEPS, {label: `pc-ss-catalog-${label}`});
+  const projectDir = mkdtempSync(join(tmpdir(), `pc-ss-proj-${label}-`));
+  mkdirSync(join(projectDir, '.claude'), {recursive: true});
+  return {home, projectDir};
 }
 
 let pass = 0, fail = 0;
@@ -49,7 +78,6 @@ function assert(c, m) { if (!c) throw new Error('assert: ' + (m || '')); }
 const QUIET_ENV = {
   PRISM_DISABLE_FRESHNESS_SWEEP: '1',
   PRISM_DISABLE_PARALLEL_REMINDER: '1',
-  PRISM_DISABLE_CLAUDE_MEM_GUARD: '1',
   PRISM_DISABLE_ACL_NOTIFY: '1',
   PRISM_DISABLE_CAPABILITY_CATALOG: '1',
   PRISM_DISABLE_MEMORY_INJECT: '1',
@@ -212,9 +240,8 @@ function writeRoster(home, roster) {
 }
 
 await test('default: catalog keeps Agents + Tools (unique), drops Skills + Plugin skills (duplicate of native listing)', () => {
-  const fx = makeFixture('catalog-default');
+  const fx = makeCatalogFixture('catalog-default');
   try {
-    installCatalogLib(fx.home);
     writeRoster(fx.home, CATALOG_ROSTER);
     // catalog must fire: unset the QUIET_ENV suppression for it specifically.
     const r = runHook(fx, {PRISM_DISABLE_CAPABILITY_CATALOG: '0'});
@@ -238,9 +265,8 @@ await test('default: catalog keeps Agents + Tools (unique), drops Skills + Plugi
 });
 
 await test('kill-switch PRISM_DISABLE_CAPABILITY_CATALOG_DEDUP=1 restores the full pre-cut catalog', () => {
-  const fx = makeFixture('catalog-killswitch');
+  const fx = makeCatalogFixture('catalog-killswitch');
   try {
-    installCatalogLib(fx.home);
     writeRoster(fx.home, CATALOG_ROSTER);
     const r = runHook(fx, {PRISM_DISABLE_CAPABILITY_CATALOG: '0', PRISM_DISABLE_CAPABILITY_CATALOG_DEDUP: '1'});
     assert(r.status === 0, `hook exited ${r.status}, stderr=${r.stderr}`);
@@ -259,9 +285,8 @@ await test('kill-switch PRISM_DISABLE_CAPABILITY_CATALOG_DEDUP=1 restores the fu
 });
 
 await test('catalog cut measurably shrinks the emitted payload for a skills-heavy roster', () => {
-  const fx = makeFixture('catalog-shrink');
+  const fx = makeCatalogFixture('catalog-shrink');
   try {
-    installCatalogLib(fx.home);
     // A roster with many skills but few agents/tools — mirrors the real
     // audit's finding (skills dominate catalog bytes).
     const bigRoster = {agents: CATALOG_ROSTER.agents, tools: CATALOG_ROSTER.tools, skills: {}};

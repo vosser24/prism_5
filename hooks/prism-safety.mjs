@@ -42,7 +42,36 @@ const blockedCmd=[
   // dropped from the path class: a non-recursive `rm -f ~/file` is routine
   // cleanup, and recursive home removal is already caught by the rm -rf rule.
   [/rm\s+(-[a-z]*f[a-z]*\s).*(\.\.|\/home|\/etc)/i, 'Destructive rm on important path'],
-  [/git\s+push\s+.*--force/i, 'Force push blocked by PRISM safety gate'],
+  // v6.8 FIX (task #91 / D105): the old pattern (`git\s+push\s+.*--force`)
+  // matched only the long `--force` spelling (and its `--force-with-lease` /
+  // `--force-if-includes` relatives, which contain "--force" as a substring
+  // prefix). `-f` and a leading-`+` refspec are equally functional force
+  // pushes and were both ALLOWED — measured, not assumed (see D105
+  // **Verified:**). Three rules, all scoped to the SAME `git push` command
+  // segment via `[^;&|<>\n]*` (stops at `;`, `&`, `|`, `<`, `>`, newline) so
+  // a force flag on a DIFFERENT command chained after `git push` can never
+  // false-trigger this rule, and a `git push` that only mentions "force" in
+  // an unrelated later segment can't either — the ORIGINAL pattern had no
+  // such bound at all (`.*` crossed every one of those boundaries).
+  //   1. long-form: substring "--force" (unchanged reach: also matches
+  //      --force-with-lease / --force-if-includes, per D105 measurement).
+  //   2. short-form: `-f` standalone OR bundled with git push's OTHER
+  //      boolean short flags (v,q,n,d,u) in any order/count — e.g. `-uf`,
+  //      `-fq`. Deliberately EXCLUDES `o` from the bundle-class: `-o`/
+  //      `--push-option` TAKES A VALUE, so `-of` is git syntax for
+  //      `-o f` (push-option value "f"), not bundled force — including `o`
+  //      here would misread that as force and over-block a legitimate
+  //      command (D105 records this as the specific ambiguity resolved).
+  //      The trailing `(?=\s|$)` boundary rejects any token carrying an
+  //      unrecognized extra letter (e.g. `-fo`) rather than guessing.
+  //   3. `+refspec`: a `+` immediately after whitespace (i.e. starting a
+  //      NEW argument token) is only meaningful in git's refspec position;
+  //      requiring the whitespace-then-`+` shape excludes a literal `+`
+  //      embedded mid-token (e.g. a branch name), which is never git's
+  //      force syntax.
+  [/git\s+push\b[^;&|<>\n]*--force/i, 'Force push (--force) blocked by PRISM safety gate. If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt or a node -e diagnostic — put the text in a file and pass it via stdin.'],
+  [/git\s+push\b[^;&|<>\n]*\s-[vqndu]*f[vqndu]*(?=\s|$)/i, 'Force push (-f) blocked by PRISM safety gate. If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt or a node -e diagnostic — put the text in a file and pass it via stdin.'],
+  [/git\s+push\b[^;&|<>\n]*\s\+\S/i, 'Force push (+refspec) blocked by PRISM safety gate. If the token only appears inside quoted TEXT you are passing as data — e.g. a claude -p prompt or a node -e diagnostic — put the text in a file and pass it via stdin.'],
   [/mkfs\./i, 'Filesystem format blocked'],
   [/dd\s+if=.*of=\/dev/i, 'dd to device blocked'],
   // v5.x FIX-D: pipe-to-shell (curl/wget … | bash) — a common remote-code-exec

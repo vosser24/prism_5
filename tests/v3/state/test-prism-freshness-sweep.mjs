@@ -19,6 +19,12 @@ const SWEEP_REPO = join(REPO_ROOT, 'hooks', 'lib', 'prism-freshness-sweep.mjs');
 const SESSION_START = join(REPO_ROOT, 'hooks', 'prism-session-start.mjs');
 const FLAG_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-flag-file.mjs');
 const SCOPE_HELPER_REPO = join(REPO_ROOT, 'tools', 'lib', 'prism-agent-scope.mjs');
+const HOME_HELPER_REPO = join(REPO_ROOT, 'hooks', 'lib', 'prism-home.mjs');
+// task #88: the sweep's atomicWrite() now uses the shared renameWithRetry
+// helper + logAdvisory on the degraded fallback — copy both so the temp-home
+// imports (../../tools/lib/atomic-fs.mjs, ./prism-advisory-log.mjs) resolve.
+const ATOMIC_FS_REPO = join(REPO_ROOT, 'tools', 'lib', 'atomic-fs.mjs');
+const ADVISORY_LOG_REPO = join(REPO_ROOT, 'hooks', 'lib', 'prism-advisory-log.mjs');
 
 let pass = 0, fail = 0;
 
@@ -62,6 +68,18 @@ function makeHome() {
   writeFileSync(
     join(home, '.claude', 'tools', 'lib', 'prism-agent-scope.mjs'),
     readFileSync(SCOPE_HELPER_REPO, 'utf-8'),
+  );
+  writeFileSync(
+    join(home, '.claude', 'hooks', 'lib', 'prism-home.mjs'),
+    readFileSync(HOME_HELPER_REPO, 'utf-8'),
+  );
+  writeFileSync(
+    join(home, '.claude', 'tools', 'lib', 'atomic-fs.mjs'),
+    readFileSync(ATOMIC_FS_REPO, 'utf-8'),
+  );
+  writeFileSync(
+    join(home, '.claude', 'hooks', 'lib', 'prism-advisory-log.mjs'),
+    readFileSync(ADVISORY_LOG_REPO, 'utf-8'),
   );
   return home;
 }

@@ -30,8 +30,9 @@ import {
   readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, renameSync,
   unlinkSync, readdirSync, statSync, chmodSync, cpSync, rmSync, lstatSync,
 } from 'fs';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
 import {join, dirname, resolve, basename} from 'path';
-import {tmpdir, homedir} from 'os';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 import {fileURLToPath} from 'url';
 import {createHash} from 'crypto';
 import {spawnSync} from 'child_process';
@@ -90,7 +91,7 @@ if (flags.target) {
   }
   CLAUDE_DIR = abs;
 } else {
-  const HOME = flags.home || process.env.HOME || process.env.USERPROFILE || homedir();
+  const HOME = flags.home || prismHome();
   CLAUDE_DIR = join(HOME, '.claude');
 }
 const REPO_ROOT = flags.src || resolve(__dirname, '..');
@@ -127,7 +128,9 @@ function atomicWrite(path, content) {
   const tmp = path + '.prism-tmp-' + createHash('sha256').update(path + Date.now()).digest('hex').slice(0, 8);
   try {
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY before
+    // the unlink+wrapped-throw below.
+    renameWithRetry(renameSync, tmp, path);
   } catch (renameErr) {
     try { unlinkSync(tmp); } catch {}
     const err = new Error(`atomicWrite failed for ${path}: ${renameErr.message}`);
@@ -756,6 +759,25 @@ async function install() {
       log(`  ${lbl('Files')}: ${manifest.files.length} files, ${manifest.directories.length} dirs`);
       log(`  ${lbl('Backup')}: ${backupDir || '— (none)'}`);
 
+      // SHA-STAMP-003 / T7 — persist the deployed HEAD sha so SessionStart can
+      // detect "committed but not deployed" drift (D064/D065: Locked fixes sat
+      // committed for days with no signal because nothing recorded what sha
+      // was actually copied into CLAUDE_DIR). Deliberately a cheap sha STAMP,
+      // not a content hash — D063 bars hashing from hot paths (a full-tree
+      // hash costs ~10s over this SMB share). Fail-open: getSourceRepoSha()
+      // already returns 'unknown' for a non-repo/detached/broken git, and in
+      // that case we write nothing — SessionStart no-ops when the stamp file
+      // is absent or unreadable. Placed after all copy/settings/verify steps
+      // so a failed or aborted install never leaves a stamp behind.
+      try {
+        const sha = getSourceRepoSha();
+        if (sha && sha !== 'unknown') {
+          const stamp = {sha, ts: new Date().toISOString()};
+          if (manifest.prism_version) stamp.prism_version = manifest.prism_version;
+          atomicWrite(join(CLAUDE_DIR, '.prism-installed-sha.json'), JSON.stringify(stamp, null, 2));
+        }
+      } catch {}
+
       // I8 — local-only install/upgrade outcome telemetry, opt-in. No network.
       try {
         if (installTelemetryConsented()) {
@@ -772,10 +794,6 @@ async function install() {
           appendFileSync(join(CLAUDE_DIR, '.prism-routing.jsonl'), JSON.stringify(rec) + '\n');
         }
       } catch {}
-
-      // pwagent: offer setup (consent-gated; --with-pwagent for non-interactive).
-      try { await setupPwagent({autoYes: rawArgs.includes('--with-pwagent')}); }
-      catch (e) { log('[pwagent] setup skipped: ' + (e && e.message)); }
     }
 
   } finally {
@@ -1058,6 +1076,15 @@ function runVerifyInner(manifest) {
 }
 
 // ─── verify (subcommand) ──────────────────────────────────────────────────────
+// D063: content-drift detection lives ONLY here (the standalone `verify`
+// subcommand), never inside runVerifyInner() — that function is shared with
+// the install/update hot path (Step 9, tools/prism-installer.mjs:725), which
+// runs on EVERY install/update. Hashing all manifest files over an SMB mount
+// measured ~10.2s (see tools/prism-drift-check.mjs header) — a tax the hot
+// path must not pay. So: presence/wiring checks stay in runVerifyInner();
+// this subcommand additionally shells out to the existing sha256-based
+// tools/prism-drift-check.mjs rather than duplicating its logic or making
+// runVerifyInner() itself content-aware.
 function verify() {
   const manifest = loadManifest();
   const result = runVerifyInner(manifest);
@@ -1066,14 +1093,43 @@ function verify() {
     console.log(`${c.pass ? 'PASS' : 'FAIL'}: ${c.label}`);
   }
 
-  if (result.allPass) {
-    log(`\nAll checks passed. PRISM install verified.`);
-    process.exit(0);
-  } else {
+  if (!result.allPass) {
     console.log(`\nFailed checks:`);
     for (const f of result.failures) console.log(`  ${f}`);
     process.exit(1);
   }
+
+  log(`\nAll checks passed (presence + wiring). PRISM install verified.`);
+
+  // Content-drift check: passes through the SAME --claude-dir/--repo this
+  // verify invocation resolved (honors --target/--home/--src consistently),
+  // so drift-check always agrees with the installer on what "installed" and
+  // "repo" mean.
+  log(`\n[prism-installer] Checking for content drift (tools/prism-drift-check.mjs)...`);
+  const driftScript = join(REPO_ROOT, 'tools', 'prism-drift-check.mjs');
+  const driftArgs = [driftScript, '--claude-dir', CLAUDE_DIR, '--repo', REPO_ROOT];
+  if (flags.quiet) driftArgs.push('--quiet');
+  const driftResult = spawnSync(process.execPath, driftArgs, {encoding: 'utf8', timeout: 60000});
+
+  if (driftResult.error) {
+    console.warn(`[prism-installer] WARNING: drift check could not run: ${driftResult.error.message}`);
+    process.exit(0);
+  }
+  if (driftResult.stdout) process.stdout.write(driftResult.stdout);
+  if (driftResult.stderr) process.stderr.write(driftResult.stderr);
+
+  if (driftResult.status === 1) {
+    // drift-check's own output above already labels each entry MISSING
+    // (installed file absent) vs STALE (content differs) — distinct from
+    // the presence/wiring MISSING: lines printed earlier in this command.
+    console.log(`\n[prism-installer] DRIFT DETECTED: installed copy differs from the committed repo (see above). Presence/wiring checks passed; content did not.`);
+    process.exit(1);
+  }
+  if (driftResult.status !== 0) {
+    console.warn(`[prism-installer] WARNING: drift check exited with unexpected status ${driftResult.status}; not treated as a verify failure.`);
+  }
+
+  process.exit(0);
 }
 
 // ─── help ─────────────────────────────────────────────────────────────────────
@@ -1131,51 +1187,6 @@ Exit codes:
 `.trim());
 }
 
-// ─── pwagent setup ────────────────────────────────────────────────────────────
-// pwagent ships as source; pwagent.ps1 self-provisions its venv + Chromium on
-// first run. This adds the tool dir to the User PATH (idempotent) and warms it
-// via `pwagent.cmd selftest`. Consent-gated: non-interactive without
-// --with-pwagent just prints the manual steps. Fail-soft throughout.
-async function setupPwagent({autoYes = false, dryRun = false} = {}) {
-  const dir = join(CLAUDE_DIR, 'tools', 'pwagent');
-  const cmd = join(dir, 'pwagent.cmd');
-  const norm = (p) => p.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
-  const onPath = (process.env.PATH || '').split(/[;:]/).some((p) => p && norm(p) === norm(dir));
-  const psPathCmd = `[Environment]::SetEnvironmentVariable('Path', ([Environment]::GetEnvironmentVariable('Path','User').TrimEnd(';') + ';${dir}'), 'User')`;
-
-  if (dryRun) {
-    log(`[pwagent] (dry-run) would add to User PATH: ${dir}`);
-    log(`[pwagent] (dry-run) would warm venv + Chromium via: "${cmd}" selftest`);
-    return 0;
-  }
-  if (!existsSync(cmd)) {
-    log(`[pwagent] WARN ${cmd} not found; skipping setup (reinstall PRISM to ship pwagent).`);
-    return 0;
-  }
-  if (!autoYes && !process.stdin.isTTY) {
-    log(`[pwagent] shipped to ${dir}.`);
-    log(`[pwagent] to enable: add it to PATH and run "${cmd}" selftest (first run creates .venv + downloads Chromium ~150MB).`);
-    log(`[pwagent] or re-run non-interactively: node tools/prism-installer.mjs setup-pwagent --with-pwagent`);
-    return 0;
-  }
-  if (onPath) {
-    log(`[pwagent] already on PATH: ${dir}`);
-  } else if (process.platform === 'win32') {
-    const r = spawnSync('powershell', ['-NoProfile', '-Command', psPathCmd], {encoding: 'utf8'});
-    log(r.status === 0
-      ? `[pwagent] added to User PATH (effective in new shells): ${dir}`
-      : `[pwagent] WARN PATH add failed; add manually: ${dir}`);
-  } else {
-    log(`[pwagent] add to PATH in your shell rc: ${dir}`);
-  }
-  log('[pwagent] warming venv + Chromium (first run, ~150MB; can take a few minutes)...');
-  const w = spawnSync(cmd, ['selftest'], {encoding: 'utf8', stdio: 'inherit'});
-  log(w.status === 0
-    ? '[pwagent] ready.'
-    : `[pwagent] WARN warm did not complete (Python 3.12 / network?). Run "${cmd}" selftest later.`);
-  return 0;
-}
-
 // ─── main ─────────────────────────────────────────────────────────────────────
 async function main() {
   if (!subcommand || subcommand === '--help' || subcommand === 'help' || subcommand === '-h') {
@@ -1198,12 +1209,6 @@ async function main() {
       break;
     case 'verify':
       verify();
-      break;
-    case 'setup-pwagent':
-      process.exit(await setupPwagent({
-        autoYes: restArgs.includes('--with-pwagent') || restArgs.includes('--yes'),
-        dryRun: restArgs.includes('--dry-run'),
-      }));
       break;
     default:
       console.error(`[prism-installer] Unknown subcommand: ${subcommand}`);

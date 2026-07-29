@@ -50,7 +50,65 @@ import {statSync, openSync, readSync, closeSync} from 'fs';
 // ordinary cross-session rename (TaskUpdate only) without proxying through
 // mergeOpenTasks' carried_from dormancy signal. Opt-in and additive — no
 // existing caller passes it, so this changes no existing behavior.
+// ── Residue detector (F40 forensics / F47 follow-up) — DETECT, NEVER REPAIR ─
+// Forensic finding (2026-07-28, task #57-adjacent investigation): a
+// platform-side tool-call boundary bug can leak literal wire-format markup
+// (`</parameter>`, `</invoke>`, `<parameter name="...">`) into a
+// TaskCreate/TaskUpdate `description` string when it sits next to another
+// large multi-line parameter in the same call. Verified NOT a defect in this
+// file: extractTaskSnapshot() reads `input.description` verbatim off an
+// already-JSON.parse'd object (TaskCreate below, TaskUpdate below) — there is
+// no regex/substring extraction to over-capture. The corruption is already
+// present in the raw transcript's tool_use.input before this file ever sees
+// it. This detector cannot fix that (nothing here can — it is upstream of
+// PRISM), so it only makes the miss LOUD (D046): flag, never alter/reject.
+//
+// FALSE-POSITIVE SAFETY — this is the load-bearing design constraint. A
+// legitimate lesson or task description ABOUT this very finding (this file's
+// own doc comments, for instance) will contain the literal substrings
+// `</parameter>`, `</invoke>`, `<parameter name=`. A bare substring-anywhere
+// check would misfire on every such reference. Narrowed instead to the two
+// shapes actually OBSERVED across the 6 known-corrupted records, each
+// ANCHORED AT THE LITERAL END of the string and requiring an UNPAIRED tag:
+//   Pattern A: a closing `</parameter></invoke>` pair with nothing after it —
+//     an orphaned close, no matching opener in this trailing span.
+//   Pattern B: an opening `<parameter name="...">` tag immediately following
+//     a `</description>` close, with NO closing tag before the string ends —
+//     an orphaned opener, the swallowed next-parameter's name+value.
+// A sentence that mentions, and then properly closes or quotes, these tags
+// mid-string will not match (the `$` anchor requires literal end-of-string,
+// and Pattern B additionally requires nothing containing `<` after the
+// opener). TRADEOFF, stated plainly: a description whose genuinely-final
+// content happens to be an intentionally-unclosed quotation of one of these
+// two exact shapes could still false-positive. That residual risk is
+// accepted because the detector is advisory-only (see callers below) — even
+// a false positive changes nothing about the captured record, it only adds a
+// flag a human can dismiss on sight.
+const RESIDUE_PATTERNS = [
+  /<\/parameter>\s*<\/invoke>\s*$/i,
+  /<\/description>\s*<parameter\s+name="[^"]*">[^<]*$/i,
+];
+
+function detectDescriptionResidue(text) {
+  if (typeof text !== 'string' || !text) return false;
+  try {
+    return RESIDUE_PATTERNS.some((re) => re.test(text));
+  } catch { return false; } // fail-open — detection must never break extraction
+}
+
 function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
+  // Baseline the new counter alongside its siblings (structured_hits etc.) so
+  // it is ALWAYS present at 0 rather than appearing only once residue is
+  // first seen — matches the caller's own {structured_hits:0, ...} seeding
+  // convention (hooks/prism-session-end.mjs) for a consistent meta shape.
+  // DENOMINATOR WARNING (do not "reconcile" this against structured_hits):
+  // structured_hits/regex_fallbacks/unmatched_task_results count EVERY
+  // resolved Task-tool-result ROW seen this scan. residue_detected counts
+  // only the SUBSET of those rows that additionally carried an observed
+  // `description` value matching a residue pattern — a row that touched only
+  // `status`/`subject`/etc. contributes to the former but never to this one.
+  // The two counters are not meant to sum to the same total.
+  if (counters && counters.residue_detected === undefined) counters.residue_detected = 0;
   const tasks = new Map(); // id (string) -> {id, subject, description, activeForm, status, blockedBy}
   const pendingCalls = new Map(); // tool_use_id -> {name, input}
   const TASK_TOOL_NAMES = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
@@ -121,9 +179,11 @@ function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
         if (id !== null) {
           resolved = true;
           if (createdIds) createdIds.add(String(id));
+          const description = call.input.description || '';
+          if (counters && detectDescriptionResidue(description)) counters.residue_detected++;
           upsert(id, {
             subject: call.input.subject || (tur && tur.task && tur.task.subject) || '',
-            description: call.input.description || '',
+            description,
             activeForm: call.input.activeForm || '',
             status: 'pending',
             blockedBy: call.input.blockedBy ?? null,
@@ -136,7 +196,10 @@ function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
           resolved = true;
           const patch = {};
           if (call.input.subject !== undefined) patch.subject = call.input.subject;
-          if (call.input.description !== undefined) patch.description = call.input.description;
+          if (call.input.description !== undefined) {
+            patch.description = call.input.description;
+            if (counters && detectDescriptionResidue(patch.description)) counters.residue_detected++;
+          }
           if (call.input.activeForm !== undefined) patch.activeForm = call.input.activeForm;
           if (call.input.blockedBy !== undefined) patch.blockedBy = call.input.blockedBy;
           if (call.input.status !== undefined) patch.status = call.input.status;
@@ -149,7 +212,10 @@ function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
           resolved = true;
           const patch = {};
           if (t.subject !== undefined) patch.subject = t.subject;
-          if (t.description !== undefined) patch.description = t.description;
+          if (t.description !== undefined) {
+            patch.description = t.description;
+            if (counters && detectDescriptionResidue(patch.description)) counters.residue_detected++;
+          }
           if (t.activeForm !== undefined) patch.activeForm = t.activeForm;
           if (t.status !== undefined) patch.status = t.status;
           if (t.blockedBy !== undefined) patch.blockedBy = t.blockedBy;
@@ -163,7 +229,10 @@ function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
             if (!t || t.id == null) continue;
             const patch = {};
             if (t.subject !== undefined) patch.subject = t.subject;
-            if (t.description !== undefined) patch.description = t.description;
+            if (t.description !== undefined) {
+              patch.description = t.description;
+              if (counters && detectDescriptionResidue(patch.description)) counters.residue_detected++;
+            }
             if (t.activeForm !== undefined) patch.activeForm = t.activeForm;
             if (t.status !== undefined) patch.status = t.status;
             if (t.blockedBy !== undefined) patch.blockedBy = t.blockedBy;
@@ -180,6 +249,23 @@ function extractTaskSnapshot(rawLines, counters = null, createdIds = null) {
       pendingCalls.delete(c.tool_use_id);
     }
   }
+
+  // Final per-task flag, checked against the FULLY MERGED description (later
+  // upserts may have replaced the value an earlier per-row check saw) — this
+  // is what actually gets persisted, so it's the one worth flagging. ADVISORY
+  // ONLY: adds a boolean key, never touches `description` itself. Omitted
+  // (not set to false) when clean, matching this file's existing "absence IS
+  // the unknown/not-applicable state" convention (see upsert()'s doc comment
+  // above) — a consumer checks `'description_residue_detected' in task`.
+  // Wrapped defensively so a detector bug can never break extraction itself
+  // (this function's own contract, stated at the top: "never throws").
+  try {
+    for (const t of tasks.values()) {
+      if ('description' in t && detectDescriptionResidue(t.description)) {
+        t.description_residue_detected = true;
+      }
+    }
+  } catch { /* fail-open — a flagging bug must never break the snapshot */ }
 
   return Array.from(tasks.values());
 }
@@ -433,4 +519,4 @@ function mergeOpenTasks(existingPayload, sessionOpenTasks, sessionTouchedIds, no
   return Array.from(merged.values()).filter(t => isOpenStatus(t.status));
 }
 
-export {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks, foldTaskRecords};
+export {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks, foldTaskRecords, detectDescriptionResidue};

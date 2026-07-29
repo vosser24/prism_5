@@ -1,0 +1,65 @@
+Commit session work in two commits
+Commit this session's work to master in TWO logical commits. This project commits directly to master — that is the established convention, do NOT create a branch.
+
+REPO: C:\Users\devuser\OneDrive - Example Corp Ltd\Documents\claude_projects\newsletter_automation
+
+ENVIRONMENT: The Bash tool is KNOWN-FLAKY on this OneDrive path (space-splits the cwd even when quoted). If a git command fails that way, retry via `powershell -NoProfile -Command "..."` with the repo path single-quoted. Do NOT use Set-Content/Out-File/`>` for any file writes. Never use `git add -A` or `git add .` — there are 222 untracked lines and a blanket add is explicitly forbidden here; stage by explicit path only. Do NOT use --no-verify. Do NOT push. Do NOT amend or rebase.
+
+=== STEP 0: verify green FIRST ===
+Run `.venv\Scripts\python -m pytest -q`. Expect `115 passed`. If it does NOT pass, STOP and report — do not commit.
+Then `git status --porcelain` and confirm the working set matches what is expected below.
+
+=== EXPECTED WORKING SET ===
+Modified (5): src/build_feed.py, src/render_element.py, templates/element-types/product_tile.json, tests/test_build_feed.py, tests/test_render_element.py
+Untracked: assets/pictos/, data/picto-map.json, docs/prism/specs/picto-mapping-rule.md, tests/test_picto.py, tools/, assets/marketing_guildines/feedback.docx, docs/prism/adjudications/D004-picto-generation-architecture.md, docs/prism/deviations/2026-07-21-picto-worker-deviation.md, and MODIFIED docs/prism/lessons/2026-07-21-session.md, docs/prism/plans/2026-07-21-SESSION-HANDOFF.md, .claude/agents/MEMORY.md, .claude/references/* (knowledge-index files), and possibly dist/2026-07-21-homepage-scraper/newsletter*.html.
+NOTE: `dist/` is gitignored EXCEPT newsletter.html which is force-tracked. Do not fight gitignore — just stage the paths listed below and let git ignore the rest.
+
+=== COMMIT 1 — marketing feedback Batch A ===
+Stage EXACTLY these by explicit path:
+  src/render_element.py  tests/test_render_element.py  templates/element-types/product_tile.json
+WAIT — product_tile.json also contains picto-zone config from commit 2's work. Inspect `git diff templates/element-types/product_tile.json`. If the picto-zone keys (asset_dir, picto_size, picto_filename, inner_pad) are mixed with the marketing type-scale changes and cannot be cleanly separated, put product_tile.json in COMMIT 2 instead and note it. Do not attempt a partial-file stage (git add -p) — too error-prone here; decide per whole file.
+render_element.py similarly contains BOTH the marketing fixes AND the picto compositing. Since they cannot be cleanly split at file granularity, put src/render_element.py and tests/test_render_element.py in COMMIT 2 (the picto commit), and let COMMIT 1 be only whatever is purely marketing. If that leaves commit 1 empty, SKIP commit 1 entirely and do everything as one commit — report which path you took and why.
+
+REALISTIC EXPECTATION: render_element.py, product_tile.json, and their tests contain intertwined marketing + picto work from the same session. A clean 2-commit split at file granularity is probably NOT possible. If so, do ONE commit instead (below). Use your judgment; report the decision.
+
+=== FALLBACK / LIKELY PATH — ONE commit ===
+If the split isn't clean, stage all of these by explicit path (NOT -A):
+  src/build_feed.py src/render_element.py templates/element-types/product_tile.json
+  tests/test_build_feed.py tests/test_render_element.py tests/test_picto.py
+  data/picto-map.json tools/ assets/pictos/ assets/marketing_guildines/feedback.docx
+  docs/prism/specs/picto-mapping-rule.md
+  docs/prism/adjudications/D004-picto-generation-architecture.md
+  docs/prism/deviations/2026-07-21-picto-worker-deviation.md
+  docs/prism/lessons/2026-07-21-session.md
+  docs/prism/plans/2026-07-21-SESSION-HANDOFF.md
+  .claude/agents/MEMORY.md .claude/references/
+  dist/2026-07-21-homepage-scraper/newsletter.html   (only if it is tracked/staged-able; skip if gitignore refuses)
+Commit message:
+feat(picto): spec->picto generation pipeline + marketing feedback Batch A
+
+Picto pipeline (per docs/prism/adjudications/D004):
+- tools/picto: generate.py (Neutraface outline typesetting, measured
+  archive spec), extract_icon.py (icon-layer lift), survey.py,
+  build_campaign.py (36 campaign assets from data/picto-map.json)
+- render_element: composite pictos into tile spec slots, text-chip
+  fallback when no asset resolves
+- build_feed: campaign_id wiring + build-time PICTO/TEXT-CHIP counter
+- data/picto-map.json: 36 entries (6 icon_reuse, 27 text_only, 3 rejected)
+- outlined paths only (Chromium serifs live <text>); scraped-label join;
+  near-match icons rejected, never substituted
+
+Marketing feedback Batch A (assets/marketing_guildines/feedback.docx):
+- strike-line stops before the euro sign
+- final price drops zero decimals
+- 4x-supersampled rounded corners
+- ambient photos cover-fit the frame
+
+Tests: 115 passed. Build: 36 PICTO, 0 TEXT CHIP fallback.
+docs/prism: D004 locked, worker-deviation record, session-4 lessons, handoff.
+
+Claude-Session: https://claude.ai/code/session_01Rm9FwZNcxWNsB1pnmkWEau
+
+=== AFTER COMMITTING ===
+Run `git log --oneline -3` and `git status --porcelain`. The tree should be clean of the staged paths (gitignored dist JPGs and scratch may remain — that is fine; report what remains).
+
+Report: the pytest line, which commit path you took (2-commit vs 1-commit) and why, the new commit SHA(s), and the final `git status`.

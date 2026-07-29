@@ -19,7 +19,7 @@
 //
 // v2.9.1 (ATOMIC-WRITE-001): every state write now uses tempfile + renameSync
 // with catch-fallback to direct writeFileSync. Matches v2.8.0 sentinel-write
-// pattern in prism-parent-dispatch-guard.mjs:90-107. Covers: project
+// pattern in writeSentinel() (hooks/prism-parent-dispatch-guard.mjs). Covers: project
 // .prism-state.json, context-audit .prism-context-audit.last, floor-hint
 // .prism-floor-hint.last. Prevents truncated state on crash during write.
 //
@@ -37,6 +37,8 @@
 // Output is throttled to once per 24h so it doesn't itself become noise.
 import {writeFileSync, readFileSync, renameSync, mkdirSync, existsSync, copyFileSync, readdirSync, unlinkSync, appendFileSync} from 'fs';
 import {join, isAbsolute} from 'path';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
+import {logAdvisory} from './lib/prism-advisory-log.mjs';
 // detached spawn (audit block) uses a dynamic import. The git-sha staleness
 // check below uses async execFile — deliberately NOT the blocking sync
 // child_process call — because this file was hardened after a prior
@@ -47,10 +49,11 @@ import {join, isAbsolute} from 'path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {pathToFileURL} from 'url';
+import {prismHome} from './lib/prism-home.mjs';
 
 const execFileAsync = promisify(execFile);
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const LAST_FILE = join(H, '.claude', '.prism-context-audit.last');
 const CACHE_FILE = join(H, '.claude', '.prism-context-audit.json');
 const AUDIT_TOOL = join(H, '.claude', 'tools', 'prism-context-audit.mjs');
@@ -131,18 +134,27 @@ function bootstrapPluginReferences() {
 
 // v2.9.1 ATOMIC-WRITE-001: tempfile + renameSync with catch-fallback to direct
 // writeFileSync. Matches v2.8.0 sentinel-write pattern in
-// prism-parent-dispatch-guard.mjs:90-107. Prevents truncated state JSON from
+// writeSentinel() (hooks/prism-parent-dispatch-guard.mjs). Prevents truncated state JSON from
 // crashes mid-write (disk-full, antivirus, process kill). Readers downstream
 // either see the previous valid file or the new one — never a partial.
 function atomicWrite(path, content) {
   try {
     const tmp = path + '.tmp';
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
-  } catch {
+    renameWithRetry(renameSync, tmp, path);
+  } catch (renameErr) {
     // Fallback: direct write. Windows EBUSY under antivirus can break rename;
     // direct write keeps state advancing. Readers have try/catch guards.
-    try { writeFileSync(path, content); } catch {}
+    // Bounded retry above (task #82/#88) reduces how often this degraded
+    // path is hit; when it is, log it rather than swallow it (D046).
+    try {
+      writeFileSync(path, content);
+      logAdvisory({event: 'session_start_atomic_write', path,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      logAdvisory({event: 'session_start_atomic_write', path,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -383,6 +395,33 @@ try {
     }
   } catch {}
 
+  // ── F7 Phase 4: panel completion-gate warning pickup ──
+  // Reads warning files written by prism-session-end.mjs's 0-seats panel
+  // completion gate (a panel latch whose window closed with ZERO recorded
+  // seats and no structural panel.json — a master narrated a panel but never
+  // dispatched a single Agent() seat). Mirrors the phase-0d verdict pickup
+  // block immediately above: cap at 5, prefix [Prior turn], unlink after
+  // pickup. Fail-open: any error skips this block entirely.
+  try {
+    const claudeDir = join(H, '.claude');
+    if (existsSync(claudeDir)) {
+      let entries = [];
+      try { entries = readdirSync(claudeDir); } catch {}
+      const gateFiles = entries
+        .filter(f => f.startsWith('.prism-panel-completion-warning-') && f.endsWith('.json'))
+        .slice(0, 5);  // cap surface area
+      for (const f of gateFiles) {
+        const filePath = join(claudeDir, f);
+        let v = null;
+        try { v = JSON.parse(readFileSync(filePath, 'utf-8')); } catch {}
+        if (v && v.message) {
+          notices.push(`[Prior turn] PRISM: a panel was narrated but never instrumented (0 seats, no panel.json) — ${v.message}`);
+        }
+        try { unlinkSync(filePath); } catch {}  // clear after pickup
+      }
+    }
+  } catch {}
+
   // ── K4 — master-override pickup: drain .prism-override-pending-*.json into the
   // routing log, count them, and advise. SessionStart cannot hard-block (exit-2
   // ignored), so PRISM_OVERRIDE_GATE=strict only escalates wording (ISSUE-4).
@@ -474,22 +513,6 @@ try {
           notices.push(`PRISM: active panel mode is ${mode} (overridden via PRISM_PANEL_MODE; default ${pmLib.DEFAULT_PANEL_MODE}). Honor this mode — assemble the PHASE 0d panel as ${mode} AND write \`dispatch_mode: "${mode}"\` in the panel.json (the panel-guard enforces the written value).`);
         }
       }
-    }
-  } catch {}
-
-  // ── v5.7 — self-healing claude-mem performance guard ──
-  // claude-mem auto-updates silently and, on Windows, its hooks (a) ran a ~1s
-  // login-shell PATH probe on every tool call and (b) bound a deterministic
-  // worker port (37777) that ghosts on abnormal exit and blocks every restart.
-  // This guard idempotently neutralizes the probe in the active hooks.json and
-  // pins the worker to a fresh port in claude-mem's own settings.json, re-
-  // asserting both after every claude-mem update. Config-only (manages no
-  // processes); fail-open. Off-switch: PRISM_DISABLE_CLAUDE_MEM_GUARD=1.
-  try {
-    const cmGuard = await import(pathToFileURL(join(H, '.claude', 'hooks', 'lib', 'prism-claude-mem-guard.mjs')).href).catch(() => null);
-    if (cmGuard && typeof cmGuard.healClaudeMem === 'function') {
-      const r = await cmGuard.healClaudeMem({home: H});
-      if (r && Array.isArray(r.notices)) { for (const n of r.notices) notices.push(n); }
     }
   } catch {}
 
@@ -677,6 +700,44 @@ try {
             }
           }
 
+          // ── SHA-STAMP-002 / D067: FROZEN-pointer detection ──────────────
+          // This pointer is only ever rewritten by hooks/prism-session-end.mjs
+          // when the transcript contains Task* tool events (gated on
+          // taskSnapshotPayload being non-null — see extractTaskSnapshot).
+          // Under a session-bound master persona (.claude/settings.json
+          // {"agent":...}), Task*/TodoWrite are stripped by the subagent
+          // tool-provisioning ceiling (D067), so no session under that config
+          // ever produces Task* events and this pointer is NEVER rewritten —
+          // it freezes at whatever it last captured. A healthy pointer is
+          // rewritten every SessionEnd, so material age on `ts` means "not
+          // refreshing", i.e. frozen — not merely "old". This is additive to
+          // staleTag above: SHA-STAMP-001 only compares repo HEAD position
+          // (a pointer can read [CURRENT] if HEAD hasn't moved, yet still be
+          // frozen in wall-clock time). Threshold via PRISM_TASK_RECALL_
+          // FROZEN_DAYS (positive number, default 2). Fail-open: an absent or
+          // unparseable `ts` just skips the flag — never throws.
+          let frozenLine = '';
+          const rawFrozenDays = Number.parseFloat(process.env.PRISM_TASK_RECALL_FROZEN_DAYS);
+          const frozenDays = (Number.isFinite(rawFrozenDays) && rawFrozenDays > 0) ? rawFrozenDays : 2;
+          if (pointer.ts) {
+            const tsMs = Date.parse(pointer.ts);
+            if (Number.isFinite(tsMs)) {
+              const ageMs = Date.now() - tsMs;
+              if (ageMs > frozenDays * 24 * 60 * 60 * 1000) {
+                const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+                frozenLine =
+                  `\nFROZEN POINTER (D067): this carryover pointer was last written ${pointer.ts} ` +
+                  `(${ageDays} day${ageDays === 1 ? '' : 's'} ago) and has NOT refreshed since. ` +
+                  `Under this project's master-persona config the Task* tools are disabled (see ` +
+                  `docs/prism/adjudications/D067-master-persona-agent-field-strips-task-tools.md), so ` +
+                  `this pointer CANNOT self-update or self-clear and its listed task(s) MAY ALREADY BE ` +
+                  `CLOSED. VERIFY against the latest docs/prism/plans/*SESSION-HANDOFF* before trusting ` +
+                  `any task here; if confirmed stale, clear/repair it via ` +
+                  `\`node tools/prism-repair-open-tasks.mjs\`.`;
+              }
+            }
+          }
+
           // ── PAYLOAD-CUT-001 (2026-07-14 audit) — cap by COUNT, never by
           // truncating content. The audit found this block averages ~1,673
           // bytes/task (D040 §5 anti-brevity, working as designed) with NO
@@ -801,6 +862,7 @@ try {
             integrityLine +
             carriedUnverifiedLine +
             idCollisionLine +
+            frozenLine +
             `\n</TASK-RECALL>`;
           notices.push(taskRecall);
         }
@@ -851,6 +913,54 @@ try {
                 : '') +
               ` </HANDOFF-RECALL>`;
             notices.push(handoffRecall);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // ── SHA-STAMP-003 / T7 — DEPLOY DRIFT reminder ──────────────────────────
+  // "Committed to the repo" != "deployed to ~/.claude": only
+  // `node tools/prism-installer.mjs install` copies files into the live
+  // hook set. D064/D065 found several Locked fixes sat committed-but-
+  // undeployed for days with no signal. The installer stamps
+  // <install-target>/.prism-installed-sha.json with the HEAD sha it
+  // deployed (SHA-STAMP-003 in tools/prism-installer.mjs); this block just
+  // compares that stamp to the CURRENT repo HEAD and — ONLY when the repo
+  // is ahead of what was last deployed — injects a one-line reminder.
+  // Deliberately a sha STAMP comparison, not content hashing: D063 bars
+  // hashing from hot paths (a full-tree hash costs ~10s over this SMB
+  // share); reusing getGitHeadSha/getCommitDistance keeps this to the same
+  // two cheap, timeout-bounded git calls SHA-STAMP-001/002 already pay.
+  // Off-switch: PRISM_DISABLE_DEPLOY_DRIFT=1. Fail-open: any error (no
+  // stamp file, malformed JSON, git unavailable, etc.) skips silently —
+  // never breaks SessionStart.
+  if (process.env.PRISM_DISABLE_DEPLOY_DRIFT !== '1') {
+    try {
+      const stampPath = join(H, '.claude', '.prism-installed-sha.json');
+      if (existsSync(stampPath)) {
+        let stamp = null;
+        try { stamp = JSON.parse(readFileSync(stampPath, 'utf-8')); } catch {}
+        if (stamp && typeof stamp.sha === 'string' && stamp.sha) {
+          const head = await getGitHeadSha(process.cwd());
+          if (head && stamp.sha !== head) {
+            const dist = await getCommitDistance(process.cwd(), stamp.sha, head);
+            if (dist !== null && dist > 0) {
+              notices.push(
+                `⚠ DEPLOY DRIFT (T7): repo is ${dist} commit${dist === 1 ? '' : 's'} ahead of the last PRISM install ` +
+                `(deployed ${stamp.ts || '(unknown time)'}). The live ~/.claude hooks do NOT include your latest ` +
+                `committed changes — run: node tools/prism-installer.mjs install`
+              );
+            } else {
+              // dist === null (unrelated histories / stamp sha not in repo)
+              // OR dist === 0 (installed sha is AHEAD of HEAD — repo rewound).
+              // Neither case supports an honest commit count.
+              const short = stamp.sha.slice(0, 8);
+              notices.push(
+                `⚠ DEPLOY DRIFT (T7): installed PRISM sha (${short}) differs from repo HEAD and their relationship ` +
+                `is indeterminate — verify with: node tools/prism-installer.mjs verify`
+              );
+            }
           }
         }
       }

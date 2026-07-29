@@ -393,7 +393,9 @@ Each agent gets a persistent NotebookLM notebook:
   query the notebook instead of re-researching. The sources are already there.
 
 Agent.md must include:
-- YAML: name, description (pushy), tools, model, maxTurns, memory: true
+- YAML: name, description (pushy), tools, model, maxTurns, memory: project
+  (native enum is `user | project | local` — never the legacy `true`;
+  `project` is the default for generated specialist agents)
 - YAML tools line MUST include the four Task tools — `TaskCreate, TaskUpdate, TaskList, TaskGet`
   — appended to whatever domain tools the agent needs (e.g.
   `tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, TaskList, TaskGet`).

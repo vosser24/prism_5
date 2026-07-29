@@ -80,6 +80,17 @@ export const SM_STATUS_OPEN_RE = /^\s*(?:phase\s+\d+\s+(?:complete|done)|task\s*
 export const SM_ASSIGN_RE = /\b(?:new task|task\s*#\d+|your task|you are (?:a|the) [^\n]{0,80}\b(?:worker|specialist|agent)\b)/i;
 export const SM_CRITERIA_RE = /\b(?:acceptance|deliverables?|done when|budget\b[^\n]{0,40}\btool calls)\b/i;
 
+// D057 §2b (owner-decided, Locked): "P6 binds the Agent-path FOOTER only. The
+// SendMessage rendering appends HOLDING_STRING_BAN as clause 7 and is outside
+// P6's scope." This is the same out-of-scope rendering — clause 8, local to
+// runSendMessage(), never touches the Agent-path FOOTER/D057 budget.
+// Evidence: docs/prism/lessons/2026-07-21-session.md:225-231 ("L4 — `name:`
+// on an Agent dispatch trades a returned result for a mailbox") — a named
+// teammate's output does not return as a tool result; only a payload-free
+// idle_notification does. The teammate must SendMessage itself or the report
+// is silently lost. No code fix was shipped for that lesson until now.
+export const TEAMMATE_REPORT_REQUIRED = 'You are a NAMED teammate — your output does NOT return to the caller as a tool result, only a payload-free idle_notification does. You MUST call SendMessage yourself to deliver your findings before going idle. Plain-text output with no SendMessage, or silence, is a FAILED result, not a completed one.';
+
 function runSendMessage(input) {
   const quiet = {exit: 0, stdout: '', stderr: ''};
   if (String(process.env.PRISM_SENDMESSAGE_ROUTE ?? 'on').toLowerCase() === 'off') return quiet;
@@ -99,8 +110,8 @@ function runSendMessage(input) {
   const out = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      updatedInput: {...ti, message: message + '\n' + FOOTER + '\n7. ' + HOLDING_STRING_BAN},
-      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence, holding-string-is-a-failed-result). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
+      updatedInput: {...ti, message: message + '\n' + FOOTER + '\n7. ' + HOLDING_STRING_BAN + '\n8. ' + TEAMMATE_REPORT_REQUIRED},
+      additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to a SendMessage work assignment (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence, holding-string-is-a-failed-result, named-teammate-must-sendmessage-before-idle). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in assignment messages yourself.',
     },
   };
   return {exit: 0, stdout: JSON.stringify(out), stderr: ''};
@@ -131,12 +142,48 @@ export function run(input) {
     const alreadyOurs = PRESENT_RE.test(prompt);
     if (alreadyOurs && !siblingFired) return {exit: 0, stdout: '', stderr: ''};
 
-    const augmented = alreadyOurs ? basePrompt : (basePrompt + '\n' + FOOTER);
+    // D089 (task #43, 2026-07-28) — TEAMMATE_REPORT_REQUIRED on the CREATION
+    // path. Until now this clause reached ONLY runSendMessage(), and only for
+    // messages clearing all five gates above. A teammate created by
+    // Agent({name:...}) and never handed a NEW qualifying work assignment could
+    // therefore receive it by NO path at all: it completed silently and its
+    // report was lost. D062 (Locked, 2026-07-22) documented this exact
+    // mechanism and declined a 7th FOOTER clause because "that budget has no
+    // room left" — correct about the budget, but the constraint only ever
+    // applied to the FOOTER constant itself.
+    //
+    // So this is appended OUTSIDE the shared FOOTER constant, exactly as
+    // runSendMessage() composes on top of it at line 113. D057 §2b's rationale
+    // — "the 6-clause/1100-char budget is a property of the shared FOOTER
+    // constant that both paths compose on top of" — governs a third rendering
+    // by its own logic (owner ruling, D089: the RATIONALE generalises even
+    // though §2b's LETTER addressed a pre-existing delta). FOOTER is
+    // byte-unchanged; test 6f measures the UNNAMED Agent payload and still
+    // reports 1085 chars / 6 clauses. Tests 7c/7d are the regression guard.
+    //
+    // ORDINAL: "7." here, not "8.". The Agent path's FOOTER ends at 6 and
+    // HOLDING_STRING_BAN arrives UNNUMBERED inside prism-anti-nesting-inject's
+    // footer, so no clause 7 exists on this path to displace. Same clause text
+    // as SendMessage's clause 8, different ordinal per rendering.
+    //
+    // Name-conditional via ti.name — the shipped Agent-path idiom, see
+    // hooks/prism-panel-name-guard.mjs:87 (trim-then-truthiness).
+    //
+    // RESIDUAL (D057 §5, unchanged by this fix): TaskCreate hand-offs are not
+    // routed to this hook, so task-description hand-offs remain uncovered.
+    const teammateName = typeof ti.name === 'string' ? ti.name.trim() : '';
+    const footerBlock = teammateName
+      ? FOOTER + '\n7. ' + TEAMMATE_REPORT_REQUIRED
+      : FOOTER;
+
+    const augmented = alreadyOurs ? basePrompt : (basePrompt + '\n' + footerBlock);
     const out = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         updatedInput: {...ti, prompt: augmented},
-        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
+        additionalContext: 'PRISM: dispatch-preamble clauses auto-appended to the worker prompt (write-to-disk, no-bug-is-a-valid-outcome, reproduce-first, artifacts-not-prose, karpathy-discipline, absence-needs-evidence'
+          + (teammateName ? ', named-teammate-must-sendmessage-before-idle' : '')
+          + '). If your runtime does not honor PreToolUse arg-rewrite, include the clauses in worker prompts yourself.',
       },
     };
     return {exit: 0, stdout: JSON.stringify(out), stderr: ''};

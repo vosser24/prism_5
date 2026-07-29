@@ -42,7 +42,7 @@
 //   - Sentinel-aware mode handling (soft / hard) and routing-log writes:
 //     prism-agent-model-guard.mjs:200-238 (v2.9.1 split semantics shape).
 //   - Atomic tempfile + rename + catch-fallback: copied verbatim from
-//     prism-parent-dispatch-guard.mjs:90-107 (used here only for the
+//     writeSentinel() in prism-parent-dispatch-guard.mjs (used here only for the
 //     small "last-flag-summary" cache so the same panel doesn't re-flag
 //     on every Stop event in a chained turn).
 //   - Three-path subagent-bypass (parent_tool_use_id /
@@ -67,6 +67,7 @@
 // over the (typically <50KB) subagent output. No network, no heavy parse.
 
 import {readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, renameSync} from 'node:fs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 import {join, dirname, basename} from 'node:path';
 import {createHash} from 'node:crypto';
 import {prismHome} from './lib/prism-home.mjs';
@@ -131,15 +132,26 @@ function readFlagCache(sessionId) {
 }
 
 // Atomic tempfile + rename + catch-fallback — verbatim shape from
-// prism-parent-dispatch-guard.mjs:90-107.
+// writeSentinel() in hooks/prism-parent-dispatch-guard.mjs.
+// Bounded retry (task #82/#88) absorbs the transient Windows AV/indexer
+// handle-lock window before degrading; the degraded path is logged rather
+// than silent (D046).
 function writeFlagCache(sessionId, payload) {
+  const p = flagCachePath(sessionId);
+  const tmp = p + '.tmp';
+  const body = JSON.stringify(payload, null, 2);
   try {
-    const p = flagCachePath(sessionId);
-    const tmp = p + '.tmp';
-    writeFileSync(tmp, JSON.stringify(payload, null, 2));
-    renameSync(tmp, p);
-  } catch {
-    try { writeFileSync(flagCachePath(sessionId), JSON.stringify(payload, null, 2)); } catch {}
+    writeFileSync(tmp, body);
+    renameWithRetry(renameSync, tmp, p);
+  } catch (renameErr) {
+    try {
+      writeFileSync(p, body);
+      appendLog({event: 'panel_guard_flag_cache_write', session_id: sessionId,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      appendLog({event: 'panel_guard_flag_cache_write', session_id: sessionId,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -571,9 +583,19 @@ function panelPathFromPayload(payload) {
 
 // Classify why a position was dropped.
 // Returns a reason string, or null if the position should NOT be logged.
+//
+// RB-07: bare cross-cutting archetype seats (Security/Skeptic/Architect/...)
+// legitimately carry no `specialist` — the panel-summoning protocol
+// (prism-prompt-tier-router.mjs panelSeatSourcingBlock step 4) explicitly
+// instructs "Cross-cutting archetype seats ... stay untagged". Reuses
+// seatRequiresProvenance — the SAME archetype-vs-domain judge already used by
+// checkFactoryFirst/detectAdHocSeats in this file — rather than a new
+// whitelist.
 function classifyDropReason(position) {
   const challenges = position.challenges ?? [];
   if (challenges.length === 0) return 'insufficient_challenges';
+  const who = position.title ?? position.expert_name ?? position.specialist ?? '';
+  if (position.vertical !== true && !seatRequiresProvenance(who)) return null;
   // A specialist key is required for a position to be valid.
   if (!position.specialist) return 'specialist_unknown';
   return null;
@@ -584,7 +606,8 @@ function atomicWritePanel(filePath, obj) {
   const content = JSON.stringify(obj, null, 2);
   const tmp = filePath + '.tmp';
   writeFileSync(tmp, content, 'utf-8');
-  renameSync(tmp, filePath);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, filePath);
 }
 
 // Q2: classify a challenge's evidence into the 7-class taxonomy at panel-write.
@@ -601,15 +624,62 @@ function classifyEvidenceClass(challenge) {
   return 'REASONED-INFERENCE'; // logically derived, no citation
 }
 
-function classifyPanelEvidence(panel) {
+// F24 — canonical 7-class evidence taxonomy, extracted from
+// classifyEvidenceClass()'s own return set (single in-file source of truth;
+// reused below rather than hardcoding a fourth copy — the reviewer.md and
+// router.mjs copies are the other two, per the drift test in
+// test-phase-0d-schema-parity.mjs). classifyEvidenceClass() returns ONLY
+// these values.
+export const EVIDENCE_CLASSES = Object.freeze([
+  'PRECEDENT', 'MEASUREMENT', 'SPEC', 'QUOTE', 'DEMO',
+  'REASONED-INFERENCE', 'CHALLENGE-SUBSTANCE',
+]);
+const EVIDENCE_CLASS_SET = new Set(EVIDENCE_CLASSES);
+
+// F24 — RB-16 proved the chair can write an OUT-OF-TAXONOMY evidence_class
+// ("CODE-GROUNDED", observed live 4x in .prism-routing.jsonl phase_0d_challenge
+// events, task_sha widget-forge-group-commit-20260727) despite
+// prism-prompt-tier-router.mjs:172 explicitly instructing "ONLY these 7
+// values — never invent others". Instruction-only enforcement is
+// insufficient for this field; it needs a structural check. The pre-fix gate
+// here was `!c.evidence_class` — ABSENCE-ONLY — so a present-but-illegal
+// value passed through untouched. Fixed gate: fill if absent OR value not in
+// the canonical 7-set. On illegal, COERCE (so downstream consumers always
+// get a legal value) AND emit an advisory telemetry record capturing the
+// ORIGINAL illegal value (so the chair's disobedience stays visible instead
+// of being silently lost — see task filing F24).
+function classifyPanelEvidence(panel, panelPath) {
   let mutated = false;
+  const illegal = [];
   for (const position of panel.positions ?? []) {
     for (const c of position.challenges ?? []) {
-      if (c && typeof c === 'object' && !c.evidence_class) {
-        c.evidence_class = classifyEvidenceClass(c);
+      if (!c || typeof c !== 'object') continue;
+      const current = c.evidence_class;
+      const isIllegal = !!current && !EVIDENCE_CLASS_SET.has(current);
+      if (!current || isIllegal) {
+        const coerced = classifyEvidenceClass(c);
+        if (isIllegal) {
+          illegal.push({
+            title: position.title ?? position.name ?? '(unnamed)',
+            illegal_value: current,
+            coerced_to: coerced,
+          });
+        }
+        c.evidence_class = coerced;
         mutated = true;
       }
     }
+  }
+  if (illegal.length > 0) {
+    appendLog({
+      ts: new Date().toISOString(),
+      event: 'panel_guard_evidence_class_illegal',
+      schema_version: 1,
+      panel_path: panelPath ?? null,
+      task_id: panel.task_id ?? null,
+      illegal_count: illegal.length,
+      illegal,
+    });
   }
   return mutated;
 }
@@ -620,6 +690,7 @@ function classifyPanelEvidence(panel) {
 // by check* helpers; the CLI path (handleDroppedPositions) converts them back.
 export function runPostToolUse(payload) {
   const input = payload || {};
+  const sessionId = input.session_id ?? null;
   const panelPath = panelPathFromPayload(input);
   if (!panelPath) return { exit: 0, stdout: '', stderr: '' }; // R2: not a panel.json write
 
@@ -654,20 +725,41 @@ export function runPostToolUse(payload) {
     checkAlternatives(panel);
 
     // Q2 — classify challenge evidence_class at panel-write (single source of truth).
-    const evidenceMutated = classifyPanelEvidence(panel);
+    const evidenceMutated = classifyPanelEvidence(panel, panelPath);
 
     const ts = new Date().toISOString();
     const newDrops = [];
+    // F8 — panel self-contradiction advisory candidates. classifyDropReason()
+    // checks `challenges.length === 0` FIRST (→ 'insufficient_challenges'), so
+    // 'specialist_unknown' is only ever reachable when challenges.length > 0
+    // — meaning every specialist_unknown drop is BY CONSTRUCTION a seat that
+    // still carries live challenges in positions[] (dropped_positions is an
+    // append-only annotation log; positions are never removed — see the
+    // classifyDropReason doc comment above). That's a chair-construction
+    // inconsistency (bare general-purpose seat given a vertical-sounding
+    // title) worth flagging as an ADVISORY, not a gate change.
+    const consistencyCandidates = [];
 
     for (const position of (panel.positions ?? [])) {
       const reason = classifyDropReason(position);
       if (reason === null) continue;
+      const title = position.title ?? position.name ?? '(unnamed)';
       newDrops.push({
-        position: position.title ?? position.name ?? '(unnamed)',
+        position: title,
         reason,
         dropped_at_phase: '0d',
         ts,
       });
+      if (reason === 'specialist_unknown') {
+        const challenges = position.challenges ?? [];
+        if (challenges.length > 0) {
+          consistencyCandidates.push({
+            title,
+            specialist: position.specialist ?? null,
+            challenge_count: challenges.length,
+          });
+        }
+      }
     }
 
     // Push dropped_positions only when there ARE drops (no spurious empty pushes).
@@ -695,6 +787,25 @@ export function runPostToolUse(payload) {
         panel_path: panelPath,
         dropped_count: newDrops.length,
         dropped_positions: newDrops.map(d => ({position: d.position, reason: d.reason})),
+      });
+    }
+
+    // F8 — panel self-contradiction advisory (observe-only; never affects
+    // exit/drop behavior). Fires when a seat sits in BOTH positions[] (with
+    // live challenges from a dispatched agent) AND dropped_positions[]
+    // (specialist_unknown) — the chair gave a bare general-purpose seat a
+    // vertical-sounding title, which the provenance gate flagged, while the
+    // seat's real challenges were left untouched in positions[].
+    for (const c of consistencyCandidates) {
+      appendLog({
+        ts,
+        event: 'panel_guard_consistency',
+        schema_version: 4,
+        session_id: sessionId,
+        title: c.title,
+        specialist: c.specialist,
+        reason: 'seat present in both positions[] and dropped_positions[] (specialist_unknown) with live challenges',
+        challenge_count: c.challenge_count,
       });
     }
 

@@ -9,6 +9,17 @@
 // Pure, dependency-free, and FAIL-OPEN: any missing/malformed input yields '' (or
 // just the groups that parsed) and NEVER throws.
 
+// F46 (task #63, 2026-07-28): the agent-status filter below used to be its own
+// single-literal `status === 'available'` check — a SECOND, independently
+// duplicated copy of the exact status-vocabulary bug task #54 fixed in
+// prism-specialist-routing-guard.mjs (F37). A live roster agent has status
+// 'active' or 'upgrade_needed' as well as 'available' (see LIVE_STATUSES'
+// header comment in that file for the full census). Importing the one
+// allow-list here — instead of re-deriving a second literal set — is the
+// D096 fix-class: ONE explicit live-state predicate, single-sourced, so a
+// future vocabulary drift can only diverge in one place, not two.
+import { isLiveStatus, statusCensus } from '../prism-specialist-routing-guard.mjs';
+
 // Generous defensive cap. Normal case injects the whole inventory well under this.
 const MAX_BYTES = 32 * 1024;
 
@@ -59,12 +70,24 @@ export function buildCapabilityCatalog(roster) {
   try {
     if (!roster || typeof roster !== 'object') return '';
 
-    // Agents — exclude archived / non-available. Absent status ⇒ treat available.
+    // Agents — exclude archived / dead-status. F46: reuse the single-sourced
+    // isLiveStatus() allow-list (LIVE_STATUSES: available/active/upgrade_needed,
+    // absent/null/'' also live) instead of the old bare `=== 'available'` check,
+    // which silently dropped e.g. claude-master (status:'active').
     const agentRows = collectRows(
       roster.agents,
-      (_n, e) => e && e.archived !== true && (e.status === undefined || e.status === 'available'),
+      (_n, e) => e && e.archived !== true && isLiveStatus(e),
       purposeFrom,
     );
+
+    // D046/D096 loud census: count what this filter actually threw away, and
+    // NAME the offending status literal(s) — a silent count of 0 excluded looks
+    // identical to "the filter is broken and excludes everything", so this must
+    // always be visible on the card, not just logged when non-zero.
+    const agentCensus = statusCensus(roster);
+    const agentsSeen = (roster.agents && typeof roster.agents === 'object')
+      ? Object.keys(roster.agents).filter((n) => !n.startsWith('_')).length
+      : 0;
 
     // Skills split into plugin (source starts "plugin:") vs the rest (prism/user).
     const isPlugin = (e) => !!(e && typeof e.source === 'string' && e.source.startsWith('plugin:'));
@@ -89,8 +112,19 @@ export function buildCapabilityCatalog(roster) {
       return oneLine(dom + status);
     });
 
+    // Archived count, computed the same way the routing guard's census does
+    // (name-prefix-skipped, archived===true), so "kept + archived + excluded
+    // by status" reconciles against agentsSeen without a silent remainder.
+    const archivedCount = (roster.agents && typeof roster.agents === 'object')
+      ? Object.entries(roster.agents).filter(([n, e]) => !n.startsWith('_') && e && e.archived === true).length
+      : 0;
+    const agentCensusLine = `_(agents: ${agentRows.length}/${agentsSeen} kept` +
+      (archivedCount > 0 ? `, ${archivedCount} archived` : '') +
+      (agentCensus.excluded_by_status > 0 ? `, ${agentCensus.excluded_by_status} excluded by status: ${agentCensus.excluded_statuses.join(', ')}` : '') +
+      ')_';
+
     const sections = [];
-    if (agentRows.length) sections.push('## Agents\n' + agentRows.join('\n'));
+    if (agentRows.length) sections.push('## Agents\n' + agentRows.join('\n') + '\n' + agentCensusLine);
     if (skillRows.length) sections.push('## Skills\n' + skillRows.join('\n'));
     if (pluginRows.length) sections.push('## Plugin skills\n' + pluginRows.join('\n'));
     if (toolRows.length) sections.push('## Tools\n' + toolRows.join('\n'));

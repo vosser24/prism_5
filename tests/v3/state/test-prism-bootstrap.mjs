@@ -655,44 +655,6 @@ test('install-statusline: refuses when source script missing (exit 12)', () => {
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-// v5.1 — detect-claude-mem (drives the bootstrap claude-mem install-offer)
-// ─────────────────────────────────────────────────────────────────────────
-
-test('detect-claude-mem: installed=false when no ~/.claude-mem dir and no settings reference', () => {
-  const home = makeHomeSandbox('cm-absent');
-  try {
-    const r = runStatusline('detect-claude-mem', home);
-    assertEq(r.status, 0, r.stderr);
-    const out = JSON.parse(r.stdout);
-    assertEq(out.installed, false);
-  } finally { rmSync(home, {recursive: true, force: true}); }
-});
-
-test('detect-claude-mem: installed=true when ~/.claude-mem/ data dir present', () => {
-  const home = makeHomeSandbox('cm-dir');
-  try {
-    mkdirSync(join(home, '.claude-mem'), {recursive: true});
-    const r = runStatusline('detect-claude-mem', home);
-    assertEq(r.status, 0, r.stderr);
-    const out = JSON.parse(r.stdout);
-    assertEq(out.installed, true);
-  } finally { rmSync(home, {recursive: true, force: true}); }
-});
-
-test('detect-claude-mem: installed=true when settings.json references claude-mem', () => {
-  const home = makeHomeSandbox('cm-settings');
-  try {
-    mkdirSync(join(home, '.claude'), {recursive: true});
-    writeFileSync(join(home, '.claude', 'settings.json'),
-      JSON.stringify({hooks: {SessionStart: [{hooks: [{type: 'command', command: 'npx claude-mem load'}]}]}}, null, 2));
-    const r = runStatusline('detect-claude-mem', home);
-    assertEq(r.status, 0, r.stderr);
-    const out = JSON.parse(r.stdout);
-    assertEq(out.installed, true);
-  } finally { rmSync(home, {recursive: true, force: true}); }
-});
-
 // ------------------------------ summary ------------------------------
 
 process.stdout.write(`\n${pass} passed, ${fail} failed\n`);

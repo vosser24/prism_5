@@ -343,6 +343,29 @@ test('memory-seed: writes MEMORY.md with router sections from profile JSON', () 
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('F45 (task #62): the seeded "Recent decisions"/"Recent lessons" headings derive their ' +
+     'count from lib/memory-heal.mjs POINTER_KEEP (not a stale hard-coded "10"), and the ' +
+     'lessons heading no longer falsely claims "pointer-only" (prism-clean\'s appendLesson ' +
+     'writes inline text per D083 1a)', () => {
+  const root = makeTestbed('memseed-headings');
+  try {
+    mkdirSync(join(root, '.claude', 'agents'), {recursive: true});
+    const r = run(root, 'memory-seed', '--slug', 'foo', '--profile', '{"stack":"test"}');
+    assertEq(r.status, 0, r.stderr);
+    const body = readFileSync(join(root, '.claude', 'agents', 'MEMORY.md'), 'utf8');
+    // POINTER_KEEP is 20 in lib/memory-heal.mjs as of this test — asserting the
+    // LITERAL derived value (not just "not 10") catches a future drift back to
+    // a hard-coded string just as surely as the old bug did.
+    assert(/## Recent decisions \(last 20, pointer-only\)/.test(body),
+      'decisions heading must derive count from POINTER_KEEP and keep "pointer-only" ' +
+      '(still true for both write paths); body was:\n' + body);
+    assert(/## Recent lessons \(last 20, pointer or inline text\)/.test(body),
+      'lessons heading must derive count from POINTER_KEEP and drop the false ' +
+      '"pointer-only" claim; body was:\n' + body);
+    assert(!/last 10/.test(body), 'no stale hard-coded "last 10" may remain; body was:\n' + body);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('memory-seed: exits 8 when generated MEMORY.md exceeds 25 KB', () => {
   const root = makeTestbed('memseed-big');
   try {

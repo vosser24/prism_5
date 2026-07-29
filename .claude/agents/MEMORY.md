@@ -7,76 +7,68 @@
 
 ## Project profile
 
-Stack and datasources are owned by the always-loaded root `CLAUDE.md`
-"Project Identity" section — deleted here (D046 #4) rather than hand-
-duplicated: a second hand-written copy rots independently of the first,
-and CLAUDE.md is already injected on every turn regardless.
+Stack/datasources: see root `CLAUDE.md` "Project Identity" — not
+duplicated here (D046 #4: a hand-copy rots independently of the source).
 
-Active work is likewise not hand-tracked here. It is surfaced every
-SessionStart by the TASK-RECALL block (`hooks/prism-session-start.mjs`
-C6), generated deterministically from `.claude/.prism-open-tasks.json`
-(written by SessionEnd's task snapshot, `hooks/lib/prism-task-snapshot.mjs`)
-— with staleness tagging, a self-clearing integrity line, and a
-"+N more — call TaskList" pointer so nothing is silently dropped. That
-generator already exists and already fires automatically; a hand-written
-"Active workstreams" list here would duplicate it with none of that
-staleness protection — which is exactly the D046 #4 defect this section
-used to be (seeded 2026-06-19, last content still describing v5.10-v5.12
-work on a v6.4+ codebase). If no TASK-RECALL block appears in a given
-session, that means `.claude/.prism-open-tasks.json` is absent/empty or
-`PRISM_DISABLE_TASK_RECALL=1` — NOT "no active work"; run `TaskList` to
-check (a missing signal is not evidence of "none" — D047).
+Active work: NOT hand-tracked here — surfaced every SessionStart by the
+TASK-RECALL block (`hooks/prism-session-start.mjs` C6) from
+`.claude/.prism-open-tasks.json`, with staleness tagging and a
+"+N more — call TaskList" overflow pointer. No TASK-RECALL block means
+the file is absent/empty or `PRISM_DISABLE_TASK_RECALL=1` — NOT "no
+active work" (D047: absence of a signal isn't evidence of "none"); run
+`TaskList` to check. Full rationale: `docs/prism/adjudications/D046-*.md`.
 
-## Recent decisions (last 10, pointer-only)
+## Recent decisions (last 12, pointer-only)
 
 <!-- /prism-clean appends `[[D###]]` lines here per Phase H. -->
 
-- [[D050]] Lesson-match rule-token seeding dropped for precision; kwSet multiplier is the real tension
-- [[D050]] Lesson-match recall via rule-token seeding — dropped for precision; the kwSet multiplier is the real tension
-- [[D051]] OOB reviewer arming — induce the panel.json write, keep Phase-1.5 tag-only, gate+measure panel-seat
-- [[D052]] Bounded rule-token seed for lesson-match recall — retained as recall layer; precision claim WITHDRAWN by D053
-- [[D053]] Corpus-distinctiveness DF=1 anchor gate — kills the D050 lesson-match over-fire class by construction; D023 formula/threshold untouched
-- [[D054]] Panel seat-sourcing is force-injected AND provenance-instrumented at panel.json write-time; schema-shown must equal schema-enforced; ships observe-first (PRISM_PANEL_PROVENANCE) — measure before flip
-- [[D054]] Panel seat-sourcing is force-injected AND provenance-enforced at panel.json write-time
-- [[D053]] D053 — Corpus-distinctiveness (DF=1) anchor gate for lesson-match precision
-- [[D055]] Live-agents ledger keys on per-instance agent_id, not agent type
-- [[D056]] Specialist-routing guard precision: stoplist ambient name-tokens + score-2 nudge floor
+NOTE: `docs/prism/` (adjudications/, lessons/, plans/, deviations/ — the D### and
+lessons files these pointers resolve to) is intentionally gitignored (`.gitignore:26`,
+owner-confirmed 2026-07-27) — machine-local, not shipped by a fresh clone. Root
+CLAUDE.md's "consult adjudications before changing phase machinery" points at nothing there.
+
+- [[D060]] D060 — Test-isolation protocol for guard measurement: you cannot measure a guard from inside a dispatch _(Proposed)_
+- [[D082]] Mutation-guard's missing D043 teams downgrade is intentional-by-default-inaction _(Withdrawn)_
+- [[D086]] Fail-open paths must be observable — fail-open is correct, fail-SILENT is not _(Proposed)_
+- [[D098]] D098 — A document that DESCRIBES an operation must not be treated as PERFORMING it _(Locked)_
+- [[D099]] The standing-rules block is zero-sum — tiering is a trade, never an addition _(Locked)_
+- [[D101]] D101 — First owner selection of the `Tier: core` set: D063 and D065 _(Locked)_
+- [[D102]] D102 — Performance gates must be relative to a same-session baseline, never an absolute wall-clock threshold _(Locked)_
+- [[D105]] Force-push safety gate widened to cover -f/+refspec; corrects D044 (d)
+- [[D106]] Mirror push is agent-permitted once gates are green; supersedes the human-only framing
+- [[D107]] Scope a verification to the artifact, not to the instrument's output
+- [[D104]] D104 — An inherited absence claim must be re-verified before it is acted on _(Locked)_
+- [[D108]] The mirror PII gate accounts for findings; it does not merely report them _(Proposed)_
 
 ## Recent lessons (last 10, pointer-only)
 
 <!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->
 
-- [[lessons-tactical#2026-07-19]] 60-prompt UAT: #56 holding-string reproduced live; D049 dormancy confirmed 3x; /prism-health asserts config-presence not live-firing; a quiet guard is not a working guard (models self-comply first)
-- [[lessons-tactical#2026-07-19]] Cross-model no-author validation caught 3 regressions green tests missed (R1 session)
-- [[lessons#2026-07-20-session]] Tactical lessons — 2026-07-20 R1 implement+validate session
-- [[lessons-tactical#2026-07-20]] R2/R3/D051 session — measure-before-build, kwSet-inflation over-fire, fable-e2e catches silent wiring
-- [[lessons#2026-07-20-session-addendum-2]] Strategic + tactical lessons — 2026-07-20 addendum #2 (#77 panel-governance fix)
-- [[lessons#2026-07-20-session-addendum]] Tactical lessons — 2026-07-20 addendum (handoff-resume: #58 recall gate + #71/#75/#76)
-- [[lessons-tactical#2026-07-20]] #86 live-agents: installed-vs-repo hooks; serialize shared-file edits (concurrent edits contaminate verification)
-- [[lessons-tactical#2026-07-21]] Handoff PENDING lists decay — re-verify carried tickets before acting (6 already shipped)
-- [[lessons-tactical#2026-07-21]] Reconcile before building — compose-first applies to auditing existing mechanisms (D056 guard already existed)
-- [[lessons-tactical#2026-07-21]] Absence-claim discipline — read the source field before claiming X has no Y (classifier bucket is not evidence)
+- [2026-07-29] D098's failure mode bit the ratifier during D098's own ratification
+- [2026-07-29] Historical quotations are testimony, not policy
+- [2026-07-29] Verify the artifact, not the idle signal — late delivery is not lost delivery
+- [2026-07-29] Full task descriptions are on disk when TaskGet is unavailable
+- [2026-07-29] Two granularities of FAIL that can disagree in one suite run
+- [2026-07-29] A deliberately shared temp path races across concurrent processes (AUDIT_HOME)
+- [2026-07-29] TaskUpdate's owner field is a dispatch, not bookkeeping
+- [2026-07-29] Piping to tail reports tail's exit code, not the tool's
+- [2026-07-29] Synthetic-mirror tests break on any new cross-boundary import
+- [2026-07-29] A comment citing another file's line numbers rots silently, and incidental sweeps miss most copies
 
 ## Session log
 
 <!-- /prism-clean appends session-summary lines here. -->
 
-- [2026-07-19] Ran full 60-prompt UAT baseline on v6.6.1 (parent-driven claude -p harness; ~48 PASS/4 FAIL/3 PARTIAL/5 INCONCLUSIVE); #56 reproduced LIVE (subagents cant drive nested panel sessions); D049 dormancy confirmed 3x (#16 OOB reviewers, #18 file-lease-guard, #42 health reports config-presence not live-firing); authored F1-F12 surgical fix plan via fable
-- [2026-07-19] Implemented + fable-validated Release R1 (F1-A/F1-C/F3/F4/F8/F9/F11/F12, all PASS, uncommitted); dropped F5 for over-firing (D050); reconciled #24/#25/#42 as already-shipped; filed follow-ups #57/#58/#66
-- [2026-07-19] Committed R1 as 8 per-fix commits on branch prism-r1-observability (79856c859..529fa0859, guards green); NOT merged/pushed/installed — next: merge to main + installer install to activate global hooks
-- [2026-07-20] Merged R1+R2+R3 to main + installed; shipped follow-ups #57/#66; built D051 OOB-arming (phase-0d panel.json-write injection + gated panel-seat arming + /prism-health honesty), fable-e2e verified, on branch prism-followups-57-58-66 (unmerged); #58 2nd approach (distinctive-token) failed fable battery via kwSet inflation and was reverted (top-N next); filed #71/#75/#76
-- [2026-07-20] Resumed handoff → SHIPPED #58 lesson-match recall gap as corpus-distinctiveness DF=1 anchor gate (D053) after round-1 rule-token seed (D052) FAILED independent fable validation (D050 over-fire class: 9-entry fire on a natural prompt); structural guarantee held under 18 counterexample probes; caught+fixed a 3rd-writer (knowledge-delta.mjs self-heal) drift bug. +#71/#75/#76 hygiene (test-home leak, phase_0d health-honesty marker, stale dispatcher test). Released 6.6.2 (dfaaf0b36), installed+verified, pushed origin (0/0). Workflow: fable-design→opus/sonnet-build→fable-adversarial-validate. Then ran D044 PII scan → 2 machine-local leaks found (scan caught 1, orchestrator ground-truth re-grep caught the 2nd in test-repair-open-tasks.mjs) + scrubbed (a2331b96c); PUBLISHED prism5 snapshot v6.6.2 (364eae008), tree==main verified. Nothing pending — origin + prism5 both current.
-- [2026-07-20] User caught the orchestrator improvising ad-hoc general-purpose panelists instead of roster+@agent-factory assembly → diagnosed PRISM's OWN panel governance as un-validated (forensic probe: 4-layer D046/D049 gap — underspecified force-inject, schema-shown≠enforced, ≥1-dispatch proxy, silent vertical-tag skip). SHIPPED #77/D054 via fable-design→opus-build→fable-adversarial-validate: force-inject seat-sourcing discipline + deterministic roster fit-list (prism-prompt-tier-router), align shown==enforced schema, observe-first provenance detector (prism-panel-guard detectAdHocSeats, PRISM_PANEL_PROVENANCE=observe default). Round-1 FAILED independent validation (gameable "<domain> domain expert" escape) → tightened to vertical-signal classifier, re-validated PASS (narrow 2/22 residual). Released 6.6.3 (9190eaf18), installed+verified, pushed origin (0/0), D044-scanned clean + PUBLISHED prism5 v6.6.3 (d53e7d2c8), tree==main. NEXT-PHASE (future, measured): flip PRISM_PANEL_PROVENANCE observe→soft→hard after confirming ~0 false-positives on live panels.
-- [2026-07-20] Shipped #86 live-agents ledger per-instance agent_id keying (v6.6.4, commit 15033bce0, branch fix/86-live-agents-per-instance-keying, push HELD); E3 live-probe confirmed agent_id present+identical at Start/Stop; D055 + full D042 suite + independent no-author validation; remaining: push + fresh-session re-probe.
-- [2026-07-21] Shipped #86 v6.6.4 to origin/main + prism5 mirror (c7e1fc852); fresh-session re-probe confirmed per-instance ledger keying live; re-verified backlog — all 6 carried tickets (#24/#25/#42/#58/#71/#75/#76) already closed.
-- [2026-07-21] Shipped v6.6.5/D056 specialist-routing guard precision (stoplist ambient name-tokens + score-2 nudge floor + instrumentation) to origin+prism5 after 3-seat panel, TDD, no-author review, isolated uat-60 gate; backfilled 5 roster core_domains (#98).
-- [2026-07-21] Shipped claude-master core_domains (2816275f8, prism5 c3e443f4d); corrected #98 (reconcile additive-only, frontmatter is source, OOB reviewers un-matched); designed D057 absence-claim gate + surgical fix plan for a fresh session.
-
-## Recent lessons (new pointer)
-
-- [[lessons#2026-06-23-6.0.0-engagement-gate]] verify-what-fired; red-team-before-design; monotonic-bool > RMW counter; 1.8x orchestration floor = dont-orchestrate-routine; soft-default + measure before enforce-flip; prove wiring with E2E test.
-- [[lessons#2026-07-20-addendum]] #58 DF=1 recall gate (D053) after round-1 (D052) FAILED independent fable validation; structural-guarantee > tuning; grep-ALL-writers drift catch; verify-the-handed-premise (#75); proportional rigor; 6.6.2 shipped.
-- [[lessons#2026-07-20-addendum-2]] #77 panel-governance fix (D054): PRISM's OWN Team-Assembly shipped un-validated (4-layer D046/D049 gap) → force-inject discipline + align schema-shown==enforced + observe-first provenance gate; no-author validator caught a gameable boundary round-1; 6.6.3 shipped + mirrored.
+- [2026-07-28] Resumed 2026-07-27 handoff: deployed+committed the stale tree (5 commits, #46 closed, deployed_uncommitted proof captured then cleared). Validated all 10 carried tasks in 4 parallel validators — #16 CLOSED as phantom (fixed 3 days pre-filing), #22/#32 premises re-measured and corrected, rest hold. Shipped D083 Phase 1 (#45): inline lessons, standing-rules cap 12->30, lesson-match logging; standing rules 12->30, D063 restored, MEMORY.md 15457->22189. Panel's acceptance criterion found SELF-SATISFYING -> D084. #43 reframed to a citable defect (clause 8 never reaches Agent path, fenced by D057). New: D084/D085/D086, F33 (#47 rename retry).
+- [2026-07-28] Session 2: split the D087 umbrella three ways after investigation REFUTED the identity thesis for #43; shipped chair-only tier sentinel (D087 Locked) + clause 7 on named Agent creation (D089); promoted D043 to Locked; closed 9 tasks; re-verified all 5 open tasks, correcting #32 and refuting #51.
+- [2026-07-28] Session 3: shipped d5e63c246 (70 files) — F36 dedup fixed structurally via excess-over-background (5 mechanisms measured, chair's top-ranked pick proved a no-op), F21 prismHome sweep 64 sites/55 files, F32 characterised+instrumented but deliberately unfixed (negation-blindness), D090 standing-rules cap 30->35 preventing eviction of D045-D051. 5 adjudications promoted Locked (D080/D081/D084/D085/D089), D088 §3 contradiction corrected. Suite 231 files 230 ok 1 expected red; 0 drift; pushed to origin. Captured D091/D092 + session-3 lessons with FIVE misfire classes. New findings #54-#58 filed.
+- [2026-07-28] Session 4: evidence-first census REJECTED the shared guard-scoring library (D094); #58 corpus fix DELETED the no-baseline branch after measuring 578 pairs in the never-sampled 0.40-0.90 band that the interim 0.60 was silently dropping 165 of (D095); D088+D093 ratified Locked; adjudication retirement mechanism shipped; status allow-list fixed a silent exclusion that hid claude-master from this session's own capability catalog (D096); closed #50/#51/#54/#56/#58/#59, filed #60-#64; 2 commits dc313a909+40c129da6, suite 232 ok / 1 expected red.
+- [2026-07-28] Session 5: resumed the session-4 handoff, all 8 carried tasks resolved (#32 characterised-no-fix, #57 platform-side + residue detector, #60 AMBIENT_ENV_TERMS, #61/#62 retirements+heading, #63 claude-master restored, #64 verification convention); found F48 D093 self-retiring, #66 live F38 instance, F49 mutation-guard blocks commit prose, F50 git-stats SHA silent 58x overcount; D097 tiering ratified implementation open as #69; D098 Proposed synthesis of the self-reference class; 5 commits 24 files, suite 233/232/1, deployed and verified
+- [2026-07-29] Session 6: closed the entire session-5 handoff in 4 commits (F49 mutation-guard heredoc/-m stripping after the chair rejected round-1's newline concession; F50 git-stats SHA-as-revision; D097 Tier core shipped with a 7-rule owner-chosen core set; F38 fixture helper with explicit list plus transitive-import scan that throws). Suite 235 files / 1 expected red, 0 drift, deployed and D065-verified in installed artifacts. Release audit found NO blockers, recommends 6.7.0; prism_5 mirror is a real public remote 4 versions behind with NO PII scan gating the push (D044 §e still open). Captured D099 (standing-rules block is zero-sum: tiering evicts one-for-one). Filed #70-#74; chair made 3 measurement errors, all caught.
+- [2026-07-29] Session 7: resumed session-6 handoff and shipped 6.7.0 (7506f42f1) + follow-up (82caf52c2), both deployed and D065-verified in installed artifacts; closed D044 gap-e with a shipped PII scanner after finding REAL PII (employer name, two correlated usernames, live paths) in the tracked tree bound for the PUBLIC mirror, plus two .gitignore-matched-but-tracked files -> D100 Locked; took D097's deferred owner call promoting D063+D065 to Tier core -> D101; Proposed queue 21->6 with D091 REFUSED on its false premise then ratified on merits; 5 handed premises refuted plus the chair's own 83pct perf regression retracted as contention noise (#79); push deferred by owner.
+- [2026-07-29] Session 8: resumed handoff-7, closed #79 with a contention-resistant ratio perf gate after the worker REFUTED the chair's I/O-bound reproduction hypothesis by measurement (disk-only never flipped; CPU flipped 5/5); D102 Proposed generalizes perf-gates-must-be-relative; 2 commits 210f2b938+c8c3c4f0b, suite 235 files 1 expected red, tree clean, unpushed. Chair made three errors all caught: wrong load-lever inference, two wrong mechanism reconstructions for #80, and a green-gate claim on a suite that ran mid-edit. Filed #80-#85 (TaskUpdate-owner-write-is-dispatch, writeDedup atomicity DEFECT cited at prism-lesson-match.mjs:129-131, sibling PERF CLI same defect, prism-clean census ordering, MEMORY.md heading drift); net +5 tasks, 9 open.
+- [2026-07-29] Session 9: closed the entire session-8 handoff (9 tasks) in 3 commits d79e023d6+d96fda569+75ab05635, all deployed and D065-verified; ratified D098/D099/D101/D102/D103 with evictions D071-D075 measured before AND after the flip, withdrew D082, killed dormant task #93; #82 writeDedup fixed via the already-existing renameWithRetry helper then found to be a hand-copied template across ~20 sites (#88); #83 PERF CLI now a with/without ratio holding 0.897x-1.208x while the old ceiling flipped 5/5 under load; D103's census-after-capture fix validated on its own first run (3 -> 4, catching D104); chair handed workers FOUR false premises (TaskGet availability, a census step that never existed, 6-vs-13 citation sites from an undisclosed grep scope, and #80's wrong lease glob that disarmed a working control all session) and every one was caught by a worker who measured; captured D104, session-9 lessons, and a ledger deviation; 23 commits unpushed.
+- [2026-07-29] Session 10: closed #87/#88/#90/#91/#92 in 5 commits (76be71791, 7c681b595, 32fbf9ccd, d69ccd81c, 4ea23ccd0), all deployed and D065-verified; #92 reopened TWICE — the PII scanner's own patterns were plaintext owner PII, and the fix reintroduced the email in its explanatory comment where the scanner structurally could not match it, caught only by grepping the tracked tree independently of the tool (D107); force-push gate was bypassable by -f and +refspec, contradicting D044(d)'s 'an agent could not have pushed' claim (D105); owner reversed the human-only mirror-push policy to agent-permitted-once-gates-green, blocked on #93 (D106); D104 ratified Locked, displacing D076 from the 35-slot cap; #90's flake reproduced as a machine-global AUDIT_HOME race; six times a plausible measurement was wrong, three of them the chair's.
 
 ## Standing rules
 
@@ -84,18 +76,41 @@ Imperatives drawn from the most important Locked adjudications (auto-generated �
 see `tools/lib/memory-heal.mjs regenerateStandingRules`, D-recall-hardening C2/C3):
 
 <!-- prism:standing-rules:start (AUTO-GENERATED from Locked adjudication **Rule:** lines by tools/lib/memory-heal.mjs — do not hand-edit between anchors) -->
-- **D056:** PRISM's specialist-routing guard must match on DOMAIN signal, not ambient agent-name tokens — stoplist repo-ambient name-segments (claude, prism, code, …) in agentTerms() and require score≥2 to nudge; do NOT promote to enforce or widen the buildScore classifier until the newly-instrumented nudge-compliance data justifies it.
-- **D055:** Key the live-agents ledger on the per-instance `agent_id` via `extractAgentKey` (falling back to agent type only when absent) and age-cap `running` entries — never key ledger status on agent TYPE, which collapses concurrent same-type dispatches into one flickering slot.
-- **D054:** On a panel-summoning turn PRISM MUST force-inject the roster-first then factory-fill then tag-provenance seat-sourcing discipline (never a bare general-purpose/persona fill for a vertical seat), and the panel.json provenance detector MUST infer vertical (not require the explicit tag) and run regardless of dispatch_mode; the schema shown to the model MUST equal the schema the guard enforces.
-- **D053:** Admit a lesson-match fire only if the prompt shares >=1 token unique to
-- **D052:** Seed the lesson-match keyword map from title+slug+ref PLUS rule tokens in
-- **D051:** The phase-0d/panel OOB reviewers have NO deterministic producer — `panel.json`'s content (positions + challenges) IS the master's LLM reasoning, so a hook can only write an empty skeleton that carries nothing to review; do NOT build a fake producer. Instead INDUCE the write via the reliable injection channel (F4 clause-in-prompt, gated on `summon_panel`), mandating ONE **direct Write tool call** to the final `.prism-task-<sha>/panel.json` (a tempfile+rename or Bash/heredoc write bypasses the PostToolUse Write event and the reviewer silently never fires). Keep Phase-1.5 arming **tag-only** by default; ship panel-seat arming **gated OFF** (`PRISM_PANEL_SEAT_OOB`) and **instrumented** (`arm_reason: tagged|panel-seat`) so it can be MEASURED before any default-on flip (D028: no evidence yet it beats master-chaired review). `/prism-health` reports tagged / phase-0d / panel-seat as three DISTINCT lines and never says "armed" without a genuine non-mock recent fire.
-- **D048:** The repair tool's cross-transcript fold must carry fields forward WITHIN a task's own transcript history (so a later status-only update never blanks an earlier subject) AND flag — never silently weld — cross-session id collisions; neither main's ca6854cb1 (carries fields but field-bleeds on collision) nor the 2026-07-18 branch version (no field-bleed but blanks subject) satisfies both, so the tool stays HELD BACK from install until the combined fix (task #24) lands.
-- **D047:** A field that collapses "no" and "didn't check" into one value is VACUOUS — populated, well-typed, structurally valid, and evidence-free; make the third state (UNKNOWN/never-measured) representable at the producer, then classify the CONSUMER as code (enforceable) or prompt-spec (advisory-only ceiling), and never report a green whose denominator you chose yourself.
-- **D046:** PRISM's memory/handoff/routing defects are omissive "silent under-reporting" (a structured path fails silently → a regex/manual fallback emits plausible output → nothing reports the miss); fix by making misses LOUD (ledger + surface-at-consumption), NEVER by permissive parsers; KEEP-AND-FIX not uninstall (uninstall is measured-safe but protects nothing — all defects are omissive); snapshot unversioned knowledge before any change.
+- **D023:** Inject the Rule imperative text, not a file pointer; raise match threshold to 0.15; zero-suppress Locked adjudications in the dedup window.
+- **D043:** A guard whose state is session-global cannot gate per-caller — under agent-teams (all teammates share one `session_id`) PRISM's `dispatched` flag is set and wiped by ANY agent's message, producing silent false-ALLOWS as well as loud false-denies; never document a single-actor guarantee for a mechanism with multi-actor shared state, and never infer a guard is working from the absence of complaints — its permissive failures are silent by construction.
 - **D045:** In agent-teams (all teammates share one `session_id`), the dispatch guard's session-global `dispatched` flag CANNOT gate per-caller — ship it ADVISORY in teams topology (fail-safe, gated on `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), make every borrowed-unlock VISIBLE (`borrowed_unlock` event + in-band advisory) so the silent false-allow becomes measurable, and close write-collisions via a DECLARED-identity lease; NEVER build a per-caller HARD gate on payload fields that do not carry caller identity.
-- **D044:** Before pushing to any PUBLIC remote (prism_5), run an exhaustive PII scan on the actual commit-tree object; already-tracked files are leak vectors that .gitignore does NOT retroactively cover (git rm --cached to untrack); the release commit itself must pass the same PII scan — test fixtures included.
-- **D042:** A guard is not proven until it has been demonstrated to FIRE on a bad input AND STAY QUIET on a good one. One path is not proof. A lesson violated twice is a missing guard, not a missing paragraph.
+- **D046:** PRISM's memory/handoff/routing defects are omissive "silent under-reporting" (a structured path fails silently → a regex/manual fallback emits plausible output → nothing reports the miss); fix by making misses LOUD (ledger + surface-at-consumption), NEVER by permissive parsers; KEEP-AND-FIX not uninstall (uninstall is measured-safe but protects nothing — all defects are omissive); snapshot unversioned knowledge before any change.
+- **D047:** A field that collapses "no" and "didn't check" into one value is VACUOUS — populated, well-typed, structurally valid, and evidence-free; make the third state (UNKNOWN/never-measured) representable at the producer, then classify the CONSUMER as code (enforceable) or prompt-spec (advisory-only ceiling), and never report a green whose denominator you chose yourself.
+- **D057:** Before writing that something is absent, empty, missing, or unmatched, read and QUOTE the source field you are describing — a value from a classifier, inference, or default bucket is not evidence the source lacks data; before removing, collapsing, or quieting an existing mechanism, QUOTE the comment saying why it is there. This tripwire covers a MEASURED ~34–37% of organic absence phrasing (anchored on the largest family, `has/have/had no X`) — treat it as a tripwire, never as enforcement.
+- **D059:** Re-measure every state-prediction in a plan authored in a prior session before executing it — a plan is evidence of intent, never evidence of state, and where its predictions conflict with a fresh measurement the measurement wins.
+- **D063:** Never make `runVerifyInner()` content-aware; wire content-drift detection through the standalone `verify` CLI subcommand shelling out to `tools/prism-drift-check.mjs`, leaving the install-time verify call (`tools/prism-installer.mjs:725`) on the cheap existence-only path.
+- **D065:** Never report a fix as "shipped" on the strength of a commit alone — verify the INSTALLED artifact under `~/.claude/` actually changed (byte-diff or `prism-installer.mjs verify`'s drift check), because committing to the repo does not run `tools/prism-installer.mjs install` and therefore does not deploy anything.
+- **D107:** Scope a verification to the ARTIFACT you are making a claim about
+- **D104:** Before ACTING on an absence claim you inherited from a task, handoff, or prior finding — especially before declining to use a control it says does not exist — RE-RUN its verification command and confirm the command itself is correct; a claim of absence is only as good as the search that produced it, and a wrong glob, path, or scope produces a confident, durable, and completely false "nothing here".
+- **D103:** Any Proposed-adjudication queue count written into a session handoff or a task description (e.g. task #74's tracking) MUST be taken (or re-taken) after Step 4 of `/prism-clean` has finished writing this session's own artifacts — never carried over from a count taken earlier in the session or from a prior handoff.
+- **D102:** Never gate a test on an absolute wall-clock threshold; measure a same-session baseline whose cost tracks the code under test and assert the RATIO — and when placing the ratio ceiling, state the observed range, the denominator, and explicitly that the band above the maximum observation is unmeasured.
+- **D101:** Promote a standing rule to `**Tier:** core` only as an explicit owner decision and only as a TRADE — core membership is subtracted from the same 35-slot cap, so each promotion evicts one more non-core rule; measure and name the displaced rule before promoting, never after.
+- **D100:** `.gitignore` never untracks a file that was already committed, so gitignore status is NOT a shipping guarantee — use `git ls-files <path>` to decide whether a file ships, and `git check-ignore -v --no-index <path>` (never bare `check-ignore`, which is silent for tracked paths) to prove a rule matches.
+- **D099:** State the eviction set before adding any rule to the `**Tier:** core` set — the standing-rules block holds a fixed `cap` number of entries, so promoting N rules to core evicts the N weakest date-ranked non-core rules one-for-one; never present tiering as protecting a rule without naming which rules it displaces.
+- **D098:** Scope or anchor any pattern-match so that self-reference is impossible BY CONSTRUCTION, never merely unlikely — a parser reading a document that DESCRIBES its own format (a worked example, boilerplate prose, a comment) must not treat that description as the real thing. "Narrow the regex until it stops misfiring on the fixtures at hand" does NOT satisfy this: the test is whether a document ABOUT the pattern can still trip the matcher. This is Proposed, not Locked — it synthesizes an observed pattern across three unrelated incidents in one session; it is not yet an owner ratification.
+- **D097:** Add a `**Tier:** core` header field that exempts an owner-designated core set of standing rules from the date-ordered sort — date-ordering systematically evicts foundational and defect-class rules for being old while recent situational adjudications occupy the block. Do not resolve this by raising the count cap again; that repeats [[D090]]'s already-exhausted trade. Which rules belong in the core set is a SEPARATE, not-yet-taken owner decision — this file ratifies the MECHANISM only.
+- **D096:** Filter roster agents against ONE explicit live-state allow-list imported from a single module ({available, active, upgrade_needed} plus absent/null), so unknown future values fail CLOSED, and log every exclusion with the offending literal instead of widening the parser silently.
+- **D095:** Measure the interval a threshold divides before you place it — a cut inside a region containing zero observations is unfalsifiable, and if the region really is empty say so with the denominator, because "empty" and "never looked" are different states.
+- **D094:** Before unifying several guards behind a shared scoring library, census whether they actually share a MECHANISM — and if they do not, unify their telemetry instead so every guard logs its own denominator.
+- **D093:** Retire a spent adjudication by APPENDING a `**Retired:** YYYY-MM-DD — <reason>` line to its header block — never by editing its `**Status:**` line; retirement removes the rule from the always-on standing-rules block ONLY, the knowledge index must keep scanning it so it stays keyword-recallable, and only the owner may retire.
+- **D092:** Label any ranked candidate list in a dispatch brief as the chair's PRIOR and require the worker to measure every candidate — including the top-ranked one — before adopting any; a brief that says "in order of preference" without that instruction invites a compliant worker to ship the chair's untested guess as a fix.
+- **D091:** Scope the acceptance criterion to the blast radius — a refactor touching every file in `hooks/`+`tools/` must gate on the full suite, never on targeted tests plus `prism-installer.mjs verify`, because `verify` proves presence, wiring, drift and installed-tree import resolution but proves NOTHING about behaviour or about test-fixture integrity.
+- **D090:** When the Locked-adjudication count pushes the standing-rules block to its cap, raise `regenerateStandingRules`'s `cap` default (never the `MEMORY_MD_HARD_CAP_BYTES` byte ceiling, and never `orderNewestFirst`'s tiebreak) by only as much as the measured eviction set requires, and re-verify actual post-change membership and byte size before calling it done.
+- **D089:** When an `Agent()` dispatch carries `name:`, append `TEAMMATE_REPORT_REQUIRED` to the worker prompt OUTSIDE the shared `FOOTER` constant — never by adding a clause to `FOOTER` itself, which stays locked at 6 clauses / 1100 chars per D057 §2.
+- **D088:** A `commands/*.md` whose PROTOCOL section writes a persistent file that other tooling later reads as machine state (e.g. `roster.json`) may not stay prose-only — it needs a backing script, or it must be documented as unverifiable/best-effort until one exists. A prose-only doc that only reports, delegates, or performs read-only transforms needs no script.
+- **D087:** Only the CHAIR may write the shared turn-tier sentinel — gate the dispatch-guard's `.prism-turn-tier-*.json` exemption on `CLAUDE_CODE_CHILD_SESSION !== '1'` and suppress the tier-override directive on the same predicate, always failing OPEN (env absent, non-`'1'`, or throwing → ALLOW) and LOGGING the fail-open; never broadcast an instruction to write state you then deny.
+- **D085:** Implement D083's three recall repairs as decided — inline lesson text (no pointer), raise the standing-rules cap to 30 leaving the tiebreak untouched, and log every lesson-match invocation including the no-match and index-unavailable paths — and do not re-open the four rejected alternatives.
+- **D084:** Scope every acceptance check to the exact region it is asserting about — a check that greps a whole artifact whose prose discusses the identifier under test is self-satisfying and will report GREEN against an unfixed system.
+- **D083:** Before building any new recall/injection channel, repair and instrument the delivery layer that already exists — a Locked adjudication with a valid `**Rule:**` line can be silently evicted from the always-on layer by an arbitrary sort key while 41% of the byte budget sits unused, and `hooks/prism-lesson-match.mjs` emits no log on any path, so no recall failure-rate can be computed to justify anything.
+- **D081:** In a parallel batch, deployment is a single post-batch step owned by the orchestrator; workers may run read-only `verify` but must never run `install`.
+- **D080:** A finding observed in model-improvised code must be verified against a shipped artifact — and name the specific file+line it would be fixed in — before it is promoted from observation to fix task.
+- **D079:** Hooks must hand the model already-resolved absolute paths, never `~` forms.
+- **D078:** A natural-path panel probe is only valid with zero mechanism coaching — the chair asking clarifying questions about the problem domain is legitimate, but coaching the chair on the exact file-write/instrumentation mechanics needed to trip the hooks invalidates the probe.
 <!-- prism:standing-rules:end -->
 
 ## Active specialists

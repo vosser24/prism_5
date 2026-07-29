@@ -34,7 +34,7 @@ export async function run(payload) {
 
     const cwd = input.cwd || process.cwd();
 
-    const res = spawnSync('git', ['status', '--porcelain'], {
+    const res = spawnSync('git', ['--no-optional-locks', 'status', '--porcelain'], {
       cwd,
       encoding: 'utf-8',
       timeout: 5000,

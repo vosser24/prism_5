@@ -25,8 +25,10 @@
 import {readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, appendFileSync} from 'node:fs';
 import {join, dirname, sep, basename} from 'node:path';
 import {scoreAgent} from './lib/prism-agent-quality.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.USERPROFILE || process.env.HOME || '';
+const H = prismHome();
 const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 const SKILL_DOMAIN_MAP = join(H, '.claude', 'skills', 'prism-plan', 'references', 'skill-domain-map.json');
 const SCORECARD_DIR = join(H, '.claude', '.prism-quality');
@@ -66,8 +68,19 @@ function writeScorecardAtomic(name, card) {
     mkdirSync(SCORECARD_DIR, {recursive: true});
     const p = join(SCORECARD_DIR, `${name}.json`);
     const tmp = p + '.tmp.' + process.pid;
-    writeFileSync(tmp, JSON.stringify(card, null, 2) + '\n');
-    try { renameSync(tmp, p); } catch { writeFileSync(p, JSON.stringify(card, null, 2) + '\n'); }
+    const body = JSON.stringify(card, null, 2) + '\n';
+    writeFileSync(tmp, body);
+    try { renameWithRetry(renameSync, tmp, p); }
+    catch (renameErr) {
+      try {
+        writeFileSync(p, body);
+        appendLog({event: 'agent_quality_gate_scorecard_write', agent: name,
+          status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+      } catch (fallbackErr) {
+        appendLog({event: 'agent_quality_gate_scorecard_write', agent: name,
+          status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+      }
+    }
   } catch {}
 }
 function appendLog(obj) {

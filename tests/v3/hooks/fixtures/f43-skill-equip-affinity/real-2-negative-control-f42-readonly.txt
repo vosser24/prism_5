@@ -1,0 +1,35 @@
+Repo: C:\dev\prism_3. This is a READ-ONLY investigation of task #59 / finding F42. Do NOT edit ANY file. Do NOT write to .claude/agents/MEMORY.md under any circumstances — it is live, a sibling worker's action will change it, and the SessionStart hook regenerates it. Your only output is your final message. Do NOT run `node tools/prism-installer.mjs install` (D081, Locked — deployment is orchestrator-owned).
+
+Emit your step list FIRST, then execute. Tool-call budget: ~25.
+Compute and report YOUR OWN result; do NOT spawn a child agent and relay its status as your answer. A holding string as a final message is a FAILED result.
+
+=== THE FINDING (F42, task #59) ===
+"The MEMORY.md 'Recent lessons' router is a last-10 window that one busy session can flush entirely."
+
+.claude/agents/MEMORY.md is PRISM's persistent project memory, injected at every session start. It has a "## Recent lessons (last 10, pointer-only)" section that /prism-clean appends to. The concern: it is a fixed last-10 window, so a single productive session that captures 10+ lessons evicts EVERY lesson from every prior session in one shot. Look at the current file — all 10 entries are dated 2026-07-28. That is the symptom, and it is consistent with the finding, but consistency is not proof of the mechanism.
+
+=== ⚠️ A CONCURRENT WRITER IS LIVE — ACCOUNT FOR IT ===
+A sibling worker is ratifying an adjudication (D088) to Locked RIGHT NOW. Locked adjudications feed the SEPARATE "## Standing rules" block via tools/lib/memory-heal.mjs `regenerateStandingRules`. So MEMORY.md's byte size WILL move under you during this investigation. Treat any single byte reading as a SAMPLE, not a stable fact — state when you measured it, and never report a byte count as if it were settled. Do not conclude "the file is X bytes" without that caveat.
+
+=== WHAT TO ESTABLISH ===
+1. FIND THE ACTUAL MECHANISM. Read tools/lib/memory-heal.mjs and any /prism-clean append path (search for `append-lesson`, `Recent lessons`, and the cap constants). QUOTE by file:line the code that enforces the 10-entry window. Per D057 (Locked): before writing that something is absent, missing, or unmatched, read and QUOTE the source field you are describing. If you cannot find an enforced cap in code — i.e. the window is a PROSE CONVENTION in the file's comment rather than enforced logic — that is a materially different (and more interesting) finding. Say which it is.
+
+2. DISTINGUISH THE TWO BLOCKS. MEMORY.md has at least two capped regions that must not be conflated:
+   - "## Standing rules" — AUTO-GENERATED between anchor comments from Locked adjudication **Rule:** lines. Cap is 35 (raised from 30 by adjudication D090 this week, precisely because a Locked rule had been silently evicted). Governed by regenerateStandingRules.
+   - "## Recent lessons" — the last-10 pointer window. THIS is F42's subject.
+   Establish whether these share a cap mechanism, a byte budget, or a trim path. There is a hard byte ceiling constant (search for MEMORY_MD_HARD_CAP_BYTES, believed 25*1024) — determine which blocks it trims and IN WHAT ORDER. That order decides whether lessons or rules die first under pressure, which is the whole question.
+
+3. IS THE EVICTION SILENT? This is the crux and the most important thing you will report. PRISM's governing adjudication D046 (Locked) characterises this project's defect class as omissive: "a structured path fails silently → a fallback emits plausible output → nothing reports the miss", and mandates fixing by making misses LOUD, never by permissive parsers. So: when a lesson pointer falls out of the window, is ANYTHING logged, warned, or surfaced? Or does it vanish with no record? Quote the code path either way.
+   Adjudication D083 (Locked) is the direct precedent and you should read it if present in docs/prism/adjudications/: a Locked rule was silently evicted from the always-on layer by an arbitrary sort key WHILE 41% OF THE BYTE BUDGET SAT UNUSED. If the lessons window has the same shape — evicting while budget remains — that is a strong finding.
+
+4. DO THE POINTERS STILL RESOLVE? An evicted pointer may be harmless if the underlying lesson file is still on disk and reachable another way. Check: do the lesson files under docs/prism/lessons/ persist independently? Is there a separate index (tools/prism-knowledge-index.mjs, .claude/references/knowledge-index.md) or a matcher (hooks/prism-lesson-match.mjs) that can still surface an evicted lesson on a keyword match? If yes, the severity of F42 drops a great deal — the window is a CACHE, not the system of record. If no, an evicted lesson is genuinely unreachable. THIS DISTINCTION IS THE MOST DECISION-RELEVANT THING IN YOUR REPORT — do not leave it unanswered.
+
+5. Note this constraint before proposing anything: the 25,600-byte ceiling was deliberately NOT raised when the cap question came up this week. The stated reason is that it tracks the documented subagent-memory injection limit (first 200 lines / 25 KB), so raising it would trade a VISIBLE eviction for an INVISIBLE TRUNCATION. Any remedy you propose must respect that. Do not propose raising the byte ceiling.
+
+=== FRAMING ===
+D083 (Locked) states the governing principle for this whole area: "Before building any new recall/injection channel, repair and instrument the delivery layer that already exists." So bias hard toward instrumenting/repairing what is there. Do NOT propose a new memory subsystem.
+
+If the finding turns out to be REFUTED or much lower severity than filed — for example if the pointers remain reachable via the knowledge index — say so plainly and with evidence. A refutation is a valuable, correct outcome; three findings were refuted this week and that was counted as progress, not failure.
+
+=== RETURN ===
+In your final message: (1) the cap mechanism quoted by file:line, or an explicit statement that no enforced cap exists in code; (2) how the two blocks interact under the byte ceiling and which trims FIRST; (3) whether eviction is silent, quoted either way; (4) your verdict on question 4 — cache or system of record — with the evidence; (5) a severity call (CONFIRMED / REDUCED / REFUTED) and, if confirmed, the smallest repair consistent with D083. Put the substance in your reply.

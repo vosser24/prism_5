@@ -23,8 +23,11 @@
 import {existsSync, readFileSync, renameSync, writeFileSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {logAdvisory} from './lib/prism-advisory-log.mjs';
+import {prismHome} from './lib/prism-home.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE || '';
+const H = prismHome();
 
 // Module-level router cache (loaded once per process)
 let _tokenize = null;
@@ -104,7 +107,7 @@ const INJECT_CHAR_CAP = 360;
 // live environment — the module-level H constant can be stale if HOME is set
 // after import (e.g. test harnesses, or re-exec contexts).
 function homeDir() {
-  return process.env.HOME || process.env.USERPROFILE || H;
+  return prismHome();
 }
 
 function dedupPath(sessionId) {
@@ -119,14 +122,52 @@ function readDedup(sessionId) {
   } catch { return {injected: {}, turn_count: 0}; }
 }
 
-function writeDedup(sessionId, payload) {
+// renameFn is injectable (default: the real fs.renameSync) so tests can force
+// the transient-failure branch below without touching a real filesystem —
+// same DI shape as renameWithRetry itself (tools/lib/atomic-fs.mjs).
+// Exported (in addition to internal use by run()) so tests can inject a
+// failing renameFn directly and assert on the resulting log record — see
+// tests/v3/hooks/test-lesson-match.mjs "(f)" cases.
+export function writeDedup(sessionId, payload, renameFn = renameSync) {
+  const p = dedupPath(sessionId);
+  const tmp = p + '.tmp';
+  const body = JSON.stringify(payload, null, 2);
   try {
-    const p = dedupPath(sessionId);
-    const tmp = p + '.tmp';
-    writeFileSync(tmp, JSON.stringify(payload, null, 2));
-    renameSync(tmp, p);
-  } catch {
-    try { writeFileSync(dedupPath(sessionId), JSON.stringify(payload, null, 2)); } catch {}
+    writeFileSync(tmp, body);
+    // Bounded retry absorbs the transient Windows AV/indexer EPERM/EACCES/
+    // EBUSY handle-contention window (F33; task #79 observed this exact
+    // error on this exact destination under concurrent-agent load) before
+    // falling back to a direct, non-atomic write below.
+    renameWithRetry(renameFn, tmp, p);
+  } catch (renameErr) {
+    // D046: the atomic path degrading to a direct write must be LOUD, not
+    // silent — this is the omissive "structured path fails -> fallback
+    // emits plausible output -> nothing reports the miss" shape D046 names
+    // as PRISM's characteristic defect. This file is NOT the D085 log
+    // (~/.claude/.prism-routing.jsonl via logAdvisory 'lesson_match' above,
+    // written unconditionally before writeDedup ever runs) — it is the
+    // per-session dedup-window state. Losing this write only resets that
+    // TTL window early; it cannot drop a D085 record.
+    try {
+      writeFileSync(p, body);
+      logAdvisory({
+        event: 'lesson_match_dedup_write',
+        session_id: sessionId,
+        status: 'atomic_failed_fallback_ok',
+        error_code: (renameErr && renameErr.code) || null,
+      });
+    } catch (fallbackErr) {
+      // Previously an empty `catch {}` here made total write failure
+      // indistinguishable from success at every layer above (readDedup's
+      // own catch returns a plausible-looking empty state either way).
+      // Record it instead of swallowing it.
+      logAdvisory({
+        event: 'lesson_match_dedup_write',
+        session_id: sessionId,
+        status: 'write_failed',
+        error_code: (fallbackErr && fallbackErr.code) || null,
+      });
+    }
   }
 }
 
@@ -145,6 +186,11 @@ export async function run(payload) {
 
     const map = loadKeywordMap(root);
     if (!map || !Array.isArray(map.entries) || map.entries.length === 0) {
+      // Distinct from the "evaluated, matched nothing" record below: a missing/
+      // empty/unparseable index means recall COULD NOT run at all (a fault),
+      // not that it ran and found nothing relevant (healthy). Deliberately no
+      // `match` key here so a naive match:false tally can't silently absorb it.
+      logAdvisory({event: 'lesson_match', session_id: sessionId, status: 'index_unavailable'});
       return {exit: 0, stdout: '', stderr: ''};
     }
 
@@ -186,9 +232,23 @@ export async function run(payload) {
       }
     }
 
-    if (scored.length === 0) return {exit: 0, stdout: '', stderr: ''};
-
+    // D083 defect #3: this hook previously emitted no routing-log record on
+    // any path, so "matched nothing" and "never ran" were indistinguishable
+    // from the outside and recall performance was unmeasurable. Log every
+    // evaluated turn here, including the no-match case, using the shared
+    // fail-open helper (hooks/lib/prism-advisory-log.mjs) — identifiers and
+    // scores only, never prompt text.
     scored.sort((a, b) => b.score - a.score);
+    logAdvisory({
+      event: 'lesson_match',
+      session_id: sessionId,
+      match: scored.length > 0,
+      matched: scored.slice(0, 2).map(s => s.entry.ref),
+      scores: scored.slice(0, 2).map(s => Number(s.score.toFixed(3))),
+      candidate_count: scored.length,
+    });
+
+    if (scored.length === 0) return {exit: 0, stdout: '', stderr: ''};
 
     // Cap TOP 2: prefer at most 1 adjudication + 1 lesson
     const selected = [];

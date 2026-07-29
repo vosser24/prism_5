@@ -7,22 +7,38 @@ import {readFileSync as r, writeFileSync as w, existsSync as e, mkdirSync as mk,
 import {join as j} from 'path';
 import {pathToFileURL} from 'url';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {logAdvisory} from './lib/prism-advisory-log.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 // Slice 6 (Fix A): task-snapshot machinery extracted VERBATIM to the shared
 // lib so tools/prism-repair-open-tasks.mjs runs the EXACT same extractor —
 // tool/hook divergence is structurally impossible. Behavior unchanged.
 import {extractTaskSnapshot, readTaskScanLines, mergeOpenTasks} from './lib/prism-task-snapshot.mjs';
 import {probeTaskApiTranscript} from './lib/prism-task-api-probe.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
 // ATOMIC-WRITE-001: tempfile + renameSync with direct-write fallback.
 // Matches hooks/prism-session-start.mjs:121-136 canonical pattern.
+// Bounded retry (task #82/#88) absorbs the transient Windows AV/indexer
+// EPERM/EACCES/EBUSY handle-contention window before falling back to a
+// direct, non-atomic write — this helper is shared by the open-tasks
+// pointer write, the sole on-disk source of full task descriptions when
+// TaskGet is unavailable, so a real degraded write must be logged, not
+// silent (D046).
 function atomicWriteSync(path, content) {
   try {
     const tmp = path + '.tmp';
     w(tmp, content);
-    renameSync(tmp, path);
-  } catch {
-    try { w(path, content); } catch {}
+    renameWithRetry(renameSync, tmp, path);
+  } catch (renameErr) {
+    try {
+      w(path, content);
+      logAdvisory({hook: 'prism-session-end', event: 'atomic_write', path,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      logAdvisory({hook: 'prism-session-end', event: 'atomic_write', path,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
   }
 }
 
@@ -53,8 +69,170 @@ try {
   const sessionId = input.session_id || 'no-session';
   const transcriptPath = input.transcript_path || '';
   const cwd = input.cwd || process.cwd();
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = prismHome();
   const gitSha = getGitHeadSha(cwd); // SHA-STAMP-001 — stamped into every handoff artifact below
+
+  // ── F7 Phase 3 (D072) — Stop-gated phase-0d OOB substance-review trigger ────
+  // Fires the phase-0d reviewer off the Stop event (the observable latch-close
+  // proxy) when a panel is in progress (latch live) AND the deterministic
+  // structural panel.json has >=2 recorded seats. Per D072 phase-3, the >=2-seats
+  // test is a QUALIFIER on the Stop/latch-close event, NOT a standalone early
+  // trigger — so the reviewer sees a transcript that already contains the
+  // challenge rounds (the whole reason we moved OFF the seat-recorder's dispatch
+  // instant). Single-process, so no cross-process read-modify-write race. A STABLE
+  // per-latch sha makes each turn-end fire OVERWRITE the same verdict with a
+  // progressively richer review (final fire = post-challenge). Throttled to bound
+  // cost over the 45-min latch TTL. Advisory only: the verdict surfaces via the
+  // SessionStart REJECTED/ERROR pickup; this hook never blocks. Fully fail-open —
+  // it must never disturb the resume-summary work below.
+  //   Kill switch: PRISM_DISABLE_PANEL_STOP_TRIGGER=1 (also honors the global
+  //   PRISM_DISABLE_OOB_REVIEW and the PRISM_PHASE_0D_OOB_PROCESS recursion guard).
+  try {
+    const oobDisabled = process.env.PRISM_DISABLE_OOB_REVIEW === '1'
+      || process.env.PRISM_PHASE_0D_OOB_PROCESS === '1'
+      || process.env.PRISM_DISABLE_PANEL_STOP_TRIGGER === '1';
+    if (!oobDisabled && sessionId && sessionId !== 'no-session' && H) {
+      const {isPanelLatchLive, readPanelLatch} = await import('./lib/prism-panel-latch.mjs');
+      if (isPanelLatchLive(sessionId)) {
+        // Resolve the EXACT structural panel.json path the seat-recorder writes
+        // (shared single-source resolver — no drift).
+        const {resolvePanelPath} = await import('./prism-panel-seat-recorder.mjs');
+        const panelPath = resolvePanelPath(sessionId);
+        let seatCount = 0;
+        if (e(panelPath)) {
+          try {
+            const panel = JSON.parse(r(panelPath, 'utf-8'));
+            seatCount = Array.isArray(panel.positions) ? panel.positions.length : 0;
+          } catch { seatCount = 0; }
+        }
+        if (seatCount >= 2) {
+          const latch = readPanelLatch(sessionId);
+          const openedTs = (latch && latch.opened_ts) ? String(latch.opened_ts) : '';
+          // Stable per-latch sha → each fire overwrites the same verdict file.
+          const stableSha = createHash('sha256').update(sessionId + '|' + openedTs).digest('hex').slice(0, 16);
+          const throttlePath = j(H, '.claude', `.prism-phase-0d-throttle-${stableSha}.json`);
+          const THROTTLE_MS = (() => {
+            const raw = parseInt(process.env.PRISM_PHASE_0D_THROTTLE_MS || '', 10);
+            return Number.isFinite(raw) && raw >= 0 ? raw : 150_000; // ~2.5 min
+          })();
+          const now = Date.now();
+          let lastFired = 0;
+          try { lastFired = JSON.parse(r(throttlePath, 'utf-8')).last_fired_ms || 0; } catch {}
+          if (now - lastFired < THROTTLE_MS) {
+            logAdvisory({event: 'phase_0d_stop_trigger', action: 'throttled', session_id: sessionId,
+              stable_sha: stableSha, seat_count: seatCount, since_last_ms: now - lastFired});
+          } else {
+            // S6: transcript_path is load-bearing — resolve via a fallback chain
+            // and REFUSE to fire (log it) rather than silently degrade to '' when
+            // genuinely absent.
+            const transcript = (transcriptPath && e(transcriptPath)) ? transcriptPath
+              : ((input.agent_transcript_path && e(input.agent_transcript_path)) ? input.agent_transcript_path : '');
+            if (!transcript) {
+              logAdvisory({event: 'phase_0d_stop_trigger', action: 'no_transcript_path', session_id: sessionId,
+                stable_sha: stableSha, seat_count: seatCount});
+            } else {
+              // Stamp the throttle FIRST so a crash/timeout in the reviewer can't
+              // spin-fire on the next turn.
+              atomicWriteSync(throttlePath, JSON.stringify({last_fired_ms: now, stable_sha: stableSha, session_id: sessionId}));
+              const oob = await import('./prism-phase-0d-oob.mjs');
+              await oob.run({
+                tool_name: 'Write',
+                tool_input: {file_path: panelPath},
+                transcript_path: transcript,
+                session_id: sessionId,
+                stable_sha: stableSha,
+              });
+              logAdvisory({event: 'phase_0d_stop_trigger', action: 'fire', session_id: sessionId,
+                stable_sha: stableSha, seat_count: seatCount, panel_path: panelPath});
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    try {
+      logAdvisory({event: 'phase_0d_stop_trigger', action: 'error', session_id: sessionId,
+        error: String((err && err.message) || err).slice(0, 300)});
+    } catch {}
+  }
+
+  // ── F7 Phase 4 — 0-seats panel completion gate ──────────────────────────
+  // THE GAP: the block above only acts when seatCount>=2 (and only while the
+  // latch window is still LIVE — isPanelLatchLive() requires until_ts in the
+  // future). There is no branch for a master that NARRATES a panel (arms the
+  // latch) but never dispatches a single Agent() seat. Today that case falls
+  // through silently on every Stop for the whole 45-min latch TTL — nothing
+  // ever tells the master "you said panel, you dispatched nothing."
+  //
+  // Per the F7 Phase 1 design constraint (see prism-panel-latch.mjs's
+  // "DELIBERATE DESIGN CHOICE" note), the latch has NO close event — it only
+  // clears by TTL. So "window closed" is detected here the same way: reading
+  // the latch record directly (NOT isPanelLatchLive(), which is true-while-
+  // open) and checking `now >= until_ts`. Firing while the window is still
+  // open would be premature — seats could still arrive — so this is
+  // deliberately the mirror-image condition of the >=2-seats block above.
+  //
+  // Fires (once per latch — idempotent via a sha256(session_id+'|'+opened_ts)
+  // marker, same keying pattern as the phase-0d throttle stamp above, new
+  // distinct file prefix) when ALL of:
+  //   (a) a latch record exists for this session,
+  //   (b) the window is closed (now >= until_ts),
+  //   (c) seatCount === 0, AND
+  //   (d) no structural panel.json exists at all (resolvePanelPath() finds
+  //       none — a panel.json with a malformed/empty positions array still
+  //       counts as "instrumented" and does NOT fire this gate).
+  // Advisory only — appends one routing-log event and drops a warning file
+  // for SessionStart's [Prior turn] pickup (mirrors the phase-0d verdict
+  // pickup pattern in prism-session-start.mjs). Never blocks; fully
+  // fail-open, isolated in its own try/catch so it can never disturb the
+  // resume-summary work below.
+  try {
+    if (sessionId && sessionId !== 'no-session' && H) {
+      const {readPanelLatch} = await import('./lib/prism-panel-latch.mjs');
+      const latch = readPanelLatch(sessionId);
+      if (latch && latch.until_ts) {
+        const untilMs = Date.parse(latch.until_ts);
+        const nowMs = Date.now();
+        if (Number.isFinite(untilMs) && nowMs >= untilMs) {
+          const {resolvePanelPath} = await import('./prism-panel-seat-recorder.mjs');
+          const panelPath = resolvePanelPath(sessionId);
+          const panelExists = e(panelPath);
+          let seatCount = 0;
+          if (panelExists) {
+            try {
+              const panel = JSON.parse(r(panelPath, 'utf-8'));
+              seatCount = Array.isArray(panel.positions) ? panel.positions.length : 0;
+            } catch { seatCount = 0; }
+          }
+          if (!panelExists && seatCount === 0) {
+            const openedTs = latch.opened_ts ? String(latch.opened_ts) : '';
+            const gateSha = createHash('sha256').update(sessionId + '|' + openedTs).digest('hex').slice(0, 16);
+            const gateMarkerPath = j(H, '.claude', `.prism-panel-completion-gate-${gateSha}.json`);
+            if (!e(gateMarkerPath)) {
+              // Stamp the marker FIRST (same crash-safety rationale as the
+              // phase-0d throttle stamp above): a crash between here and the
+              // warning-file write below must still leave this latch marked
+              // fired, never a repeat on the next Stop.
+              atomicWriteSync(gateMarkerPath, JSON.stringify({fired_ms: Date.now(), stable_sha: gateSha, session_id: sessionId}));
+              const reason = 'panel narrated but never instrumented (0 seats, no panel.json)';
+              logAdvisory({event: 'panel_completion_gate', action: 'warned', schema_version: 4,
+                session_id: sessionId, active_master: latch.active_master || null, reason});
+              const warningPath = j(H, '.claude', `.prism-panel-completion-warning-${sessionId}.json`);
+              atomicWriteSync(warningPath, JSON.stringify({
+                ts: new Date().toISOString(), session_id: sessionId,
+                active_master: latch.active_master || null, message: reason,
+              }));
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    try {
+      logAdvisory({event: 'panel_completion_gate', action: 'error', session_id: sessionId,
+        error: String((err && err.message) || err).slice(0, 300)});
+    } catch {}
+  }
 
   if (!transcriptPath || !e(transcriptPath)) process.exit(0);
 

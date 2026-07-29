@@ -9,8 +9,9 @@ import {spawnSync} from 'child_process';
 import {readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, rmSync, statSync} from 'fs';
 import {join} from 'path';
 import {tmpdir} from 'os';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const CLAUDE_BASE = process.env.CLAUDE_DIR_OVERRIDE || join(H, '.claude');
 const HOOKS = join(CLAUDE_BASE, 'hooks');
 const GLOBAL_STATE = join(CLAUDE_BASE, '.prism-global-state.json');
@@ -1315,7 +1316,7 @@ if (existsSync(GLOBAL_STATE)) unlinkSync(GLOBAL_STATE);
 //   C: Dispatch-guard sentinel.dispatched + env-var subagent bypass.
 //   Regression: 2.2.0 haiku-tier + not dispatched + parent → still denies.
 {
-  const H2 = process.env.HOME || process.env.USERPROFILE;
+  const H2 = prismHome();
   const SENT_DIR = join(H2, '.claude');
   const sentinelPath = (sid) => join(SENT_DIR, `.prism-turn-tier-${sid}.json`);
 

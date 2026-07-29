@@ -35,6 +35,9 @@
 import {readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, statSync} from 'node:fs';
 import {join, dirname, sep, basename} from 'node:path';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
+import { prismHome } from './lib/prism-home.mjs';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
+import { logAdvisory } from './lib/prism-advisory-log.mjs';
 
 // Matches `.../.claude/skills/<name>/SKILL.md`. <name> = the skill directory.
 const SKILL_RE = /[/\\]\.claude[/\\]skills[/\\]([^/\\]+)[/\\]SKILL\.md$/i;
@@ -106,12 +109,25 @@ function readRoster(path) {
 }
 
 // Atomic write via tempfile + rename (same pattern as the agent registrar).
+// This writes the SHARED roster.json — bounded retry (task #82/#88) absorbs
+// the transient Windows AV/indexer handle-lock window before degrading, and
+// the degraded path is logged rather than silent (D046).
 function writeRosterAtomic(path, data) {
   mkdirSync(dirname(path), {recursive: true});
   const tmp = path + '.tmp.' + process.pid + '.' + Math.random().toString(36).slice(2, 10);
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
-  try { renameSync(tmp, path); }
-  catch { writeFileSync(path, JSON.stringify(data, null, 2) + '\n'); }
+  const body = JSON.stringify(data, null, 2) + '\n';
+  writeFileSync(tmp, body);
+  try { renameWithRetry(renameSync, tmp, path); }
+  catch (renameErr) {
+    try {
+      writeFileSync(path, body);
+      logAdvisory({event: 'skill_write_register_roster_write', path,
+        status: 'atomic_failed_fallback_ok', error_code: (renameErr && renameErr.code) || null});
+    } catch (fallbackErr) {
+      logAdvisory({event: 'skill_write_register_roster_write', path,
+        status: 'write_failed', error_code: (fallbackErr && fallbackErr.code) || null});
+    }
+  }
 }
 
 // Minimal frontmatter reader for `description` (handles block scalars + quotes).
@@ -194,7 +210,7 @@ async function registerSkill(skillPath, H, GLOBAL_ROSTER) {
 // ---------- exported run() ----------
 
 export async function run(payload) {
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = prismHome();
   const GLOBAL_ROSTER = join(H, '.claude', 'skills', 'prism-plan', 'references', 'roster.json');
 
   if (process.env.PRISM_DISABLE_SKILL_WRITE_HOOK === '1') {

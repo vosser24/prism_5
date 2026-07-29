@@ -1,0 +1,65 @@
+Repo: C:\dev\prism_3. Two small, fully-diagnosed guard fixes in two DIFFERENT files. Both predicates were cited by a census this session, so both are filed defects, not observations.
+
+PRISM-LEASE: agent=guard-fix-A files=hooks/prism-agent-model-guard.mjs,hooks/prism-live-work-dedup.mjs,tests/v3/hooks/test-prism-live-work-dedup-background.mjs
+
+Use the Edit/Write TOOLS for all file changes — never Bash/PowerShell redirection (`>`, Set-Content, Out-File default to UTF-8-with-BOM on Windows and corrupt these files).
+Do NOT run `node tools/prism-installer.mjs install` — deployment is a single post-batch step owned by the orchestrator ([[D081]], Locked). Read-only `node tools/prism-installer.mjs verify` is allowed.
+Do NOT touch hooks/prism-specialist-routing-guard.mjs, tools/lib/memory-heal.mjs, tools/prism-clean.mjs, or commands/ — three sibling workers own those RIGHT NOW.
+
+Emit your step list FIRST, then execute. Tool-call budget: ~35. Report a one-line status after each task.
+Compute and report YOUR OWN result; do NOT spawn a child agent and relay its status or a holding message as your answer. A final message that is a holding string ("verifying…", "running tests…") is a FAILED result, not work done.
+
+════════ TASK 1 — #56 / F39: exempt forks from the model-guard advisory ════════
+
+CITED PREDICATE (verified this session at HEAD): hooks/prism-agent-model-guard.mjs:223-227
+  `if (tier === 'haiku' && mult > 1) { … } else if (tier === 'sonnet' && mult > 1) { … }`
+The guard DOES read `subagent_type` at line 98 and has exactly ONE categorical exemption on it — `master-orchestrator` at line 147. The firing predicate at 223-227 never consults it. `grep -rn "fork" hooks/prism-agent-model-guard.mjs` returns NO matches. Production log: 4 records with `subagent_type:"fork"`, 3 with `action:"nudge"`, `tier_detected:"haiku"`.
+
+WHY THIS IS WRONG: per the Agent tool contract, `subagent_type:"fork"` forks the caller and ALWAYS runs on the caller's model — a `model` override is ignored. So the guard tells the operator to add a parameter documented as having no effect. Two harms: alert fatigue, and a FALSE COST MODEL — if the chair complies and believes the fork runs on haiku, later spend reasoning is wrong in the expensive direction.
+
+DO: follow the existing `master-orchestrator` exemption at line 147 as the STRUCTURAL PRECEDENT — read it first and match its shape rather than inventing a second exemption style.
+Prefer a DIFFERENT MESSAGE over silence if you can do it cleanly: "this fork inherits the parent's model — if you want haiku, dispatch a fresh general-purpose agent instead of a fork" is more useful than suppression, because the real cost lever for a fork-shaped task IS to not use a fork. If that complicates the code materially, plain suppression is acceptable — state which you chose and why.
+Keep the guard firing normally for ALL non-fork dispatches. Do NOT disable it broadly.
+
+TEST (paired, mandatory): assert the guard is QUIET on a fork dispatch AND STILL FIRES on an equivalent non-fork dispatch. The pairing is what stops the fix degenerating into "never fire". Put it where model-guard tests already live — run `ls tests/v3/hooks/ | grep -i model` first and follow the existing file's conventions.
+
+════════ TASK 2 — #58 / F41: MIN_EXCESS is inert ════════
+
+THE FILED FRAMING WAS "the N<2 background case is uncovered". The census found something SHARPER that supersedes it — verify this yourself before acting on it:
+
+  hooks/prism-live-work-dedup.mjs:49   MIN_COEFF  = 0.30
+  hooks/prism-live-work-dedup.mjs:107  MIN_EXCESS = 0.30
+  hooks/prism-live-work-dedup.mjs:276-278
+      `const baseline = background.length >= MIN_BG_DOCS ? median(background) : 0;`
+      `const excess = c.coefficient - baseline;`
+      `if (c.shared.length >= MIN_SHARED && c.coefficient >= MIN_COEFF && excess >= MIN_EXCESS) {`
+
+When `baseline === 0`, `excess === coefficient`, so `excess >= MIN_EXCESS` is LOGICALLY IMPLIED by `coefficient >= MIN_COEFF` — the third conjunct is a STRICT NO-OP, not merely a weakened guard. Independent confirmation from telemetry: across the 19 post-F36 records, `kw_suppressed` sums to **0 with zero non-zero entries**, and the field's own in-code comment says a suppressed count that never moves means MIN_EXCESS is doing nothing.
+
+Two corrections to the inherited claim, also from the census — verify both:
+  - `background` EXCLUDES self (line 275), so the mechanism needs `kwScored.length >= 3`, not 2.
+  - Lease-resolved pairs `continue` at line 262 and never enter `kwScored`, so GOOD lease discipline SHRINKS the background corpus. That is a perverse incentive worth noting in your report.
+
+FIRST: confirm or refute the above by reading the shipped file. If the census is wrong, YOUR MEASUREMENT WINS — say so with evidence and stop. A refutation is a valid, valuable outcome.
+
+DO NOT reflexively lower MIN_BG_DOCS. Prior measurement (already paid for, do not re-derive) showed the binary-DF variant "degenerates catastrophically at N=2 — suppresses everything, never fires". Trading a false positive for total loss of the guard is strictly worse.
+
+THE OWNER HAS NOT YET CHOSEN A REMEDY. Three candidates are on the table: (a) stay silent when no background is computable — a dedup advisory with no comparison basis is a guess, and silence may be the honest output; (b) fall back to a much higher raw threshold so only egregious overlap fires; (c) build a static background corpus from the routing log, which already persists dispatch records on disk. So:
+  1. Write the RED test FIRST, from the REAL incident tokens — `already, cheap, check, commands, description, descriptions, false, fork` at 30% overlap with a SINGLE background document. Real tokens, not synthetic boilerplate: the #53 worker's own lesson is that synthetic fixtures let #37 look fixed while the defect survived.
+  2. Implement the remedy you can best justify ON EVIDENCE, and state plainly WHICH of (a)/(b)/(c) it is and what measurement supports it. Treat the three as PRIORS REQUIRING MEASUREMENT, never instructions ([[D092]]) — a prior chair's top-ranked option for this very scorer was measured a complete no-op, and following the ranking would have closed the finding FALSELY.
+  3. Keep the existing 8-assertion background test GREEN — the N>=2 path is correct and must not regress.
+
+SCOPE YOUR ACCEPTANCE CHECK TO THE REGION UNDER TEST ([[D084]], Locked): a check that greps a whole file whose prose discusses the identifier under test is self-satisfying and will report GREEN against an unfixed system.
+
+════════ VERIFY ════════
+```
+node --check hooks/prism-agent-model-guard.mjs
+node --check hooks/prism-live-work-dedup.mjs
+node tests/v3/hooks/test-prism-live-work-dedup-background.mjs
+node tests/v3/hooks/test-live-work-dedup.mjs
+node tests/v3/hooks/test-prism-live-work-dedup-boilerplate.mjs
+node tests/v3/hooks/test-dispatch-dedup-guard.mjs
+```
+Do NOT run the full suite — the orchestrator runs it once after the batch.
+
+RETURN: for each task — the predicate before/after, the test you added and its pass count, and for #58 which remedy you chose with the evidence. Put the substance in your reply; do not say "done, see the files".

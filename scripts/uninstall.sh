@@ -137,7 +137,7 @@ Steps performed:
   3   Inventory: count files per category
   4   Remove PRISM hooks (~/.claude/hooks/prism-*.mjs, lib/prism-*)
   5   Remove PRISM commands (~/.claude/commands/prism-*.md)
-  6   Remove 8 PRISM-owned skills (by exact name)
+  6   Remove 7 PRISM-owned skills (by exact name)
   7   Remove 3 PRISM core agents (by exact name)
   8   Remove PRISM tools (~/.claude/tools/prism-*, etc.)
   9   Remove misc files (statusline-command.sh, prism.env, plans)
@@ -256,8 +256,8 @@ INV_HOOKS=$(( $(inv_count_glob "$CLAUDE_DIR/hooks/prism-*.mjs") \
             + $(inv_count_glob "$CLAUDE_DIR/hooks/lib/prism-exec.cmd") ))
 INV_COMMANDS=$(inv_count_glob "$CLAUDE_DIR/commands/prism-*.md")
 
-# 8 PRISM-owned skills (skills can live as dirs or .md files).
-PRISM_SKILLS="prism-plan prism-discover prism-chat blueprint-prompt workflow-orchestration claude-code-expert notebooklm video-production"
+# 7 PRISM-owned skills (skills can live as dirs or .md files).
+PRISM_SKILLS="master-orchestrator prism-plan prism-discover prism-chat blueprint-prompt notebooklm workflow-orchestration"
 INV_SKILLS=0
 for s in $PRISM_SKILLS; do
     if [ -e "$CLAUDE_DIR/skills/$s" ] || [ -e "$CLAUDE_DIR/skills/$s.md" ]; then
@@ -292,7 +292,7 @@ INV_MEMORY=0
 
 log "  hooks            : $INV_HOOKS"
 log "  commands         : $INV_COMMANDS"
-log "  skills (of 8)    : $INV_SKILLS"
+log "  skills (of 7)    : $INV_SKILLS"
 log "  agents (of 3)    : $INV_AGENTS"
 log "  tools            : $INV_TOOLS"
 log "  misc             : $INV_MISC"
@@ -356,7 +356,7 @@ if [ "$preserved_count" -gt 0 ]; then
 fi
 
 # =========================================================================
-# Step 6 — Skills (8 by exact name)
+# Step 6 — Skills (7 by exact name)
 # =========================================================================
 CURRENT_STEP="6/skills"
 log "step 6: removing PRISM-owned skills (by exact name)"

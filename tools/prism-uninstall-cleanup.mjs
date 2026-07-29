@@ -23,6 +23,8 @@
 import {existsSync, readFileSync, writeFileSync, renameSync, rmSync, unlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import { withRosterLock } from './lib/prism-roster-lock.mjs';
+import { renameWithRetry } from './lib/atomic-fs.mjs';
+import { prismHome } from '../hooks/lib/prism-home.mjs';
 
 const args = process.argv.slice(2);
 const opts = {dryRun: false, mode: null, home: null};
@@ -44,7 +46,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-const HOME = opts.home || process.env.HOME || process.env.USERPROFILE;
+const HOME = opts.home || prismHome();
 if (!HOME) {
   process.stderr.write('error: HOME/USERPROFILE unset and no --home passed\n');
   process.exit(2);
@@ -142,7 +144,8 @@ async function main() {
     // Atomic roster write: tmp + rename.
     const tmp = ROSTER + '.tmp';
     writeFileSync(tmp, JSON.stringify(lockedRoster, null, 2));
-    renameSync(tmp, ROSTER);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+    renameWithRetry(renameSync, tmp, ROSTER);
   });
 
   process.stdout.write(`Removed ${toRemove.length} plugin-tagged agent${toRemove.length === 1 ? '' : 's'}.\n`);

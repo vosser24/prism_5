@@ -16,8 +16,8 @@
 //     rationale:     string   — short one-line explanation (<200 chars)
 //     source:        'allowlist' | 'force-opus' | 'cache' | 'keyword-floor'
 //                    (NOTE: 'opus' / 'sonnet-fallback' no longer emitted in v3.2.0)
-//     force_opus:    boolean  — set when prompt contained '!opus-force:'
-//     force_gp:      boolean  — set when prompt contained '!gp-force:' (v5.12.0);
+//     force_opus:    boolean  — set when prompt was PREFIXED with '!opus-force:'
+//     force_gp:      boolean  — set when prompt was PREFIXED with '!gp-force:' (v5.12.0);
 //                    orthogonal to tier — overrides the specialist-routing-guard
 //                    only, riding the sentinel so the PreToolUse/Agent hook (which
 //                    cannot see the turn prompt) can honor it.
@@ -44,11 +44,11 @@
 
 import {readFileSync, writeFileSync, existsSync, mkdirSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {homedir} from 'node:os';
 import {createHash} from 'node:crypto';
-import {classifyWithScore, PANEL_MIN_WORDS, EXPLICIT_PANEL_RE} from '../../tools/lib/prism-tier-classify.mjs';
+import {classifyWithScore, PANEL_MIN_WORDS, EXPLICIT_PANEL_RE, stripPastedContent, hasTranscriptPaste, trailingOwnWords} from '../../tools/lib/prism-tier-classify.mjs';
+import {prismHome} from './prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE || homedir();
+const H = prismHome();
 const DEFAULT_CACHE_PATH = join(H, '.claude', '.prism-tier-cache.json');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -66,7 +66,6 @@ const SHORT_PROMPT_WORDS = PANEL_MIN_WORDS;
 // added here bypasses the classifier entirely.
 export const OPUS_ORCHESTRATION_COMMANDS = new Set([
   '/prism-plan',
-  '/prism-app-expert',
   '/prism-update',
   '/prism-recommend',
   '/prism-archive',
@@ -263,7 +262,40 @@ function keywordFloor(prompt) {
   // readiness check does not.
   const c = classifyWithScore(prompt || '', '');
   const release = releaseSafetyScreen(prompt);
-  const explicit = EXPLICIT_PANEL_RE.test(String(prompt || ''));
+  // A16/D034 fix: the explicit-panel test MUST run against the user's OWN words,
+  // not the raw prompt. On a pasted-dominated prompt (a transcript/report the
+  // user pasted), panel language inside the pasted block ("summon the adversarial
+  // panel", "expert panel", "re-architect the platform") is NOT the user's
+  // request. detectSummonPanel() already strips it (tools/lib/prism-tier-classify
+  // .mjs:409-412) so c.summon_panel is correctly suppressed — but this local
+  // `explicit` flag previously tested the RAW prompt and OVERRODE that
+  // suppression (`panel = explicit ? true : ...` below), re-firing the panel from
+  // pasted vocabulary and defeating the D034 safeguard.
+  //
+  // D068 residual fix: the original mirror of detectSummonPanel() only stripped
+  // when pastedRatio(prompt) >= 0.6 (pasted-DOMINANT). A MINORITY paste — a
+  // single quoted transcript line ("summon the adversarial panel...") embedded
+  // in an otherwise much longer own-words prompt — has a low pastedRatio and
+  // was falling through to the RAW, unstripped prompt here too, so the quoted
+  // panel language still matched EXPLICIT_PANEL_RE and re-summoned the panel.
+  // stripPastedContent() is a no-op on genuine typed prose (no paste markers to
+  // strip), so it is now called UNCONDITIONALLY — no ratio gate — matching the
+  // equivalent fix in summonPanelCore() (tools/lib/prism-tier-classify.mjs).
+  //
+  // D068-follow-up CORRECTED (2026-07-24): position-aware. A pasted CC/CLI
+  // transcript (>=3 strong transcript markers) means an explicit phrase
+  // BEFORE the transcript's first strong marker (a leading pre-transcript
+  // block — e.g. "run the panel: <question>" immediately followed by the
+  // pasted CLI run it produced) is the input that generated the paste, not a
+  // fresh request, and must NOT summon. An explicit phrase AFTER the
+  // transcript's last strong marker (genuine trailing own-words — the LOCKED
+  // v5.2.6/D034 guarantee) must still summon. trailingOwnWords() falls back
+  // to the unchanged stripPastedContent() when the prompt is not transcript-
+  // dominated, so every other path (fenced/minority pastes, plain prose) is
+  // untouched — see tools/lib/prism-tier-classify.mjs for the shared helper.
+  const _rawPrompt = String(prompt || '');
+  const _ownWords = hasTranscriptPaste(_rawPrompt) ? trailingOwnWords(_rawPrompt) : stripPastedContent(_rawPrompt);
+  const explicit = EXPLICIT_PANEL_RE.test(_ownWords);
   const meta = isMetaQuestion(prompt);
   const panel = explicit ? true : (meta ? false : !!c.summon_panel);
   if (release) {
@@ -315,10 +347,13 @@ export async function classifyPrompt(opts = {}) {
   // toSentinel → the guard can read sentinel.force_gp. (red-team C1: a
   // PreToolUse/Agent hook cannot see the turn prompt; the flag must ride the
   // sentinel, exactly as force_opus does.)
-  const forceGp = str.includes('!gp-force:');
+  //
+  // prefix-anchored (F16 2026-07-27): an unanchored .includes let pasted PRISM
+  // guard text ('prefix your prompt with !opus-force:') self-grant the bypass.
+  const forceGp = str.trimStart().startsWith('!gp-force:');
 
   // 1. Force-opus override — highest priority.
-  const forceOpus = str.includes('!opus-force:');
+  const forceOpus = str.trimStart().startsWith('!opus-force:');
   if (forceOpus) {
     return {
       tier: 'opus',

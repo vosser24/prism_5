@@ -35,6 +35,7 @@ import {writeFileSync, renameSync, unlinkSync, mkdirSync, readFileSync} from 'no
 import {join, dirname, basename, isAbsolute, relative} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {logAdvisory} from './lib/prism-advisory-log.mjs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 
 // D046 finding #3 — the old canonical-only regex (`^\d{4}-\d{2}-\d{2}-
 // SESSION-HANDOFF\.md$`) silently missed any real handoff whose slug wasn't
@@ -109,7 +110,9 @@ function atomicWrite(path, content) {
   const tmp = path + '.tmp-' + process.pid;
   try {
     writeFileSync(tmp, content);
-    renameSync(tmp, path);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY before
+    // the unlink+rethrow below.
+    renameWithRetry(renameSync, tmp, path);
   } catch (e) {
     try { unlinkSync(tmp); } catch {}
     throw e;

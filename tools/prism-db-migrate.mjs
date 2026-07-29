@@ -14,8 +14,9 @@
 import {readFileSync, existsSync, readdirSync, statSync} from 'fs';
 import {join} from 'path';
 import {openDb, close, appendSpend, appendRouting, upsertSession} from './prism-db.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const SPEND_LOG = join(H, '.claude', '.prism-spend.jsonl');
 const ROUTING_LOG = join(H, '.claude', '.prism-routing.jsonl');
 const SESSIONS_DIR = join(H, '.claude', '.prism-sessions');

@@ -19,13 +19,14 @@
 //   whose default export is the factory function.
 
 import {
-  existsSync, mkdirSync, writeFileSync, readFileSync, renameSync, copyFileSync,
+  existsSync, mkdirSync, writeFileSync, readFileSync, renameSync, copyFileSync, unlinkSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
 
 import {
   stagingPath, versionsPath, digestPath, withRosterLock,
 } from './lib/prism-acl-store.mjs';
+import { renameWithRetry } from './lib/atomic-fs.mjs';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -224,6 +225,30 @@ export async function learn({ home, factory, rosterPath: rosterPathArg }) {
   mkdirSync(stageDir, { recursive: true });
 
   for (const { name, type, entry } of upgradeCandidates) {
+    // Manifest/flat-owned guard: the ACL learner ONLY ever writes to the nested
+    // agents/<name>/ layout. A FLAT agents/<name>.md existing is definitional
+    // proof this agent is owned outside ACL (the install manifest or a
+    // hand-authored agent). Re-authoring it would fork a divergent nested copy
+    // that collides (duplicate frontmatter `name:`) with the flat file in the
+    // same user scope — nested dirs ARE dispatch-loaded, so the winner is
+    // ambiguous. Refuse, and clear the stuck flag so the evidence-discipline
+    // ratchet does not keep re-triggering this no-op upgrade.
+    if (type === 'agent' && existsSync(join(home, '.claude', 'agents', `${name}.md`))) {
+      process.stderr.write(`[acl-learn] skip '${name}': flat-owned agent (agents/${name}.md exists) — ACL will not upgrade\n`);
+      try {
+        await withRosterLock(rosterPath, () => {
+          const r = readRoster(rosterPath);
+          const e = r.agents && r.agents[name];
+          if (e && (e.pending_upgrade || e.status === 'upgrade_needed')) {
+            e.pending_upgrade = false;
+            if (e.status === 'upgrade_needed') e.status = 'active';
+            writeFileSync(rosterPath, JSON.stringify(r, null, 2), 'utf-8');
+          }
+        });
+      } catch { /* best-effort flag clear */ }
+      continue;
+    }
+
     const currentVersion = parseInt(entry.version || '1', 10);
     const nextVersion = currentVersion + 1;
 
@@ -293,10 +318,17 @@ export async function learn({ home, factory, rosterPath: rosterPathArg }) {
     const tmpLive = liveFilePath + '.tmp';
     try {
       copyFileSync(stagingFile, tmpLive);
-      renameSync(tmpLive, liveFilePath);
+      // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY before
+      // the cleanup-attempt + continue below.
+      renameWithRetry(renameSync, tmpLive, liveFilePath);
     } catch (e) {
       process.stderr.write(`[acl-learn] atomic promote failed for ${name}: ${e.message}\n`);
-      try { renameSync(tmpLive, tmpLive); } catch {} // cleanup attempt
+      // F34: this was a no-op self-rename (rename(tmpLive, tmpLive)) that left
+      // a stale .tmp file on every failed promote. unlinkSync matches the
+      // established cleanup-after-failed-renameWithRetry idiom used elsewhere
+      // in this repo (tools/lib/prism-state.mjs, tools/prism-installer.mjs,
+      // hooks/prism-handoff-pointer.mjs).
+      try { unlinkSync(tmpLive); } catch { /* ignore */ } // cleanup attempt
       continue;
     }
 

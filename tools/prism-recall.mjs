@@ -14,8 +14,9 @@ import {fileURLToPath, pathToFileURL} from 'url';
 // default 3-tier recall path is untouched (F4 §7).
 import {queryKnowledge} from './lib/prism-kb-knowledge-query.mjs';
 import {writeShareMarker, removeShareMarker} from './prism-kb-knowledge-indexer.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const CLAUDE_DIR = join(H, '.claude');
 const GLOBAL_STATE = join(CLAUDE_DIR, '.prism-global-state.json');
 const SPEND_LOG = join(CLAUDE_DIR, '.prism-spend.jsonl');
@@ -292,7 +293,7 @@ export async function recall(query, {forcedTier = null, json = false, verbose = 
   // F4 §7: --cross-project augments Tier 1 ONLY. Tiers 2/3 unaffected. Without the
   // flag, this block is skipped entirely and recall behaves exactly as before.
   if (crossProject && c.tier === 1) {
-    const H = process.env.HOME || process.env.USERPROFILE;
+    const H = prismHome();
     envelope.crossProject = queryKnowledge(query, {home: H, crossProject: true, rerank: !noRerank});
   }
   if (json) return envelope;

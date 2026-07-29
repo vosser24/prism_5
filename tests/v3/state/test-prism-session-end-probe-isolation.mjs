@@ -82,6 +82,13 @@ function runVariant(label, throwingProbe) {
   mkdirSync(home, {recursive: true});
   mkdirSync(proj, {recursive: true});
   cpSync(join(ROOT, 'hooks'), mirrorHooks, {recursive: true});
+  // task #88: prism-session-end.mjs now imports renameWithRetry from
+  // tools/lib/atomic-fs.mjs (the shared durability helper), so the mirror
+  // must include tools/ too — hooks/ alone is no longer a complete copy of
+  // this hook's dependency graph. Mirroring the whole tools/ tree (not just
+  // atomic-fs.mjs) keeps this future-proof against other hooks/->tools/lib
+  // imports picking up the same gap.
+  cpSync(join(ROOT, 'tools'), join(base, 'tools'), {recursive: true});
   if (throwingProbe) {
     writeFileSync(join(mirrorHooks, 'lib', 'prism-task-api-probe.mjs'), THROWING_PROBE, 'utf-8');
   }

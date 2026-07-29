@@ -56,7 +56,6 @@ function runHook(home, extraEnv = {}) {
       USERPROFILE: home,
       PRISM_DISABLE_FRESHNESS_SWEEP: '1',
       PRISM_DISABLE_PARALLEL_REMINDER: '1',
-      PRISM_DISABLE_CLAUDE_MEM_GUARD: '1',
       ...extraEnv,
     },
   });

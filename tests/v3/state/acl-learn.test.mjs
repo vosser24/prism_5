@@ -191,6 +191,132 @@ try {
     `to version must be 2, got ${upgradeEntry.to}`);
 
   console.log('F2.2 learn() upgrade: PASS');
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // F2.3: learn() refuses to upgrade a FLAT-owned agent (manifest / hand-authored)
+  //       and clears the stuck pending_upgrade flag.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // Seed a FLAT agent file agents/flat-owned-agent.md (the manifest layout).
+  const flatAgentsDir = join(claudeDir, 'agents');
+  mkdirSync(flatAgentsDir, { recursive: true });
+  const flatAgentFile = join(flatAgentsDir, 'flat-owned-agent.md');
+  writeFileSync(flatAgentFile, [
+    '---',
+    'name: flat-owned-agent',
+    'description: A shipped, flat-owned agent',
+    '---',
+    '',
+    '# flat-owned-agent',
+  ].join('\n'), 'utf-8');
+
+  // Roster: agent flagged for upgrade (pending_upgrade) at version 1.
+  const rosterF23 = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+  if (!rosterF23.agents) rosterF23.agents = {};
+  rosterF23.agents['flat-owned-agent'] = {
+    description: 'A shipped, flat-owned agent',
+    version: 1,
+    pending_upgrade: true,
+    status: 'upgrade_needed',
+    corrections_since_last_upgrade: 0,
+  };
+  writeFileSync(rosterPath, JSON.stringify(rosterF23, null, 2), 'utf-8');
+
+  // A factory that MUST NOT run for a flat-owned agent.
+  let flatFactoryCalled = false;
+  function guardTripFactory(spec, stagingDir) {
+    flatFactoryCalled = true;
+    const dest = join(stagingDir, spec.name + '.md');
+    writeFileSync(dest, '---\nname: x\ndescription: y\n---\n', 'utf-8');
+    return dest;
+  }
+
+  await learn({ home: tmpHome, factory: guardTripFactory, rosterPath });
+
+  // (a) factory never invoked for the flat-owned agent
+  assert.strictEqual(flatFactoryCalled, false,
+    'learn() must NOT invoke the factory for a flat-owned agent');
+
+  // (b) no nested agents/<name>/ dir created
+  assert.ok(!existsSync(join(claudeDir, 'agents', 'flat-owned-agent', 'flat-owned-agent.md')),
+    'learn() must NOT create a nested copy of a flat-owned agent');
+
+  // (c) version unchanged, pending_upgrade cleared, status reset
+  const rosterAfterF23 = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+  const fo = rosterAfterF23.agents['flat-owned-agent'];
+  assert.strictEqual(fo.version, 1, `flat-owned-agent version must stay 1, got ${fo.version}`);
+  assert.strictEqual(fo.pending_upgrade, false,
+    `flat-owned-agent pending_upgrade must be cleared, got ${fo.pending_upgrade}`);
+  assert.strictEqual(fo.status, 'active',
+    `flat-owned-agent status must reset to active, got ${fo.status}`);
+
+  console.log('F2.3 learn() flat-owned guard: PASS');
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // F34: learn() must not leak a stray tmpLive `.tmp` file when the atomic
+  //      promote's renameWithRetry(tmpLive -> liveFilePath) step fails.
+  //
+  //      Regression guard: the shipped cleanup line on the failure path was
+  //      `try { renameSync(tmpLive, tmpLive); } catch {}` — a no-op self-rename
+  //      (source === destination) inside an empty catch, so it silently did
+  //      nothing and left the copied `.tmp` file on disk forever. Fixed to
+  //      `unlinkSync(tmpLive)`, matching the cleanup-after-failed-
+  //      renameWithRetry idiom used elsewhere in this repo (e.g.
+  //      tools/lib/prism-state.mjs, tools/prism-installer.mjs).
+  // ════════════════════════════════════════════════════════════════════════════
+
+  const promoteFailName = 'promote-fail-skill';
+  const promoteFailDir = join(claudeDir, 'skills', promoteFailName);
+  mkdirSync(promoteFailDir, { recursive: true });
+
+  // Force renameSync(tmpLive, liveFilePath) to fail: pre-create the live
+  // file path AS A DIRECTORY. copyFileSync(staging, tmpLive) still succeeds
+  // (tmpLive is a distinct sibling path), but the rename-over-a-directory
+  // throws (EPERM on Windows), driving execution into the catch/cleanup path.
+  const liveFilePathForFail = join(promoteFailDir, promoteFailName + '.md');
+  mkdirSync(liveFilePathForFail, { recursive: true });
+
+  const rosterForFail = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+  rosterForFail.skills[promoteFailName] = {
+    description: 'Skill whose promote step is forced to fail',
+    version: 1,
+    corrections_since_last_upgrade: 3,
+  };
+  writeFileSync(rosterPath, JSON.stringify(rosterForFail, null, 2), 'utf-8');
+
+  function stubFactoryForFail(spec, stagingDir) {
+    const dest = join(stagingDir, spec.name + '.md');
+    writeFileSync(dest, [
+      '---',
+      `name: ${spec.name}`,
+      `description: ${spec.description} (upgraded)`,
+      'type: skill',
+      'version: 2',
+      '---',
+      '',
+      `# ${spec.name} v2`,
+    ].join('\n'), 'utf-8');
+    return dest;
+  }
+
+  await learn({ home: tmpHome, factory: stubFactoryForFail, rosterPath });
+
+  // Sanity: the promote genuinely failed (roster untouched — the update-roster
+  // block only runs after a successful atomic promote).
+  const rosterAfterFail = JSON.parse(readFileSync(rosterPath, 'utf-8'));
+  const failedEntry = rosterAfterFail.skills[promoteFailName];
+  assert.strictEqual(failedEntry.version, 1,
+    `promote-fail-skill version must stay 1 (promote must have failed), got ${failedEntry.version}`);
+  assert.strictEqual(failedEntry.corrections_since_last_upgrade, 3,
+    `promote-fail-skill counter must be untouched by a failed promote, got ${failedEntry.corrections_since_last_upgrade}`);
+
+  // The actual regression check: no stray `.tmp` file left behind.
+  const filesAfterFail = readdirSync(promoteFailDir);
+  const strayTmp = filesAfterFail.filter(f => f.endsWith('.tmp'));
+  assert.deepStrictEqual(strayTmp, [],
+    `promote failure must not leak a .tmp file; found: ${JSON.stringify(filesAfterFail)}`);
+
+  console.log('F34 learn() promote-failure leaves no stray tmp file: PASS');
   console.log('ok');
 } finally {
   rmSync(tmpHome, { recursive: true, force: true });

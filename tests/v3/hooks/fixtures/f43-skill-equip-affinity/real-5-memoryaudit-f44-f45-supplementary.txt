@@ -1,0 +1,55 @@
+Repo: C:\dev\prism_3. You own PRISM's memory-write layer. Tasks #61 (F44) and #62 (F45) are dispatched together because both edit tools/lib/memory-heal.mjs.
+
+PRISM-LEASE: agent=memory-layer-fix files=tools/lib/memory-heal.mjs,tools/lib/memory-anchors.mjs,tools/prism-clean.mjs,tests/v3/state/test-memory-heal.mjs
+
+Use the Edit/Write TOOLS for all file changes — never Bash/PowerShell redirection (`>`, Set-Content, Out-File default to UTF-8-with-BOM on Windows and corrupt these files).
+Do NOT run `node tools/prism-installer.mjs install` ([[D081]], Locked — deployment is the orchestrator's single post-batch step).
+⚠️ Do NOT write to `.claude/agents/MEMORY.md` directly. It is live, it is regenerated at SessionStart, and a hand-edit will be silently overwritten. You change the CODE that writes it, never the file.
+Do NOT touch hooks/ or commands/ — three sibling workers own those RIGHT NOW.
+
+Emit your step list FIRST, then execute. Tool-call budget: ~40. One-line status after each task.
+Compute and report YOUR OWN result; do NOT spawn a child agent and relay its status as your answer. A holding string as your final message is a FAILED result.
+
+════════ CONTEXT — measured this session, reproduce before trusting ════════
+`regenerateStandingRules` (tools/lib/memory-heal.mjs:263-295) rebuilds the always-on rules block in MEMORY.md from Locked adjudications carrying a `**Rule:**` line. Ordering is `orderNewestFirst` (:222-227): Date descending, D-number only as a same-date tiebreak. Cap defaults to 35.
+MEASURED: pool = **53** Locked-with-Rule adjudications, cap = 35, so **18 are evicted**: D046, D045, D044, D043, D042, D041, D040, D028, D027, D026, D025, D024, D023, D022, D021, D018, D014, D010. MEMORY.md = 24,101 of 25,600 bytes — **1,499 bytes of headroom UNUSED** while a COUNT cap does the excluding.
+SEVERITY IS MODERATE, NOT CRITICAL — this was checked: evicted rules stay reachable via tools/prism-knowledge-index.mjs:190 `scanAdjudications` and the keyword map at .claude/references/.knowledge-keyword-map.json (D046/D043/D024/D010 all confirmed PRESENT). The block is a HOT-PATH CACHE, not the system of record. The genuine residual harm is narrower: eviction converts UNCONDITIONAL recall into CONDITIONAL recall (the matcher only fires on token overlap). Do not re-inflate this to an emergency.
+
+════════ TASK 1 — AUDIT the 53 and PROPOSE a retire list. DO NOT UN-LOCK ANYTHING. ════════
+The owner chose "audit + retire, then instrument". But there is a GOVERNANCE CONFLICT you must respect, and resolving it is the orchestrator's job, not yours:
+  The project capture convention states a file with `Status: Locked` "may not be edited in place. Subsequent design changes create a new file referencing the locked one."
+Un-Locking a Locked adjudication IS an in-place edit of a Locked file. So:
+1. FIRST, compose-first: check whether a retirement/supersession mechanism ALREADY EXISTS. Look for a `**Superseded-by:**` convention in existing adjudications, an `archived/` directory, any `retire`/`archive` handling in tools/, and read `.claude/rules/capture-conventions.md` in full. If a mechanism exists, USE IT and say so. Do not invent a second one.
+2. Enumerate all 53 Locked-with-Rule adjudications. For each of the 18 currently evicted, judge whether it is SPENT (superseded, obsolete, or a completed one-off) or STILL LIVE. Give a one-line reason each, citing the file's own text.
+   Strong candidates for spent: D024/D025/D026/D027/D028 are a June benchmark series (benchmark-validation-outcomes, orchestration-overhead-benchmark, item6-preregistration-methodology, item6-execution-decisions, item6-benchmark-outcome).
+   Strong candidates for STILL LIVE — argue explicitly if you disagree: D046 (defines PRISM's omissive defect class; the most-cited rule in the project) and D043 (agent-teams dispatch-guard enforcement gap — it is FIRING IN PRODUCTION RIGHT NOW; every Bash call this session emitted "PRISM DISPATCH-GUARD (agent-teams / D043)").
+3. OUTPUT A PROPOSED LIST ONLY. Do NOT edit a single `**Status:**` line. The owner rules per-file at the checkpoint. Report the projected post-retirement pool size so the owner can see whether it clears the cap.
+
+════════ TASK 2 — INSTRUMENT the eviction (this you DO implement) ════════
+`regenerateStandingRules` does `candidates = all.slice(0, cap)` then a byte-fit `while` loop doing `candidates.slice(0, -1)` (:279-283). NEITHER path logs, warns, counts, or returns the dropped set — it returns `{count, changed}`, the number KEPT, never the number LOST. An observer cannot distinguish a pool of 35 from a pool of 53.
+This is the [[D046]] omissive class (Locked): a structured path silently drops data, a plausible success is emitted, nothing reports the miss. D046 mandates making misses LOUD. The function that maintains D046's own delivery is currently an instance of the class D046 describes.
+DO: make eviction observable — return the evicted D-numbers AND emit a log record, distinguishing the two distinct causes (count-cap vs byte-fit trim), following the project's existing telemetry pattern (`.prism-routing.jsonl`; match how neighbouring code writes it — read before inventing). Do NOT change the cap. Do NOT raise `MEMORY_MD_HARD_CAP_BYTES` — it tracks the documented 25 KB subagent-memory injection limit, and raising it trades a VISIBLE eviction for an INVISIBLE truncation; that trade was considered and explicitly rejected.
+
+════════ TASK 3 — #62 / F45: three defects on the append path ════════
+1. TWO CAPS ON ONE ANCHOR: `POINTER_KEEP = 10` (tools/prism-clean.mjs:129) vs `POINTER_KEEP = 20` (tools/lib/memory-heal.mjs:56, raised 10->20 under D085 — see tests/v3/state/test-memory-heal.mjs:15). Both write the SAME LESSON_ANCHOR via `upsertUnderAnchor` with different keep values, so the effective window depends on which path wrote last.
+   ⚠️ ESTABLISH INTENT BEFORE CHANGING EITHER. Read D085 in full (docs/prism/adjudications/). Per [[D057]] (Locked), before collapsing an existing mechanism, QUOTE the comment saying why it is there. If the divergence is DELIBERATE, the correct fix is a comment explaining it — NOT a reconciliation. Do not assume oversight.
+2. DISCARDED WRITE-FAILURE RETURN (the serious one): tools/lib/memory-heal.mjs:106-118 `writeMemoryMdAtomicSafe` returns FALSE on byte-cap overflow; :186-188 `healMemoryPointers` CALLS it and DISCARDS the boolean, then reports addedDecisions/addedLessons as success though nothing reached disk. Contrast proving this is a defect and not a choice: the MANUAL path for the identical condition (`writeMemoryMdAtomic`, tools/prism-clean.mjs:174-179) fails LOUDLY with `die(...25 KB cap..., 8)`. Two paths, same condition, opposite observability. FIX: propagate or log the failure so a silent drop is impossible.
+   GOVERNANCE — ASSESS, DO NOT ASSUME: D086 ("fail-open paths must be observable") is Proposed and HELD at 3 of 4 required instances. This is a CANDIDATE fourth. Judge it honestly against D086's own stated criteria and write a verdict either way. A prior candidate (#51) was assessed and REFUTED because its consumers emitted visible warnings — do not reach for this one just to clear the hold. Do NOT edit D086's Status line; record your verdict in your report.
+3. STALE WORDING: the LESSON_ANCHOR comment and the "## Recent lessons (last 10, pointer-only)" heading are both wrong. Since D085, tools/prism-clean.mjs:327-329 writes lesson TEXT INLINE ("the lesson TEXT goes straight in — no pointer"), and the heal path keeps 20, not 10. Correct the wording to match shipped behaviour.
+Minimal repair for the lessons window itself, per [[D083]] (Locked — repair the delivery layer you already have, do not build a new channel): ONE log line in `upsertUnderAnchor` (tools/lib/memory-anchors.mjs:71, where `const kept = pointers.slice(-keep)` silently drops) naming the dropped entries.
+
+════════ CONSTRAINTS ════════
+[[D090]] (Locked) — its Rule applies directly to you: re-verify ACTUAL post-change membership and byte size BY INVOCATION, never by simulation. A prior session trusted a simulated count and was wrong. After your changes, actually call `regenerateStandingRules` against a SCRATCH fixture (never the live MEMORY.md) and report real numbers.
+[[D084]] (Locked) — scope every acceptance check to the region under test; a whole-file grep on an artifact whose prose discusses the identifier is self-satisfying.
+Add or extend tests in tests/v3/state/test-memory-heal.mjs. Build fixtures with mkdtempSync as the existing tests do — and COPY EVERY TRANSITIVE `./` or `../` IMPORT of the files under test into the fixture, or you will hit an opaque ERR_MODULE_NOT_FOUND that looks like a logic bug. This exact trap broke four tests in one migration this week.
+
+════════ VERIFY ════════
+```
+node --check tools/lib/memory-heal.mjs
+node --check tools/lib/memory-anchors.mjs
+node --check tools/prism-clean.mjs
+node tests/v3/state/test-memory-heal.mjs
+```
+Do NOT run the full suite — the orchestrator runs it once after the batch.
+
+RETURN: (1) the retire PROPOSAL — 18 rows, spent-or-live with a reason each, plus projected pool size, and whether an existing retirement mechanism was found; (2) the eviction instrumentation you added and its real post-change invocation numbers; (3) the D085 intent finding on 10-vs-20 quoted; (4) your D086 fourth-instance verdict with reasoning. Substance in the reply.

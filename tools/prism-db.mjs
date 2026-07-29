@@ -20,8 +20,9 @@
 import {DatabaseSync} from 'node:sqlite';
 import {existsSync, mkdirSync} from 'fs';
 import {join, dirname} from 'path';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 export const DB_PATH = join(H, '.claude', '.prism.db');
 
 const SCHEMA = `

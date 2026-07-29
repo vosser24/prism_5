@@ -41,6 +41,13 @@ const check = (label, cond) => {
 // Run the guard against a fresh temp HOME whose sentinel encodes the tier/dispatch
 // state for this case. CLAUDE_CODE_ENTRYPOINT is cleared unless a case sets it, so
 // ambient env can never make a parent-context case look like a subagent.
+// CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is cleared for the same reason: it pins the
+// single-actor hard-deny so the parent-context assertions below don't flip to the
+// D043 advisory-downgrade when the harness itself runs inside an agent-teams
+// session (ambient marker leak — v6.4.0 added this neutralization to the sibling
+// suites under tests/v3/state/ but missed this file, which sits outside the
+// `tests/v3/state/test-*.mjs` glob run-all.sh iterates). Both are spread BEFORE
+// `...env`, so a case can still opt back in — see case 11.
 function runGuard(payload, { sentinel = {}, env = {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prism-dgf-home-'));
   try {
@@ -53,7 +60,8 @@ function runGuard(payload, { sentinel = {}, env = {} } = {}) {
     writeFileSync(join(home, '.claude', `.prism-turn-tier-${SID}.json`), JSON.stringify(s));
     const childEnv = {
       ...process.env, HOME: home, USERPROFILE: home,
-      CLAUDE_CODE_ENTRYPOINT: '', PRISM_DISPATCH_GUARD: 'hard', ...env,
+      CLAUDE_CODE_ENTRYPOINT: '', CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '',
+      PRISM_DISPATCH_GUARD: 'hard', ...env,
     };
     const r = spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: SID, ...payload }),
@@ -138,6 +146,23 @@ check('SUBAGENT WebFetch on panel turn -> ALLOWED (the reported dead-end)',
   allowed(runGuard(
     { tool_name: 'WebFetch', parent_tool_use_id: 'p1', tool_input: { url: 'https://example.com' } },
     { sentinel: { tier: 'opus', summon_panel: true, orchestrator_dispatched: false, dispatched: false } })));
+
+// ── 11. CONTRAST (D043): case 5's payload + the agent-teams marker → ALLOWED ──
+// Identical to case 5 in EVERY respect except CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS,
+// so the pair pins the exact axis the two behaviours turn on: single-actor →
+// hard-deny (case 5), agent-teams + advisory (the default TEAMS_MODE) → allow with
+// an in-band advisory (hooks/prism-parent-dispatch-guard.mjs, teamsAdvisoryDowngrade).
+// This makes the runGuard neutralization above an ASSERTED contrast rather than an
+// unstated assumption: delete it and case 5 goes red, so the leak cannot silently
+// return. Also asserts the advisory text, so "allowed" can't pass for a wrong reason.
+{
+  const r = runGuard(
+    { tool_name: 'Bash', tool_input: { command: 'npm run build' } },
+    { sentinel: { tier: 'sonnet', dispatched: false },
+      env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' } });
+  check('PARENT Bash (sonnet, no dispatch) + agent-teams -> ALLOWED (D043 advisory downgrade)',
+    allowed(r) && /agent-teams \/ D043/.test(r.out) && /ADVISORY, not a block/.test(r.out));
+}
 
 console.log(`\n${pass}/${total} passed`);
 process.exit(pass === total ? 0 : 1);

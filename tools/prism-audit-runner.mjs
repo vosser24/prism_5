@@ -14,11 +14,12 @@
 //
 // Exit 0 on all-pass, 1 on any fail or runner error.
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, rmSync} from 'node:fs';
 import {spawn} from 'node:child_process';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..');
@@ -55,6 +56,24 @@ Exit 0 on all-pass, 1 on any fail or runner error.`);
 // --- load catalog ---
 if (!existsSync(scenariosPath)) {
   console.error(`[audit] FATAL: scenarios file not found at ${scenariosPath}`);
+  // F13 — distinguish "manual (non-plugin) install" from "corrupted/edited source
+  // checkout". install-manifest.json ships tools/prism-audit-runner.mjs to a
+  // manual install's ~/.claude/tools/, but never copies tests/ (no manifest
+  // entry for tests/v3/audit-scenarios.json or tests/v3/analyze-audit.mjs) —
+  // so REPO (this runner's parent dir) has no tests/v3 directory at all on a
+  // manual install, vs. a full source-repo checkout where tests/v3 exists
+  // alongside tools/. Only degrade-with-explanation here; do not silently
+  // no-op or fabricate a report (Constraints section of commands/prism-audit-full.md).
+  if (!existsSync(join(REPO, 'tests', 'v3'))) {
+    console.error(`[audit] This looks like a manual (non-plugin) PRISM install: the runner is`);
+    console.error(`[audit] present (this file), but its test-fixture directory (tests/v3/) is`);
+    console.error(`[audit] never shipped to manual installs by design (see tools/install-manifest.json`);
+    console.error(`[audit] — it copies tools/, hooks/, agents/, commands/, skills/, never tests/).`);
+    console.error(`[audit] /prism-audit-full only works from a full PRISM source-repo clone.`);
+    console.error(`[audit] Use instead:`);
+    console.error(`[audit]   - /prism-audit  (fast hygiene/secrets scan — works on any install)`);
+    console.error(`[audit]   - clone the PRISM source repo and run this command with that repo as cwd`);
+  }
   process.exit(1);
 }
 let catalog;
@@ -86,13 +105,71 @@ let pass = 0;
 let fail = 0;
 const results = [];
 
+// #33 — AUDIT HOME ISOLATION. Every hook this runner spawns resolves its state
+// directory from HOME/USERPROFILE, so inheriting the operator's real environment
+// made each audit run deposit fixture state into the LIVE ~/.claude, structurally
+// indistinguishable from production session state. Measured on 2026-07-27 against
+// the real HOME before this fix, scoped to the `audit-*` session ids THIS catalog
+// emits (all 66 of them start with `audit-`, so the count is attributable — the
+// wider 42-sentinel figure in task #33 also includes app-A*/live-L*/check-0*/s-*
+// fixtures deposited by OTHER harnesses, which this fix does not address):
+//   13 `.prism-turn-tier-audit-*.json` sentinels,
+//   63 `"session_id":"audit-` lines in the production `.prism-routing.jsonl`,
+//   77 `audit-` lines in `.prism-spend.jsonl`.
+// A single full run deposits 24 entries across 11 artifact families — sentinels
+// are only the visible part; the contaminated routing/spend telemetry is what
+// /prism-telemetry and the monitor read back.
+// Pointing HOME at a run-scoped temp dir keeps all of it out of production state.
+// Stable path (not mkdtemp), mirroring RUN_SCRATCH_DIR below, so the deposited
+// fixture state stays inspectable after a run for debugging.
+// Escape hatch: PRISM_AUDIT_REAL_HOME=1 restores the prior inherit-real-HOME
+// behavior for anyone deliberately auditing against live state.
+const USE_REAL_HOME = String(process.env.PRISM_AUDIT_REAL_HOME || '') === '1';
+const AUDIT_HOME = USE_REAL_HOME
+  ? prismHome()
+  : join(tmpdir(), 'prism-audit-home');
+
+// Reset the isolated state dir before every run. Measured, not assumed: with a
+// persistent dir the audit is NOT IDEMPOTENT — run 1 on a clean dir scored 68/72,
+// and an immediately-following run 2 scored 67/72 because scenario UAT60-E19A
+// (prism-dispatch-dedup-guard, expected_exit_code 0) read the
+// `.prism-inflight-dispatches-audit-UAT60-E19.json` left behind by run 1 and denied
+// with exit 2. A verification harness whose result depends on whether it was run
+// before is worse than useless, so each run starts from empty state.
+// The USE_REAL_HOME guard is load-bearing: it must be impossible for this to
+// delete anything under a real ~/.claude.
+if (!USE_REAL_HOME) { try { rmSync(join(AUDIT_HOME, '.claude'), {recursive: true, force: true}); } catch {} }
+try { mkdirSync(join(AUDIT_HOME, '.claude'), {recursive: true}); } catch {}
+
+// The environment every spawned hook receives. Beyond HOME isolation this pins
+// CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS off: it is ambiently set to 1 inside an
+// agent-teams session, and hooks/prism-parent-dispatch-guard.mjs:120 reads it to
+// downgrade that guard's hard-deny to a D043 advisory — which made scenario
+// DSP-001 (expected_exit_code 2) return 0 and fail purely because of WHERE the
+// audit was run from, not what the guard does. Pinning it makes the audit
+// deterministic inside or outside an agent-teams session. This is the same
+// ambient-marker leak class fixed in tests/v3/dispatch-guard-subagent.test.mjs.
+const CHILD_ENV = {
+  ...process.env,
+  HOME: AUDIT_HOME,
+  USERPROFILE: AUDIT_HOME,
+  CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '',
+};
+
+// #33 — fixture state no longer lands in the real ~/.claude; say where it went.
+console.log(`[audit]   hook state dir: ${AUDIT_HOME}` +
+  (String(process.env.PRISM_AUDIT_REAL_HOME || '') === '1' ? '  (REAL HOME — PRISM_AUDIT_REAL_HOME=1)' : '  (isolated)'));
+
 // v5.x FIX-B: seed a per-session sentinel so stateful guards (dispatch-guard,
 // mutation-guard) can be exercised the way they fire in a live session. The
 // synthetic harness otherwise has no sentinel, so the guards short-circuit to
 // "allow" and the scenario can't test the deny path. Returns the path to clean.
+// #33: seeds into AUDIT_HOME, the SAME root the spawned hook reads via CHILD_ENV —
+// these two must not diverge, or the 6 setup_sentinel scenarios would write the
+// seed where the hook under test never looks.
 function seedSentinel(sc) {
   if (!sc.setup_sentinel) return null;
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = AUDIT_HOME;
   if (!H) return null;
   const sid = (sc.input_payload && sc.input_payload.session_id) || 'anon';
   const p = join(H, '.claude', `.prism-turn-tier-${sid}.json`);
@@ -120,7 +197,7 @@ function runScenario(targetPath, sc) {
     const done = (res) => { if (seeded) { try { unlinkSync(seeded); } catch {} } resolve(res); };
     const proc = spawn('node', [targetPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: CHILD_ENV,   // #33 — isolated HOME + pinned ambient markers, see CHILD_ENV above
     });
     let stdout = '';
     let stderr = '';

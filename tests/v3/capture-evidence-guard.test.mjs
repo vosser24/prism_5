@@ -275,6 +275,45 @@ await test('A(r) FIX-4c: Edit appending a NEW heading + unverified claim to an a
   assert(parsed.hookSpecificOutput.permissionDecision === 'deny', `stdout=${r.stdout}`);
 });
 
+// v6.2.1 message-scope fix (task #87 / D060 owner-report): the ratchet-deny
+// message must NOT claim the file "carries no **Verified:** field" when a
+// **Verified:** field plainly exists elsewhere in the file (that's the only
+// way the ratchet branch is even reached -- see run() around
+// EVIDENCE_FIELD_RE.test(content)). It must instead name the real scope: the
+// newly-ADDED block has no field of its own. Conversely, the plain
+// (non-ratchet) deny -- where the field is genuinely absent file-wide -- must
+// keep the original "file carries no" wording, which IS accurate there.
+await test('A(r2) message-scope: ratchet deny names the ADDED-block scope, not file-wide absence', () => {
+  const filePath = seedFile('docs/prism/adjudications/D989-ratchet-msg.md', VERIFIED_ADJUDICATION);
+  const r = run({
+    tool_name: 'Edit',
+    tool_input: {
+      file_path: filePath,
+      old_string: '## Diagnosis',
+      new_string: '## New lesson\nthe fix works\n\n## Diagnosis',
+    },
+  });
+  assert(r.exit === 2, `exit=${r.exit}`);
+  const parsed = JSON.parse(r.stdout);
+  const reason = parsed.hookSpecificOutput.permissionDecisionReason;
+  assert(/ADDED block carries no \*\*Verified:\*\* field/.test(reason), `reason should name the added-block scope, got: ${reason}`);
+  assert(!/this write to .* the file carries no \*\*Verified:\*\* field/.test(reason),
+    'reason must not claim file-wide absence when a Verified field exists elsewhere in the file');
+});
+
+await test('A(r3) message-scope: plain deny (no evidence anywhere) keeps the file-wide wording', () => {
+  const filePath = scratchPath('docs', 'prism', 'adjudications', 'D989-plain-msg.md');
+  const r = run({
+    tool_name: 'Write',
+    tool_input: {file_path: filePath, content: UNVERIFIED_ADJUDICATION},
+  });
+  assert(r.exit === 2, `exit=${r.exit}`);
+  const parsed = JSON.parse(r.stdout);
+  const reason = parsed.hookSpecificOutput.permissionDecisionReason;
+  assert(/the file carries no \*\*Verified:\*\* field/.test(reason), `reason should keep file-wide wording, got: ${reason}`);
+  assert(!/ADDED block/.test(reason), 'plain deny must not mention the added-block scope');
+});
+
 await test('A(s) FIX-4c: Edit fixing a typo in that same already-evidenced file (no new heading) -> allow', () => {
   const filePath = seedFile('docs/prism/adjudications/D991-ratchet.md', VERIFIED_ADJUDICATION);
   const r = run({

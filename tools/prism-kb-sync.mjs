@@ -14,8 +14,9 @@ import {join} from 'path';
 import {spawnSync} from 'child_process';
 import {init as ensureNotebooks, loadMeta, saveMeta, META_PATH} from './prism-kb-notebook-init.mjs';
 import {safeLogApiCall} from './prism-db.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const INDEX_PATH = join(H, '.claude', '.prism-kb-index.json');
 
 function nb(args, timeoutMs = 180000) {

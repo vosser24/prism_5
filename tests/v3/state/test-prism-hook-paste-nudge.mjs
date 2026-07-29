@@ -11,7 +11,7 @@
 // subprocess over stdin — the way Claude Code runs it.
 
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdtempSync, rmSync, readFileSync, existsSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -33,6 +33,34 @@ function run(prompt) {
   return r.stdout || '';
 }
 
+// T8 (2026-07-22): commit 012cb1548 (v6.6.0 FIX-6) deleted the "Test-driven
+// work"/"Debugging work"/"Git worktree work" nudge TEXT from prism-hook.mjs
+// but deliberately PRESERVED the underlying recognizer signal — a matching
+// prompt sets matchedInvocation=true, which resets gs.trivial_streak to 0
+// (persisted per-session in .prism-global-state.json); a non-matching prompt
+// increments it. runFull() reads that value back before the ephemeral HOME is
+// torn down, so paste-dampening (stripPastedContent) can be asserted on the
+// signal that actually still exists, instead of on the deleted text.
+function runFull(prompt, sessionId) {
+  const home = mkdtempSync(join(tmpdir(), 'prism-hook-home-'));
+  const cwd = mkdtempSync(join(tmpdir(), 'prism-hook-cwd-'));
+  const sid = sessionId || 'paste-nudge-test-full';
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({prompt, session_id: sid}),
+    encoding: 'utf8',
+    cwd,
+    env: {...process.env, HOME: home, USERPROFILE: home},
+  });
+  let trivialStreak = null;
+  try {
+    const gsf = join(home, '.claude', '.prism-global-state.json');
+    if (existsSync(gsf)) trivialStreak = JSON.parse(readFileSync(gsf, 'utf8')).sessions[sid].trivial_streak;
+  } catch {}
+  rmSync(home, {recursive: true, force: true});
+  rmSync(cwd, {recursive: true, force: true});
+  return {stdout: r.stdout || '', trivialStreak};
+}
+
 let pass = 0, total = 0;
 const check = (l, c) => { total++; c ? pass++ : console.log('FAIL: ' + l); };
 
@@ -49,13 +77,19 @@ const PASTE = [
 ].join('\n');
 
 const pasted = run(PASTE);
-check('pasted transcript does NOT fire the TDD nudge', !/Test-driven work/.test(pasted));
-check('pasted transcript does NOT fire the debugging nudge', !/Debugging work/.test(pasted));
-check('pasted transcript does NOT fire the git-worktree nudge', !/Git worktree work/.test(pasted));
-
-// A genuine request (no paste, ratio 0) must STILL fire the nudge.
-const genuine = run('please implement the settlement function with proper tests, TDD red-green first');
-check('genuine TDD request still fires the TDD nudge', /Test-driven work/.test(genuine));
+// T8 fix: these three used to assert on the deleted nudge TEXT (see runFull()
+// comment above) and so passed vacuously — the assertion could not fail for
+// any input once 012cb1548 removed the strings from prism-hook.mjs. Assert on
+// the surviving signal instead: on a fresh session, trivial_streak lands at 1
+// (incremented, not reset) only if matchedInvocation stayed false for all of
+// TDD/debug/worktree — i.e. paste-dampening actually suppressed the
+// recognizer. A positive control (same vocabulary as the user's OWN words,
+// not pasted) proves this has real discriminating power: it must reset
+// trivial_streak to 0, showing the recognizer still fires when it should.
+check('pasted transcript does NOT fire the TDD/debug/worktree recognizer (trivial_streak increments, not reset)',
+  runFull(PASTE, 'paste-nudge-tdw-pasted').trivialStreak === 1);
+check('same TDD/debug/worktree vocabulary as the user\'s OWN words DOES fire the recognizer (trivial_streak resets to 0)',
+  runFull('debug this and find the root cause with a git worktree, write tests first', 'paste-nudge-tdw-own').trivialStreak === 0);
 
 // ── v5.3.1: broadened parallel-opportunity detector ──────────────────────────
 // Everyday multi-target work should now trip the "Parallelizable work detected"

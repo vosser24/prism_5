@@ -38,6 +38,8 @@ import {readFileSync, writeFileSync, existsSync, readdirSync, statSync, renameSy
 import {join, dirname, basename, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {extractTaskSnapshot, readTaskScanLines, foldTaskRecords} from '../hooks/lib/prism-task-snapshot.mjs';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -54,7 +56,7 @@ for (let i = 0; i < argv.length; i++) {
   else { console.error(`unknown argument: ${a}`); process.exit(1); }
 }
 projectDir = resolve(projectDir || process.cwd());
-const H = process.env.HOME || process.env.USERPROFILE || '';
+const H = prismHome();
 const claudeDir = resolve(claudeDirArg || join(H, '.claude'));
 const pointerPath = resolve(pointerArg || join(projectDir, '.claude', '.prism-open-tasks.json'));
 
@@ -244,6 +246,7 @@ const payload = {
 };
 const tmp = pointerPath + '.tmp';
 writeFileSync(tmp, JSON.stringify(payload, null, 2));
-renameSync(tmp, pointerPath);
+// F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+renameWithRetry(renameSync, tmp, pointerPath);
 console.log(`APPLIED — wrote ${reconstructed.length} open task(s) to ${pointerPath}${flags.length ? `  (${flags.length} flag(s) above still need human review)` : ''}`);
 process.exit(0);

@@ -25,8 +25,9 @@ import { existsSync, writeFileSync, readFileSync, mkdirSync, unlinkSync } from '
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { prismHome } from './lib/prism-home.mjs';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME = prismHome();
 const TOOL_ROOT = join(HOME, '.claude', 'tools');
 const TIME_BUDGET_MS = parseInt(process.env.PRISM_ACL_TIME_BUDGET_MS || '60000', 10);
 const workerStart = Date.now();
@@ -142,7 +143,7 @@ export async function productionFactory(spec, stagingDir) {
   //   ~/.claude/agents/<name>/<name>.md  (directory form — for PRISM)
   //   ~/.claude/agents/<name>.md         (flat form — for Claude Code @agent loading)
   // Re-read HOME each call so tests can override it at runtime.
-  const homeDir = process.env.HOME || process.env.USERPROFILE;
+  const homeDir = prismHome();
   const defaultAgentsDir = join(homeDir, '.claude', 'agents');
   const defaultFlatFile = join(defaultAgentsDir, name + '.md');
   const defaultDirFile  = join(defaultAgentsDir, name, name + '.md');

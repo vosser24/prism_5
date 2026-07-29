@@ -27,32 +27,30 @@
 // No npm dependencies. Uses spawnSync('claude', ['-p', ...]) via Claude Code
 // subscription auth (no separate ANTHROPIC_API_KEY required).
 
-import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, statSync, openSync, readSync, closeSync} from 'fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, statSync, openSync, readSync, closeSync, renameSync} from 'fs';
+import {renameWithRetry} from '../tools/lib/atomic-fs.mjs';
 import {join, dirname, basename} from 'path';
 import {createHash} from 'crypto';
 import {pathToFileURL} from 'url';
 import {spawn} from 'child_process';
 import {withRosterLock} from '../tools/lib/prism-roster-lock.mjs';
+import {resolveClaudeBin, OOB_REVIEWER_TIMEOUT_MS} from './lib/prism-oob-spawn.mjs';
+import {capBytesTail, resolveMaxBytes} from './lib/prism-transcript-extract.mjs';
+import {prismHome} from './lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+// Shared payload-sizing backstop (F7 Phase 3 follow-up). phase-0d overflowed on
+// a 600-raw-line transcript feed; phase-1-5 feeds a single subagent output, not
+// a raw transcript window, so it is far less exposed — BUT input.output /
+// input.last_assistant_message are unbounded in principle and flow whole into
+// the pending payload → JSON.stringify(pending) → `claude -p` stdin. Cap the
+// output by BYTES (keep the most recent tail) so an oversized subagent message
+// can't reproduce the same "Prompt is too long" reviewer failure. The 4096-byte
+// readTranscriptTail fallback below is already bounded; this covers the other
+// two sources. Env-overridable via PRISM_PHASE_1_5_MAX_INPUT_BYTES.
+const PHASE_1_5_MAX_INPUT_BYTES = resolveMaxBytes('PRISM_PHASE_1_5_MAX_INPUT_BYTES');
+
+const H = prismHome();
 const LOG_PATH = join(H, '.claude', '.prism-routing.jsonl');
-
-// H4: resolve the claude executable to an absolute path. On Windows, spawnSync
-// without shell:true does not append PATHEXT (.cmd/.exe), so a bare 'claude'
-// silently fails. Probe PATH for claude(.cmd|.exe). Falls back to 'claude'.
-function resolveClaudeBin() {
-  if (process.env.PRISM_CLAUDE_BIN) return process.env.PRISM_CLAUDE_BIN;
-  const isWin = process.platform === 'win32';
-  const exts = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
-  const pathDirs = (process.env.PATH || '').split(isWin ? ';' : ':');
-  for (const dir of pathDirs) {
-    for (const ext of exts) {
-      const cand = join(dir, 'claude' + ext);
-      try { if (existsSync(cand)) return cand; } catch {}
-    }
-  }
-  return 'claude';
-}
 
 function appendRoutingLog(obj) {
   try {
@@ -125,7 +123,10 @@ export async function run(payload) {
   }
 
   const sessionId = input.session_id || 'anon';
-  const output = input.output || (input.tool_response && (input.tool_response.output || input.tool_response.content)) || input.transcript || input.last_assistant_message || readTranscriptTail(input.transcript_path || input.agent_transcript_path) || '';
+  const rawOutput = input.output || (input.tool_response && (input.tool_response.output || input.tool_response.content)) || input.transcript || input.last_assistant_message || readTranscriptTail(input.transcript_path || input.agent_transcript_path) || '';
+  // Byte-cap the reviewer-bound output (keep the most recent tail) — see the
+  // PHASE_1_5_MAX_INPUT_BYTES note above. No-op for normal-sized outputs.
+  const output = capBytesTail(rawOutput, PHASE_1_5_MAX_INPUT_BYTES);
   const taskBrief = input.task_brief || (input.tool_input && input.tool_input.prompt) || '';
 
   if (!output || typeof output !== 'string' || output.length < 10) {
@@ -182,11 +183,16 @@ export async function run(payload) {
         if (r.agents?.[agentName]?.skip_next_oob) {
           delete r.agents[agentName].skip_next_oob;
           writeFileSync(rosterPath + '.tmp', JSON.stringify(r, null, 2));
-          const {renameSync} = await import('fs');
-          renameSync(rosterPath + '.tmp', rosterPath);
+          renameWithRetry(renameSync, rosterPath + '.tmp', rosterPath);
         }
       });
-    } catch (e) { process.stderr.write(`[oob] failed to clear skip_next_oob: ${e.message}\n`); }
+    } catch (e) {
+      // Already loud (stderr + logEvent below) — this is not the silent
+      // D046 shape, but bounded retry (task #82/#88) still reduces how
+      // often this catch is reached under transient Windows AV/indexer
+      // handle-lock contention on the shared roster.json.
+      process.stderr.write(`[oob] failed to clear skip_next_oob: ${e.message}\n`);
+    }
     process.stderr.write(`[oob] skip_next_oob honored for '${agentName}'; flag cleared\n`);
     logEvent('skip-next-oob', {agent: agentName});
     return { exit: 0, stdout: '', stderr: '' };
@@ -379,10 +385,36 @@ async function invokeReviewerInline(sha, flagLib, useLite = false) {
           model: reviewerModel,
           systemPrompt: reviewerPrompt,
           userMessage,
-          timeoutMs: 50_000,
+          // D064 remedy 2: root-caused 2026-07-22. All 9 prior `reviewer-failed`
+          // ETIMEDOUT entries were `pending-written -> reviewer-failed` exactly
+          // ~50.2-50.3s apart (routing log), i.e. the spawn was killed AT the
+          // old 50_000ms ceiling, not stuck indefinitely. Manual reproduction
+          // of this exact spawnSync(claude, ['-p','--model',...]) call, same
+          // argv/env/stdio, against the real reviewer prompt + real orphaned
+          // pending payloads (5.8KB-27KB), completed successfully 3/3 times
+          // (exit 0, valid JSON verdict) in 80s, 100s, and 111s wall-clock —
+          // never hanging, always finishing, always well past 50s. This is
+          // genuine `claude -p` cold-start + payload latency on this
+          // SMB-mounted home dir, not a blocked/hung child (hypothesis (a),
+          // not (b)/(c)/(d) — see D064 remedy 2 update for the full writeup).
+          // 240_000ms gives >2x margin over the worst observed run; this call
+          // is always reached via the detached/unref'd async worker
+          // (spawnAsyncReviewer), so a longer ceiling costs nothing in
+          // master-session latency — it only bounds the background worker.
+          timeoutMs: OOB_REVIEWER_TIMEOUT_MS,
         });
       } catch (e) {
         logEvent('reviewer-failed', {sha, error: String(e && e.message), code: e && e.code});
+        // D064 remedy 3: symmetric with the parse-failed branch below — a
+        // reviewer-failed pending file has no retry consumer anywhere in the
+        // codebase (verified: listPendingVerdicts() is called only from a
+        // test; SessionStart only picks up completed *verdicts*, never
+        // *pending* payloads). Leaving it on disk did not preserve a retry
+        // path — it only leaked state (9 orphaned
+        // .prism-phase-1-5-pending-*.json files, D064). Clear it here so new
+        // failures do not keep leaking; the 9 pre-existing orphans are left
+        // untouched as evidence per D064's "Deliberately NOT doing" section.
+        flagLib.clearPending(sha);
         return null;
       }
       const text = res.content && res.content[0] && res.content[0].text || '';
@@ -439,9 +471,13 @@ async function invokeReviewerClaudeCode({model, systemPrompt, userMessage, timeo
   });
 
   if (res.error) {
-    // spawnSync fail: claude binary not on PATH, OS-level error
-    const err = new Error(`claude binary not available: ${res.error.message}`);
-    err.code = 'CLAUDE_BINARY_MISSING';
+    // spawnSync fail: derive the real OS/spawn error code instead of assuming
+    // "binary missing" for every failure mode (that assumption previously
+    // masked real ETIMEDOUT failures as CLAUDE_BINARY_MISSING). Reserve
+    // CLAUDE_BINARY_MISSING strictly for genuine ENOENT.
+    const underlyingCode = res.error.code || res.error.errno || 'UNKNOWN';
+    const err = new Error(`claude -p spawn failed (${underlyingCode}): ${res.error.message}`);
+    err.code = underlyingCode === 'ENOENT' ? 'CLAUDE_BINARY_MISSING' : underlyingCode;
     throw err;
   }
   if (res.signal === 'SIGTERM') {

@@ -170,7 +170,10 @@ test('healMemoryPointers: fail-open when MEMORY.md is missing (never throws)', (
       r = healMemoryPointers(root, {delta: {added: ['docs/prism/adjudications/D001-x.md'], changed: [], removed: []}});
     } catch { threw = true; }
     assert(!threw, 'healMemoryPointers must never throw');
-    assertEq(r, {addedDecisions: [], addedLessons: []});
+    // `written: null` = "no write was attempted" (F45 item 2 tri-state — see
+    // the export doc in tools/lib/memory-heal.mjs). Deliberately NOT `false`,
+    // which now means "a write was attempted and DROPPED".
+    assertEq(r, {addedDecisions: [], addedLessons: [], written: null});
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
@@ -180,7 +183,8 @@ test('healMemoryPointers: no-op when delta has no touched files', () => {
     seedMemoryMd(root);
     const before = readMemoryMd(root);
     const r = healMemoryPointers(root, {delta: {added: [], changed: [], removed: []}});
-    assertEq(r, {addedDecisions: [], addedLessons: []});
+    // See the note above: `written: null` = no write attempted (F45 item 2).
+    assertEq(r, {addedDecisions: [], addedLessons: [], written: null});
     assertEq(readMemoryMd(root), before);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });

@@ -82,11 +82,29 @@ function buildRules() {
     // ── 3. Tight-polling a state file (loop reading *_state / *.lock / init_state) ─
     // Catches the specific init_state.json repeated-read pattern even when it
     // is dressed as a `while`/`for` without an obvious sleep.
+    //
+    // F14 fix (task #23, 2026-07-27): a bash `for VAR in <list>; do …; done`
+    // is BOUNDED BY CONSTRUCTION — the word list is evaluated once up front,
+    // so the loop cannot hang regardless of what it contains (this is exactly
+    // the invariant this file's own header already documents: "a bounded
+    // `for f in *.x; do …; done` ... PASS"). `while`/`until` are condition-
+    // driven and have no such guarantee — that IS the unbounded-vs-bounded
+    // line, not a for-vs-while syntax preference. The pre-fix regex matched
+    // the state/lock token ANYWHERE after the loop keyword, including inside
+    // a `for`'s iteration list — so `for f in a.mjs b.mjs .prism-state.json
+    // c.mjs; do grep … "$f"; done` (a fixed 6-item file list, each read once
+    // via the loop VARIABLE) tripped it purely because one enumerated
+    // filename happened to be state-shaped, even though the loop body never
+    // reads that literal path (observed live, F14 tracker entry).
+    //   - while/until: match the token ANYWHERE (condition or body) —
+    //     UNCHANGED from before this fix; these loops have no fixed bound.
+    //   - for: only match when the token appears AFTER `do` — i.e. the BODY
+    //     itself names that literal state/lock path (a hardcoded same-file
+    //     re-read, per this rule's own "repeatedly reading" name), not when
+    //     it merely appears as one value being enumerated before `do`.
     {
       id: 'state-file-poll',
-      // The state/lock file may appear in the loop CONDITION (`until grep x lock; do`)
-      // OR the body, so scan from the loop keyword through the rest of the command.
-      re: /\b(while|until|for)\b[\s\S]*?(init_state\.json|[\w.\-]*state\.json|\.reclassify_lock|[\w.\-]*\.lock)\b/i,
+      re: /\b(?:(?:while|until)\b[\s\S]*?(?:init_state\.json|[\w.\-]*state\.json|\.reclassify_lock|[\w.\-]*\.lock)\b|\bfor\b[\s\S]*?\bdo\b[\s\S]*?(?:init_state\.json|[\w.\-]*state\.json|\.reclassify_lock|[\w.\-]*\.lock)\b)/i,
       why: 'loop repeatedly reading a state/lock file (tight state-file poll)',
       fix: 'Tight-polling a state file in a loop caused a WinError-5 hang here. Read the file ONCE per one-shot call; if you must wait for a state change, run the producer with run_in_background:true and check status between turns.',
     },

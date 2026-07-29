@@ -21,6 +21,14 @@ import {argv, exit, stderr, stdout} from 'node:process';
 import {spawnSync} from 'node:child_process';
 
 import {nowIso, readState, writeStateAtomic} from './lib/prism-state.mjs';
+import {renameWithRetry} from './lib/atomic-fs.mjs';
+// F45 (task #62): derive the seeded headings' "(last N)" count from the real
+// value memory-heal.mjs's automated SessionStart heal path enforces, instead
+// of a hard-coded literal that silently drifted out of sync (was "10" while
+// this constant had been raised to 20 by D085 1b — see the POINTER_KEEP
+// export site in lib/memory-heal.mjs for the full divergence note re:
+// tools/prism-clean.mjs's own separate, deliberately un-reconciled `= 10`).
+import {POINTER_KEEP} from './lib/memory-heal.mjs';
 
 // ------------------------------ args ------------------------------
 
@@ -273,9 +281,10 @@ function writeMasterAgent({root, slug, protocol, force}) {
   }
   const body = renderMasterAgent({slug, protocol, created});
   // Atomic write: tempfile + rename, same directory for same-volume rename.
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
   const tmp = path + '.tmp';
   writeFileSync(tmp, body, 'utf8');
-  renameSync(tmp, path);
+  renameWithRetry(renameSync, tmp, path);
   return path;
 }
 
@@ -357,11 +366,20 @@ function renderMemoryMd({slug, profile}) {
   for (const w of (profile.active_workstreams || [])) lines.push(`  - ${w}`);
   if ((profile.active_workstreams || []).length === 0) lines.push(`  - (none captured yet)`);
   lines.push('');
-  lines.push('## Recent decisions (last 10, pointer-only)');
+  // F45 (task #62): both counts derive from POINTER_KEEP (see import above)
+  // instead of a hard-coded "10" that had drifted from the real value. The
+  // "Recent lessons" heading's old "pointer-only" claim is also corrected:
+  // tools/prism-clean.mjs's `appendLesson` (D083 1a) writes the lesson TEXT
+  // inline (`- [<date>] <title>`), not a `[[lessons#...]]` pointer, so
+  // entries here can be either format depending on which path wrote them.
+  // "Recent decisions" keeps "pointer-only" — both the automated
+  // healMemoryPointers path and prism-clean's appendDecision still emit a
+  // `[[D###]]`-style pointer line, so that claim is still true.
+  lines.push(`## Recent decisions (last ${POINTER_KEEP}, pointer-only)`);
   lines.push('');
   lines.push('<!-- /prism-clean appends `[[D###]]` lines here per Phase H. -->');
   lines.push('');
-  lines.push('## Recent lessons (last 10, pointer-only)');
+  lines.push(`## Recent lessons (last ${POINTER_KEEP}, pointer or inline text)`);
   lines.push('');
   lines.push('<!-- /prism-clean appends `[[lessons-tactical#date]]` lines here per Phase H. -->');
   lines.push('');
@@ -400,7 +418,8 @@ function writeMemoryMd({root, slug, profile}) {
   const path = join(dir, 'MEMORY.md');
   const tmp = path + '.tmp';
   writeFileSync(tmp, body, 'utf8');
-  renameSync(tmp, path);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, path);
   return path;
 }
 
@@ -423,7 +442,8 @@ function writeSettingsAgent({root, slug}) {
   const body = JSON.stringify(settings, null, 2) + '\n';
   const tmp = path + '.tmp';
   writeFileSync(tmp, body, 'utf8');
-  renameSync(tmp, path);
+  // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY.
+  renameWithRetry(renameSync, tmp, path);
   return path;
 }
 

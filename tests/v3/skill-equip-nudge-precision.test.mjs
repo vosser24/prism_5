@@ -130,7 +130,7 @@ const refDir = join(HOME, '.claude', 'skills', 'prism-plan', 'references');
 mkdirSync(refDir, {recursive: true});
 writeFileSync(join(refDir, 'roster.json'), JSON.stringify(ROSTER));
 
-const {run} = await import(pathToFileURL(HOOK).href);
+const {run, scoreSkills} = await import(pathToFileURL(HOOK).href);
 
 async function nudgeFor(prompt) {
   const res = await run({tool_name: 'Agent', session_id: 's', tool_input: {prompt}});
@@ -353,6 +353,99 @@ try {
     check('Case 15 (QUIET): routing log records suppressed:\'read-dominant\' for build=0/read=3',
       suppressedEvents.length > 0,
       `expected a suppressed:'read-dominant' build_score:0/read_score:3 entry, got ${JSON.stringify(lines.filter(l => l.event === 'skill_equip_advisory'))}`);
+  }
+
+  // ── Task #60 (F43, 2026-07-28): baseline-affinity RED test + controls ──────
+  // Real, VERBATIM session-4 dispatch prompts (fixtures/f43-skill-equip-
+  // affinity/), not synthetic boilerplate (#53's lesson). A SYNTHETIC roster
+  // mirroring the ACTUAL core_domains/keywords of the 4 real skills involved
+  // (verified byte-identical against the live installed roster before use —
+  // keeps this hermetic/deterministic rather than depending on a 68-skill
+  // live roster that can grow/shrink), scored directly via the newly exported
+  // scoreSkills() (extracted, zero-behavior-change, from run()'s formerly-
+  // inline loop — reused rather than a second hand-rolled tokenizer).
+  const F43_ROSTER = {
+    'redeploy-readiness': {
+      domains: ['deployment', 'devops', 'windows', 'powershell'],
+      keywords: ['audit', 'silently', 'laptop-side', 'redeploy', 'plumbing', 'current', 'windows', 'powershell', 'laptop', 'smb-mounted', 'user', 'asks', 'this', 'redeploy-ready', 'rede'],
+    },
+    'redeploy-vm-laptop': {
+      domains: ['deployment', 'devops', 'windows', 'powershell'],
+      keywords: ['laptop-side', 'companion', 'redeploy-readiness-vm', 'which', 'runs', 'provides', 'three', 'ssh-wrapped', 'commands', 'vm-scaffold', 'vm-promote', 'vm-demote', 'laptop', 'user', 'never', 'into'],
+    },
+    'design-is': {
+      domains: ['design', 'ui-ux'],
+      keywords: ['audit', 'design', 'against', 'dieter', 'rams', 'good', 'principles', 'then', 'hand', 'make-plan', 'prompt', 'three', 'outcomes', 'refine', 'redesign', 'user', 'says'],
+    },
+    'verification-before-completion': {
+      domains: ['development', 'testing'],
+      keywords: ['about', 'claim', 'work', 'complete', 'fixed', 'passing', 'before', 'committing', 'creating', 'requires', 'running', 'verification', 'commands', 'confirming', 'output', 'making', 'success', 'claims', 'evidence'],
+    },
+  };
+  const F43_FIXTURES = join(__dirname, 'hooks', 'fixtures', 'f43-skill-equip-affinity');
+  const readFixture = (name) => readFileSync(join(F43_FIXTURES, name), 'utf-8');
+
+  // Case 16 (RED→GREEN, measured — HONEST partial result, not full silence):
+  // the real "Ratify D088" governance dispatch — closing out an adjudication
+  // queue, ZERO deployment content. Pre-fix, redeploy-vm-laptop scored EXACTLY
+  // 8 on this text (verified: matches the live routing log's real fire —
+  // domainHits=3 on 'deployment'+'windows'+'powershell' [all ambient
+  // boilerplate: the D081 "deployment is orchestrator-owned" line + the
+  // Bash/PowerShell BOM warning] × weight 2 = 6, plus 'three'+'commands' [2
+  // ordinary weight-1 coincidences] = 8 total). Post-fix, all three ambient
+  // terms are zero-weighted, dropping it to EXACTLY 2 — driven entirely by
+  // 'three'+'commands', the SAME pre-existing auto-extracted-keyword
+  // imprecision the file's own 2026-07-14 history already discloses as a
+  // known, undischarged limitation (not a new mechanism, not chased further
+  // here — seep AMBIENT_ENV_TERMS' own comment for why). This is a real,
+  // measured 75% score reduction (8→2), not a full elimination — reported
+  // honestly rather than asserting a stronger result than was shipped.
+  {
+    const text = readFixture('real-1-ratify-d088-governance.txt');
+    const ranked = scoreSkills(text, {skills: F43_ROSTER});
+    const rv = ranked.find(r => r.skillName === 'redeploy-vm-laptop');
+    const rr = ranked.find(r => r.skillName === 'redeploy-readiness');
+    check('Case 16 (RED→GREEN): redeploy-vm-laptop drops from 8 (pre-fix, matches live log) to exactly 2 (post-fix — residual is a pre-existing, disclosed limitation, not this fix\'s target)',
+      rv && rv.score === 2,
+      `expected redeploy-vm-laptop score===2 (was 8 pre-fix), got ${JSON.stringify(rv)}`);
+    check('Case 16: redeploy-readiness materially reduced from its pre-fix dominance (was score=9)',
+      !rr || rr.score <= 5,
+      `expected redeploy-readiness score <= 5 (was 9 pre-fix) or absent, got ${JSON.stringify(rr)}`);
+  }
+
+  // Case 17 (negative control, must STILL be silent): the real F42 read-only-
+  // investigation dispatch (task #59) — this is suppressed by the EARLIER
+  // read-dominance gate (readScore > buildScore, run()'s own :140-152), a
+  // DIFFERENT code path than scoreSkills()/AMBIENT_ENV_TERMS entirely, so it
+  // must be unaffected by this fix. Verified via the full dispatcher path
+  // (run()), not scoreSkills() directly, since the read-dominance gate lives
+  // in run() before scoreSkills() is ever reached.
+  {
+    const text = readFixture('real-2-negative-control-f42-readonly.txt');
+    const res = await run({tool_name: 'Agent', session_id: 'f43-control', tool_input: {prompt: text}});
+    check('Case 17 (negative control): real F42 read-only dispatch → still silent (unaffected by this fix)',
+      res.exit === 0 && res.stdout === '',
+      `expected silent pass, got exit=${res.exit} stdout="${res.stdout}"`);
+  }
+
+  // Case 18 (must STILL fire, and now ranks correctly): the real "Fix F39/F41
+  // guard fixes" dispatch — a genuine fix-then-verify task. Pre-fix, the live
+  // log recorded verification-before-completion in 2nd place (score 7) BEHIND
+  // redeploy-vm-laptop's noise (score 9). Post-fix: verification-before-
+  // completion must still score (unsuppressed — this is the DEFENSIBLE match
+  // the brief explicitly said not to kill), and should now rank at or above
+  // redeploy-vm-laptop rather than being crowded out by ambient noise.
+  {
+    const text = readFixture('real-3-verification-control-f39-f41.txt');
+    const ranked = scoreSkills(text, {skills: F43_ROSTER});
+    const vbc = ranked.find(r => r.skillName === 'verification-before-completion');
+    check('Case 18: verification-before-completion STILL fires on the real fix-and-verify dispatch (anti-scope: must not be suppressed)',
+      vbc !== undefined && vbc.score >= 2,
+      `expected verification-before-completion to score >= 2, got ${JSON.stringify(vbc)}`);
+    const topScore = ranked.length ? ranked[0].score : -1;
+    check('Case 18: verification-before-completion now ranks at the top (or tied for it), not crowded out by ambient noise',
+      vbc && vbc.score === topScore,
+      `expected verification-before-completion score (${vbc && vbc.score}) to equal the top score (${topScore}); full ranking: ${JSON.stringify(ranked)}`);
   }
 } finally {
   try { rmSync(HOME, {recursive: true, force: true}); } catch {}

@@ -34,7 +34,7 @@
 //   CURRENT (snake) open-set = {1,2}; GOLDEN (camel) open-set = {1,7}.
 //
 // LIVE GOLDEN (optional leg) — provenance measured 2026-07-17, two methods:
-//   transcript f3a53686-2900-48f9-817f-75e905de0210.jsonl (prism_3 project),
+//   transcript deadbeef-0000-4000-8000-000000000004.jsonl (prism_3 project),
 //   full-file open-set = {9,15,16,17,18,19,31,33} (last TaskList snapshot
 //   {9,15,16,17,18,19,31} plus #33, created after that TaskList and left open).
 

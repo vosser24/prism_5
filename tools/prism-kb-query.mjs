@@ -16,8 +16,9 @@ import {routeQuery} from '../hooks/lib/prism-router.mjs';
 import {DOMAINS} from './prism-kb-domains.mjs';
 import {META_PATH} from './prism-kb-notebook-init.mjs';
 import {safeLogApiCall} from './prism-db.mjs';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
-const H = process.env.HOME || process.env.USERPROFILE;
+const H = prismHome();
 const INDEX_PATH = join(H, '.claude', '.prism-kb-index.json');
 
 function nbCli(args, timeoutMs = 90000) {

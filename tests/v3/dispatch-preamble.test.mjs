@@ -502,5 +502,174 @@ const dispatchPreambleModule = await import(pathToFileURL(HOOK).href);
   check('6d NEGATIVE CONTROL: empty prompt still no-ops (1c unaffected)', r.exit === 0 && r.stdout === '', `stdout=${r.stdout}`);
 }
 
+// ---------------------------------------------------------------------------
+// Part 7 (task #43 / D089) — TEAMMATE_REPORT_REQUIRED on the Agent CREATION
+// path, conditional on tool_input.name.
+//
+// Why: an Agent({name:...}) teammate's output does NOT return to the caller as
+// a tool result — only a payload-free idle_notification does. Before D089 the
+// clause reached ONLY runSendMessage(), and only for messages passing all five
+// gates (string, >=200 chars, no status-open marker, assignment marker in the
+// first 400 chars, criteria marker anywhere). A teammate created named and
+// never handed a NEW qualifying work assignment could therefore not receive it
+// by ANY existing path: it completed silently and its report was lost. D062
+// (Locked) declined a 7th FOOTER clause on D057 §2 budget grounds; D089 lands
+// the clause OUTSIDE the shared FOOTER constant instead, exactly as
+// runSendMessage() already composes on top of it.
+//
+// ORDINAL: rendered as "7." here, not "8.". The Agent path's FOOTER ends at 6
+// and HOLDING_STRING_BAN arrives UNNUMBERED via prism-anti-nesting-inject's
+// footer, so there is no clause 7 on this path to displace. Same clause text,
+// different ordinal per rendering.
+//
+// THE BUDGET INVARIANT these tests protect: the append is conditional on
+// `name`, so the UNNAMED AGENT_PAYLOAD that test 6f measures stays
+// byte-identical (1085 chars / 6 numbered clauses, D057 §2's locked cap).
+// 7c and 7d are the assertions that catch a regression to an unconditional
+// append — which WOULD breach that cap by 290 chars and 1 clause.
+// ---------------------------------------------------------------------------
+
+const LIVE_TEAMMATE_REPORT_REQUIRED = dispatchPreambleModule.TEAMMATE_REPORT_REQUIRED;
+
+const NAMED_AGENT_PAYLOAD = {
+  tool_name: 'Agent',
+  tool_input: {
+    prompt: 'Investigate the failing checkout test.',
+    subagent_type: 'general-purpose',
+    description: 'investigate checkout',
+    name: 'checkout-investigator',
+  },
+  session_id: 'unit-test-named',
+};
+
+// 7a. FIRE — Agent WITH name: → the clause text lands, byte-identical to the
+// live export (single source of truth; never a copied string literal).
+{
+  const r = runHook(NAMED_AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  check('7a named Agent → updatedInput.prompt present',
+    typeof prompt === 'string' && prompt.length > 0, `stdout=${r.stdout}`);
+  check('7a TEAMMATE_REPORT_REQUIRED exported live from the hook',
+    typeof LIVE_TEAMMATE_REPORT_REQUIRED === 'string' && LIVE_TEAMMATE_REPORT_REQUIRED.length > 0,
+    `TEAMMATE_REPORT_REQUIRED=${LIVE_TEAMMATE_REPORT_REQUIRED}`);
+  check('7a named Agent → clause text present (byte-identical to the live export)',
+    typeof prompt === 'string' && prompt.includes(LIVE_TEAMMATE_REPORT_REQUIRED), `prompt=${prompt}`);
+  check('7a named Agent → clause is numbered "7." on this path',
+    typeof prompt === 'string' && prompt.includes('\n7. ' + LIVE_TEAMMATE_REPORT_REQUIRED), `prompt=${prompt}`);
+  check('7a named Agent → clause appears exactly once',
+    typeof prompt === 'string'
+      && prompt.split(LIVE_TEAMMATE_REPORT_REQUIRED).length - 1 === 1, `prompt=${prompt}`);
+  check('7a named Agent → original prompt text still preserved at the start',
+    typeof prompt === 'string' && prompt.startsWith(NAMED_AGENT_PAYLOAD.tool_input.prompt), `prompt=${prompt}`);
+  check('7a named Agent → FOOTER clauses 1-6 still all present',
+    typeof prompt === 'string'
+      && prompt.includes('WRITE YOUR OUTPUT TO DISK')
+      && prompt.includes('is a VALID outcome')
+      && prompt.includes('REPRODUCE before you fix')
+      && prompt.includes('Report ARTIFACTS, not counters')
+      && prompt.includes('KARPATHY DISCIPLINE: make surgical, minimal changes')
+      && prompt.includes('ABSENCE IS A CLAIM'), `prompt=${prompt}`);
+  check('7a named Agent → tool_input.name is not disturbed by the rewrite',
+    NAMED_AGENT_PAYLOAD.tool_input.name === 'checkout-investigator');
+}
+
+// 7b. The clause must NOT arrive via any pre-existing route — i.e. this is a
+// genuine new delivery, not something the sibling hook was already doing.
+// (RED-phase anchor: before D089 this whole block is the failure.)
+{
+  const r = runHook(NAMED_AGENT_PAYLOAD, {});
+  const {prompt} = r;
+  check('7b named Agent with sibling ON → clause still lands (composition intact)',
+    typeof prompt === 'string' && prompt.includes(LIVE_TEAMMATE_REPORT_REQUIRED), `prompt=${prompt}`);
+  check('7b named Agent with sibling ON → both sibling and preamble tags present',
+    typeof prompt === 'string'
+      && prompt.includes('[PRISM anti-nesting]')
+      && prompt.includes('[PRISM dispatch-preamble]'), `prompt=${prompt}`);
+}
+
+// 7c. QUIET / BUDGET GUARD — Agent WITHOUT name: must NOT receive the clause.
+// This is what keeps 6f byte-identical and D057 §2's cap intact.
+{
+  const r = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const {prompt} = r;
+  check('7c unnamed Agent → clause text ABSENT (D057 §2 budget guard)',
+    typeof prompt === 'string' && !prompt.includes(LIVE_TEAMMATE_REPORT_REQUIRED), `prompt=${prompt}`);
+  check('7c unnamed Agent → no line numbered "7."',
+    typeof prompt === 'string' && (prompt.match(/^7\. /gm) || []).length === 0, `prompt=${prompt}`);
+}
+
+// 7c-bis. Whitespace-only name is treated as unnamed (matches the shipped
+// Agent-path idiom in hooks/prism-panel-name-guard.mjs:87, which trims before
+// testing truthiness).
+{
+  const r = runHook(
+    {...AGENT_PAYLOAD, tool_input: {...AGENT_PAYLOAD.tool_input, name: '   '}},
+    {PRISM_ANTI_NESTING_INJECT: 'off'}
+  );
+  const {prompt} = r;
+  check('7c-bis whitespace-only name → treated as unnamed, clause ABSENT',
+    typeof prompt === 'string' && !prompt.includes(LIVE_TEAMMATE_REPORT_REQUIRED), `prompt=${prompt}`);
+}
+
+// 7d. THE DECISIVE MEASUREMENT — the shared FOOTER constant is byte-unchanged,
+// and the named path's ONLY delta is the appended clause. Restates 6f's cap
+// under the D089 heading and proves the append composes on top of the constant
+// rather than mutating it (D057 §2b's stated scope rule).
+{
+  const unnamed = runHook(AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const named = runHook(NAMED_AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const original = AGENT_PAYLOAD.tool_input.prompt;
+  const unnamedFooter = typeof unnamed.prompt === 'string' && unnamed.prompt.startsWith(original)
+    ? unnamed.prompt.slice(original.length + 1) : undefined;
+  const namedFooter = typeof named.prompt === 'string' && named.prompt.startsWith(original)
+    ? named.prompt.slice(original.length + 1) : undefined;
+  const unnamedChars = typeof unnamedFooter === 'string' ? unnamedFooter.length : -1;
+  const unnamedClauses = typeof unnamedFooter === 'string' ? (unnamedFooter.match(/^\d+\. /gm) || []).length : -1;
+
+  check(`7d FOOTER constant byte-unchanged: unnamed suffix is exactly 1085 chars (measured ${unnamedChars})`,
+    unnamedChars === 1085, `unnamedChars=${unnamedChars}`);
+  check(`7d FOOTER constant byte-unchanged: unnamed suffix is exactly 6 numbered clauses (measured ${unnamedClauses})`,
+    unnamedClauses === 6, `unnamedClauses=${unnamedClauses}`);
+  check('7d named suffix === unnamed suffix + "\\n7. " + TEAMMATE_REPORT_REQUIRED (only delta)',
+    typeof namedFooter === 'string' && typeof unnamedFooter === 'string'
+      && namedFooter === unnamedFooter + '\n7. ' + LIVE_TEAMMATE_REPORT_REQUIRED,
+    `namedFooter=${namedFooter}`);
+}
+
+// 7e. Idempotency — re-dispatching an already-augmented NAMED prompt must not
+// double the clause (guards PRESENT_RE still covering the composed rendering).
+{
+  const first = runHook(NAMED_AGENT_PAYLOAD, {PRISM_ANTI_NESTING_INJECT: 'off'});
+  const second = runHook(
+    {...NAMED_AGENT_PAYLOAD, tool_input: {...NAMED_AGENT_PAYLOAD.tool_input, prompt: first.prompt}},
+    {PRISM_ANTI_NESTING_INJECT: 'off'}
+  );
+  check('7e idempotency: re-dispatching an already-augmented named prompt → no rewrite',
+    second.exit === 0 && second.stdout === '', `stdout=${second.stdout}`);
+}
+
+// 7f. The advisory additionalContext must ADVERTISE the extra clause on the
+// named path and must NOT advertise it on the unnamed path. Before D089 the
+// Agent-path string named six clauses on every call, which is what made the
+// gap invisible to a reader of the hook's own output.
+{
+  function ctxOf(payload) {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify(payload), encoding: 'utf8', timeout: 15000, windowsHide: true,
+      env: {...process.env, PRISM_ANTI_NESTING_INJECT: 'off'},
+    });
+    let parsed = null; try { parsed = JSON.parse(r.stdout); } catch {}
+    return parsed && parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext;
+  }
+  const namedCtx = ctxOf(NAMED_AGENT_PAYLOAD);
+  const unnamedCtx = ctxOf(AGENT_PAYLOAD);
+  check('7f named Agent additionalContext advertises named-teammate-must-sendmessage-before-idle',
+    typeof namedCtx === 'string' && namedCtx.includes('named-teammate-must-sendmessage-before-idle'),
+    `namedCtx=${namedCtx}`);
+  check('7f unnamed Agent additionalContext does NOT advertise it',
+    typeof unnamedCtx === 'string' && !unnamedCtx.includes('named-teammate-must-sendmessage-before-idle'),
+    `unnamedCtx=${unnamedCtx}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

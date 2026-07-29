@@ -32,8 +32,10 @@ import {
   appendFileSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
+import { prismHome } from './lib/prism-home.mjs';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
+const HOME = prismHome();
 const CLAUDE_DIR = join(HOME, '.claude');
 
 // ── Path helpers (mirror prism-acl-store.mjs) ────────────────────────────────
@@ -188,7 +190,10 @@ async function main() {
   } catch {}
   try {
     copyFileSync(priorFile, tmpPath);
-    renameSync(tmpPath, livePath);
+    // F33: bounded retry on transient Windows EPERM/EACCES/EBUSY before the
+    // .dead-marker fallback + exit(0) below — a rollback failure must stay
+    // loud, not get masked by a one-off AV/indexer handle collision.
+    renameWithRetry(renameSync, tmpPath, livePath);
   } catch (e) {
     process.stderr.write(`[acl-rollback-guard] atomic restore failed for ${capName}: ${e.message}\n`);
     try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath + '.dead'); } catch {}

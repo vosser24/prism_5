@@ -21,8 +21,8 @@
 //   - hooks/lib/prism-opus-classifier.mjs (keyword-floor fallback)
 
 import {readFileSync, existsSync} from 'node:fs';
-import {homedir} from 'node:os';
 import {join} from 'node:path';
+import {prismHome} from '../../hooks/lib/prism-home.mjs';
 
 export const HAIKU_SIGNALS = [
   /\b(return|output)\s+(a\s+)?(list|array|json|csv|tsv|yaml)\b/,
@@ -258,7 +258,7 @@ function parseCostFromMatrix(text) {
 export function loadCostMultipliers(matrixPath) {
   if (_costMultiplierCache) return _costMultiplierCache;
   const path = matrixPath || join(
-    process.env.HOME || process.env.USERPROFILE || homedir(),
+    prismHome(),
     '.claude', 'skills', 'prism-plan', 'references', 'model-matrix.md'
   );
   try {
@@ -328,6 +328,56 @@ function isStrongMarker(line) {
   return STRONG_PASTE_LINE_RE.test(line) || TRANSCRIPT_LINE_RE.test(line);
 }
 
+// D068-follow-up (2026-07-24): TRANSCRIPT-PASTE detection for the panel gate.
+// A prompt containing a pasted CC/CLI transcript (>=TRANSCRIPT_MIN_MARKERS
+// strong transcript-marker lines) is the user SHOWING Claude output, not
+// asking for a fresh panel — even when a "run the panel: <question>" line
+// sits OUTSIDE the transcript span (see stripPastedContent's block-strip
+// branch just below). Reuses the EXACT same isStrongMarker() predicate and
+// TRANSCRIPT_MIN_MARKERS threshold that stripPastedContent()'s block-strip
+// branch already uses, so the two stay consistent by construction.
+export function hasTranscriptPaste(prompt) {
+  const noFences = String(prompt || '').replace(FENCE_RE, ' ');
+  const lines = noFences.split(/\r?\n/);
+  let count = 0;
+  for (const line of lines) if (isStrongMarker(line)) count++;
+  return count >= TRANSCRIPT_MIN_MARKERS;
+}
+
+// D068-follow-up CORRECTED (2026-07-24): POSITION-AWARE variant of the panel
+// explicit-check text. The unconditional `hasTranscriptPaste() -> suppress`
+// fix (first attempt) was too blunt: it also suppressed the LOCKED v5.2.6/
+// D034 guarantee that an explicit panel request TRAILING a pasted transcript
+// (the user's own words, typed AFTER showing the transcript) must still be
+// honored — e.g. "<pasted transcript>\nsummon the panel on this question".
+//
+// The real discriminator is POSITION relative to the transcript span:
+//   - explicit phrase BEFORE the transcript's first strong marker (the
+//     leading block that produced the pasted output, e.g. case-2's
+//     "run the panel: <question>" immediately followed by a pasted CLI run)
+//     -> must be EXCLUDED from the panel decision.
+//   - explicit phrase AFTER the transcript's last strong marker (genuine
+//     trailing own-words request) -> must still be HONORED.
+//
+// trailingOwnWords() returns only the text AFTER the last strong-marker line
+// when the prompt is transcript-dominated (>=TRANSCRIPT_MIN_MARKERS strong
+// markers, same threshold as stripPastedContent's block-strip branch and
+// hasTranscriptPaste()); this deliberately drops any leading pre-transcript
+// block. When there are fewer strong markers (no real transcript), behavior
+// is UNCHANGED — falls back to the existing stripPastedContent() call so
+// every non-transcript path (fenced pastes, minority pastes, plain prose) is
+// untouched.
+export function trailingOwnWords(prompt) {
+  const s = String(prompt || '');
+  const noFences = s.replace(FENCE_RE, ' ');
+  const lines = noFences.split(/\r?\n/);
+  const strongIdx = [];
+  for (let i = 0; i < lines.length; i++) if (isStrongMarker(lines[i])) strongIdx.push(i);
+  if (strongIdx.length < TRANSCRIPT_MIN_MARKERS) return stripPastedContent(prompt);
+  const hi = strongIdx[strongIdx.length - 1];
+  return lines.slice(hi + 1).join('\n');
+}
+
 export function stripPastedContent(prompt) {
   const noFences = String(prompt || '').replace(FENCE_RE, ' ');
   const lines = noFences.split(/\r?\n/);
@@ -376,7 +426,29 @@ function summonPanelCore(prompt, description, {h, s, o, compound}) {
   // UAT-3/5: explicit user request for a panel — honor it directly, bypassing
   // the length floor. "run the panel" is 3 words and must still summon.
   // Explicit-only contract: this is the SOLE trigger in default mode.
-  if (EXPLICIT_PANEL_RE.test(hay)) return true;
+  //
+  // D068 residual fix: the explicit test MUST run against paste-stripped text
+  // ALWAYS, not only when the prompt is pasted-DOMINANT (>=60%, the threshold
+  // detectSummonPanel() below uses to decide which scoring path to take). A
+  // MINORITY paste — a single quoted transcript line ("summon the adversarial
+  // panel...") embedded in an otherwise much longer own-words prompt — has a
+  // low pastedRatio() and was falling through to this function with the RAW,
+  // unstripped `hay`, so the quoted panel language still matched
+  // EXPLICIT_PANEL_RE and re-summoned the panel from pasted vocabulary.
+  // stripPastedContent() is a no-op on genuine typed prose (no paste markers
+  // to strip), so calling it unconditionally here is safe and does not affect
+  // a real "summon the panel" the user typed themselves.
+  //
+  // D068-follow-up CORRECTED (2026-07-24): position-aware. On a transcript-
+  // dominated prompt (hasTranscriptPaste), only text TRAILING the transcript's
+  // last strong marker counts as the user's own words — a leading pre-
+  // transcript block (e.g. "run the panel: <question>" immediately followed
+  // by the pasted CLI run it produced) is excluded. Non-transcript prompts are
+  // unaffected (trailingOwnWords falls back to stripPastedContent unchanged).
+  const ownHay = hasTranscriptPaste(prompt)
+    ? `${trailingOwnWords(prompt)} ${description || ''}`
+    : `${stripPastedContent(prompt)} ${description || ''}`;
+  if (EXPLICIT_PANEL_RE.test(ownHay)) return true;
   // D034: implicit lexical paths are OFF by default. Set PRISM_LEXICAL_PANEL=1
   // to restore legacy auto-fire behavior (rollback flag).
   const _lex = String(process.env.PRISM_LEXICAL_PANEL || '');
@@ -406,8 +478,20 @@ export function detectSummonPanel(prompt, description, sig) {
   // fine and the cost-ratchet nudge covers it) — only the PANEL is suppressed.
   // A genuine architecture ask should be its own prompt, or just say "run the
   // panel".
+  //
+  // D068-follow-up CORRECTED (2026-07-24): position-aware. On a transcript-
+  // dominated prompt, an explicit request BEFORE the transcript's first strong
+  // marker (a leading pre-transcript block, e.g. "run the panel: <question>"
+  // immediately followed by the pasted CLI run it produced) must NOT summon —
+  // it is the input that generated the pasted output, not a fresh request.
+  // An explicit request AFTER the transcript's last strong marker (genuine
+  // trailing own-words, the LOCKED v5.2.6/D034 guarantee) must still summon.
+  // trailingOwnWords() falls back to the unchanged stripPastedContent() when
+  // the prompt is not transcript-dominated, so every other path is untouched.
   if (pastedRatio(prompt) >= 0.6) {
-    const own = `${stripPastedContent(prompt)} ${description || ''}`;
+    const own = hasTranscriptPaste(prompt)
+      ? `${trailingOwnWords(prompt)} ${description || ''}`
+      : `${stripPastedContent(prompt)} ${description || ''}`;
     return EXPLICIT_PANEL_RE.test(own);
   }
   return summonPanelCore(prompt, description, sig);

@@ -48,9 +48,10 @@ import {
   writeSync,
 } from 'node:fs';
 import {dirname, join} from 'node:path';
+import {renameWithRetry} from './atomic-fs.mjs';
 
 export const SCHEMA_VERSION = 2;
-export const PRISM_VERSION = '6.6.7';
+export const PRISM_VERSION = '6.7.1';
 export const STATE_DIR = '.claude';
 export const STATE_FILENAME = '.prism-state.json';
 // v2 phase order (D004 §4). v1 had: identity, structure, discovery, roster, health.
@@ -66,6 +67,11 @@ export const PHASES = [
 ];
 export const MAX_PHASE_FAILURES = 10;
 export const PHASE_STATUSES = ['in-progress', 'complete', 'failed'];
+// Health-phase per-check detail (v6.6.8+, additive). D047: a field that
+// collapses "no" and "didn't check" into one value is vacuous — 'unknown'
+// is the genuine third state (e.g. prism-task-api-probe's "no Task call
+// observed in window") and must never be reported as a pass or a fail.
+export const CHECK_STATUSES = ['pass', 'fail', 'unknown'];
 
 // ---------- Path helpers ----------
 
@@ -346,19 +352,12 @@ export function readState(projectRoot) {
 
 // ---------- Write (atomic) ----------
 
-// Retry an atomic rename across transient Windows/SMB locks (EPERM/EBUSY) where
-// a file-watcher/AV momentarily holds the target. renameFn lets tests inject failures.
-export function renameWithRetry(renameFn, tmp, dst, { retries = 5, delayMs = 25 } = {}) {
-  for (let attempt = 1; ; attempt++) {
-    try { renameFn(tmp, dst); return; }
-    catch (e) {
-      const transient = e && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EACCES');
-      if (!transient || attempt >= retries) throw e;
-      // synchronous backoff (this is a sync function): Atomics.wait on a throwaway buffer
-      try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs * attempt); } catch { /* fallback: busy spin */ }
-    }
-  }
-}
+// renameWithRetry now lives in tools/lib/atomic-fs.mjs (the shared, repo-wide
+// home — see F33) and is re-exported here unchanged so existing imports of
+// `renameWithRetry` from this module (this file's own use below, plus
+// tests/v3/state/test-prism-state.mjs) keep working without a second,
+// divergent implementation.
+export {renameWithRetry};
 
 export function writeStateAtomic(projectRoot, state) {
   const v = validateState(state);
@@ -415,12 +414,43 @@ export function markPhaseStarted(state, phaseName, {now = nowIso()} = {}) {
   };
 }
 
+// D058: enforce this invariant with a code gate at the single chokepoint both
+// /prism-sync (tools/prism-sync.mjs) and /prism-bootstrap's complete-phase
+// route through, not with checklist prose in commands/*.md. Absent
+// checks_detail is a no-op — backward compatible with state files written
+// before this field existed (older sessions never populated it). Only the
+// checks_failed <-> fail-count invariant is enforced (the one requested);
+// no matching checks_passed invariant is added.
+function assertHealthChecksDetailConsistent(meta) {
+  if (!meta || !Array.isArray(meta.checks_detail)) return;
+  meta.checks_detail.forEach((entry, i) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`checks_detail[${i}] must be an object`);
+    }
+    if (!CHECK_STATUSES.includes(entry.status)) {
+      throw new Error(
+        `checks_detail[${i}].status must be one of ${CHECK_STATUSES.join('|')}, got ${JSON.stringify(entry.status)}`
+      );
+    }
+  });
+  if (typeof meta.checks_failed === 'number') {
+    const failCount = meta.checks_detail.filter((e) => e.status === 'fail').length;
+    if (failCount !== meta.checks_failed) {
+      throw new Error(
+        `checks_failed (${meta.checks_failed}) does not match checks_detail fail-count (${failCount}) ` +
+        `— every failing check must have a checks_detail entry with status:"fail"`
+      );
+    }
+  }
+}
+
 export function markPhaseCompleted(state, phaseName, metadata = {}, {now = nowIso()} = {}) {
   if (!PHASES.includes(phaseName)) {
     throw new Error(`unknown phase: ${phaseName}`);
   }
   const prev = state.phases?.[phaseName] || emptyPhaseEntry();
   const meta = {...metadata};
+  if (phaseName === 'health') assertHealthChecksDetailConsistent(meta);
   // artifact_hashes flows through metadata when the caller wants to set it;
   // otherwise we keep the previous value. Don't double-merge.
   const artifact_hashes = Array.isArray(meta.artifact_hashes)

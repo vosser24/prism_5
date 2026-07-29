@@ -1,0 +1,12 @@
+Flip manifest executable flag for name-guard
+One tiny fix in repo `C:\dev\prism_3`. Windows: use the Edit tool ONLY (never PowerShell/Set-Content — BOM corruption).
+
+In `tools/install-manifest.json` there is exactly one entry for the new hook `prism-panel-name-guard.mjs`. It currently reads:
+`{"src": "hooks/prism-panel-name-guard.mjs", "dst": "hooks/prism-panel-name-guard.mjs", "executable": false},`
+
+Change `"executable": false` to `"executable": true` for THAT entry ONLY (to match every other top-level `hooks/*.mjs` entry, which are all `true`). Do not touch any other entry or any other file.
+
+Then verify the file is still valid JSON:
+`node -e "JSON.parse(require('fs').readFileSync('tools/install-manifest.json','utf8')); console.log('JSON OK')"`
+
+Return: the before/after of the changed line + the JSON-OK confirmation. Do NOT run the installer, do NOT commit.

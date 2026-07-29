@@ -47,6 +47,7 @@ import {
   appendFileSync,
 } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
+import { renameWithRetry } from '../tools/lib/atomic-fs.mjs';
 import { createHash } from 'node:crypto';
 import { prismHome } from './lib/prism-home.mjs';
 import { withRosterLock } from '../tools/lib/prism-roster-lock.mjs';
@@ -84,11 +85,21 @@ function atomicWrite(path, obj) {
   try {
     mkdirSync(dirname(path), { recursive: true });
     const tmp = path + '.tmp';
-    writeFileSync(tmp, JSON.stringify(obj, null, 2));
-    renameSync(tmp, path);
-  } catch {
-    try { writeFileSync(path, JSON.stringify(obj, null, 2)); } catch { /* fail-open */ }
-  }
+    const body = JSON.stringify(obj, null, 2);
+    writeFileSync(tmp, body);
+    try {
+      renameWithRetry(renameSync, tmp, path);
+    } catch (renameErr) {
+      try {
+        writeFileSync(path, body);
+        appendLog({event: 'dispatch_dedup_ledger_write', status: 'atomic_failed_fallback_ok',
+          error_code: (renameErr && renameErr.code) || null});
+      } catch (fallbackErr) {
+        appendLog({event: 'dispatch_dedup_ledger_write', status: 'write_failed',
+          error_code: (fallbackErr && fallbackErr.code) || null});
+      }
+    }
+  } catch { /* fail-open */ }
 }
 
 // Normalize a string for stable signature hashing: lowercase, collapse

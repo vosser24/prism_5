@@ -11,7 +11,7 @@
 // ROUTING mirrors the shipped matchers + array order exactly:
 //   Bash        → safety, prepush-review, mutation-guard, parent-dispatch-guard
 //   PowerShell  → parent-dispatch-guard
-//   Agent       → agent-model-guard, parallel-guard, skill-equip-nudge, specialist-routing-guard, dispatch-dedup-guard, parent-dispatch-guard
+//   Agent       → agent-model-guard, panel-name-guard, parallel-guard, skill-equip-nudge, specialist-routing-guard, dispatch-dedup-guard, parent-dispatch-guard
 //   TaskCreate  → parent-dispatch-guard, task-tier-advisor
 //   Edit/Write/MultiEdit → capture-evidence-guard, parent-dispatch-guard
 //   NotebookEdit/WebFetch/WebSearch → parent-dispatch-guard
@@ -57,7 +57,7 @@ const ROUTES = {
   // prompt (the preamble's fixed clause text would pollute keyword overlap).
   // Neither emits updatedInput, so the preamble/anti-nesting rewrite pair below
   // keeps its documented first-writer-wins contract untouched.
-  Agent:        ['prism-agent-model-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-specialist-routing-guard.mjs', 'prism-dispatch-dedup-guard.mjs', 'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT],
+  Agent:        ['prism-agent-model-guard.mjs', 'prism-panel-name-guard.mjs', 'prism-parallel-guard.mjs', 'prism-skill-equip-nudge.mjs', 'prism-specialist-routing-guard.mjs', 'prism-dispatch-dedup-guard.mjs', 'prism-live-work-dedup.mjs', 'prism-file-lease-guard.mjs', 'prism-dispatch-preamble.mjs', 'prism-anti-nesting-inject.mjs', PARENT],
   TaskCreate:   [PARENT, 'prism-task-tier-advisor.mjs'],
   Edit:         ['prism-capture-evidence-guard.mjs', PARENT],
   Write:        ['prism-capture-evidence-guard.mjs', PARENT],

@@ -24,6 +24,7 @@ import {spawnSync} from 'node:child_process';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {isAbsolute, join, resolve} from 'node:path';
 import {argv, exit, stderr, stdout} from 'node:process';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 
 // ------------------------------ args ------------------------------
 
@@ -126,7 +127,7 @@ function expandPath(p, extra = {}) {
   let out = p;
   let unresolved = false;
   if (out.startsWith('~/')) {
-    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const home = prismHome();
     out = join(home, out.slice(2));
   }
   let safety = 0;
@@ -234,7 +235,7 @@ function checkBrokenHooks(plugin) {
   const ip = pluginPath(plugin);
   const extra = {};
   if (ip) { extra.CLAUDE_PLUGIN_ROOT = ip; extra.PLUGIN_ROOT = ip; }
-  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const home = prismHome();
   extra.CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || join(home, '.claude');
   for (const command of discoverHookCommands(plugin)) {
     if (isInlineShellScript(command)) continue;  // inline program, no single file to check

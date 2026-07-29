@@ -15,6 +15,7 @@
 
 import {readFileSync, appendFileSync, existsSync, mkdirSync} from 'fs';
 import {join, dirname, resolve, basename} from 'path';
+import {prismHome} from './lib/prism-home.mjs';
 
 const KB_PATH_PATTERNS = [
   /[/\\]\.claude[/\\]skills[/\\]/i,
@@ -121,7 +122,7 @@ function appendDirtyTo(flagPath, paths) {
 
 export async function run(payload) {
   // Recompute per-call so HOME-override in tests is honored.
-  const H = process.env.HOME || process.env.USERPROFILE;
+  const H = prismHome();
   const CLAUDE_DIR = join(H, '.claude');
   const DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-dirty');
   const KNOWLEDGE_DIRTY_FLAG = join(CLAUDE_DIR, '.prism-kb-knowledge-dirty');

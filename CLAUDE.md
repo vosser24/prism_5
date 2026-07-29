@@ -2,7 +2,7 @@
 
 ## Project Identity
 - **Domain:** Cognitive-tier orchestration for agentic coding — tier routing, adversarial expert panels, and persistent project memory for Claude Code sessions.
-- **Stack:** Node.js (ESM, dep-free deterministic hooks + CLI tools under `tools/` and `hooks/`); Python ≥3.10 for the bundled `pwagent` tool; PowerShell + Bash install/uninstall scripts. Local-first, no network at the core.
+- **Stack:** Node.js (ESM, dep-free deterministic hooks + CLI tools under `tools/` and `hooks/`); Python (for the bundled monitor + subagent-summary helpers); PowerShell + Bash install/uninstall scripts. Local-first, no network at the core.
 - **Related projects:** Installs into `~/.claude/` (global Claude Code config). Shipped/distributed as `prism_5` (see README install section).
 
 ## PRISM Operating Rules
@@ -162,8 +162,9 @@ is paid on every prompt forever. Detail lives elsewhere.
   - `/prism-discover` proposes nested files when it detects distinct
     tech-stack subdomains; user approves per-subdomain.
   - Scaffolded subdomain map lives at `.claude/references/subdomain-map.md`.
-- **Health check:** `/prism-discover --check-claude-chain` walks the
-  repo and warns on size or duplication violations.
+- **Health check (manual):** ask `/prism-discover` to audit the CLAUDE.md
+  chain — an LLM-driven repo walk warning on size/duplication violations
+  (see `skills/prism-discover/SKILL.md`); no standalone CLI flag exists.
 
 ## Reference Files
 
@@ -171,16 +172,25 @@ Indexed by `/prism-discover`. Load the compact index first; read full detail on 
 
 - Codebase map (compact) → `.claude/references/codebase-map.md`
 - Codebase detail (full) → `.claude/references/codebase-detail.md`
-- Subdomain map → `.claude/references/subdomain-map.md` (`tools/pwagent/` Python micro-subdomain — no nested CLAUDE.md)
+- Subdomain map → `.claude/references/subdomain-map.md`
 
 ## Build / Test / Lint
 
 - **Install (idempotent, in-place upgrade):** `node tools/prism-installer.mjs install`
   (wrappers: `pwsh ./install.ps1` on Windows, `bash install.sh` on POSIX).
 - **Verify install:** `node tools/prism-installer.mjs verify`
-- **Tests:** Node test files live under `tests/` (e.g. `tests/v3/`). Run with
-  `node <test-file>.mjs` or the project's test runner where present.
-- **Python tool (`pwagent`):** Python ≥3.12; deps in `tools/pwagent/requirements.txt`.
+- **Tests (full suite):** `bash tests/v3/run-all.sh --static-only` — ~6 min, 242
+  discovered / 235 runnable files as of 2026-07-29. Discovery is `git ls-files`-based, NOT `find`, so the
+  count reproduces across checkouts (a bare `find` picks up gitignored and
+  machine-local files). The script prints its discovery mode every run.
+- **Expected failure — do NOT "fix" it:** `dispatch-preamble.test.mjs` assertion
+  6e is a **locked, permanent** red per
+  `docs/prism/adjudications/D057-absence-claim-tripwire-and-chestertons-fence.md` §6.
+  A green full suite would mean someone narrowed it. Everything else must pass.
+- **Single file:** `node <test-file>.mjs`. Excluded from the suite: `tests/v3/bench/`
+  (gitignored benchmark tree) and a short `NON_TEST_FILES` list in run-all.sh —
+  both non-tests, not hidden reds. `tools/test-prism-gaps.mjs` tests an *installed*
+  `~/.claude`, not this repo, and is intentionally separate.
 
 ## Conventions
 

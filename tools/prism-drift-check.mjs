@@ -19,9 +19,21 @@
 // difference is only reported as DRIFT when the repo copy is CLEAN vs git
 // HEAD (committed). A developer editing the repo ALWAYS has uncommitted
 // drift; firing on every edit = noise = the guard gets disabled. Dirty files
-// are skipped and counted in `skipped_dirty`. Committing the work is what
-// arms the guard. If git is unavailable the check degrades to informational
-// (differences listed as `unverified`, exit 0) rather than crying wolf.
+// are skipped and counted in `skipped_dirty` — UNLESS the installed copy
+// matches the dirty working-tree content (i.e. the uncommitted edit was
+// itself deployed): that is reported as `deployed_uncommitted`, a distinct
+// WARNING class, not silently folded into either `matched` or `skipped_dirty`.
+// Committed vs deployed can diverge — that is D065's whole point — and a
+// clean-tree byte match is not evidence a file was ever committed.
+//
+// For a CLEAN file, working-tree bytes and `git show HEAD:<path>` bytes are
+// equal by definition of "clean", so the comparison uses the (already-read)
+// working-tree bytes directly and only pays for `git show HEAD:<path>` on
+// the rarer dirty-file path, where it is needed to tell "not yet deployed"
+// (installed == HEAD) apart from "deployed while dirty" (installed ==
+// working tree, != HEAD). If git is unavailable the check degrades to
+// informational (differences listed as `unverified`, exit 0) rather than
+// crying wolf.
 //
 // WHERE IT FIRES: /prism-health (deliberate diagnostic run), NOT SessionStart.
 // Measured 2026-07-16 on this SMB-mounted repo: sha256 of all 152 manifest
@@ -42,7 +54,7 @@
 
 import {readFileSync, existsSync, readdirSync} from 'node:fs';
 import {join, dirname, resolve} from 'node:path';
-import {homedir} from 'node:os';
+import {prismHome} from '../hooks/lib/prism-home.mjs';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
@@ -71,7 +83,7 @@ const flags = parseFlags(process.argv.slice(2));
 const REPO_ROOT = resolve(flags.repo || resolve(__dirname, '..'));
 const CLAUDE_DIR = resolve(
   flags.claudeDir ||
-  join(flags.home || process.env.HOME || process.env.USERPROFILE || homedir(), '.claude')
+  join(flags.home || prismHome(), '.claude')
 );
 const MANIFEST_PATH = join(REPO_ROOT, 'tools', 'install-manifest.json');
 
@@ -91,8 +103,8 @@ function notApplicable(reason) {
 function gitDirtySet(repoRoot) {
   let r;
   try {
-    r = spawnSync('git', ['status', '--porcelain=v1', '-uall'], {
-      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+    r = spawnSync('git', ['--no-optional-locks', 'status', '--porcelain=v1', '-uall'], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true, timeout: 10000,
     });
   } catch { return null; }
   if (!r || r.status !== 0 || typeof r.stdout !== 'string') return null;
@@ -156,6 +168,24 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function sha256Buf(buf) {
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+// ─── git: committed (HEAD) content hash for one repo-relative path ───────────
+// Returns null when the path has no blob at HEAD (new/untracked file) or git
+// itself is unavailable — callers treat null as "no committed baseline yet".
+function gitHeadHash(repoRoot, relPath) {
+  let r;
+  try {
+    r = spawnSync('git', ['--no-optional-locks', 'show', `HEAD:${relPath}`], {
+      cwd: repoRoot, windowsHide: true, timeout: 10000, maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch { return null; }
+  if (!r || r.status !== 0 || !r.stdout) return null;
+  return sha256Buf(r.stdout);
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────────
 function main() {
   const t0 = Date.now();
@@ -177,9 +207,10 @@ function main() {
   const dirty = gitDirtySet(REPO_ROOT);  // null → git unavailable
   const pairs = buildPairs(manifest);
 
-  const drift = [];        // committed repo state != installed state → FIRES
-  const unverified = [];   // differs, but git unavailable → informational only
-  let skippedDirty = 0;    // differs, but repo copy uncommitted → quiet by design
+  const drift = [];               // committed repo state != installed state → FIRES
+  const unverified = [];          // differs, but git unavailable → informational only
+  const deployedUncommitted = []; // installed == dirty working tree, != HEAD → WARNING, not drift
+  let skippedDirty = 0;    // differs, but repo copy uncommitted (and not deployed) → quiet by design
   let matched = 0;
   let srcMissing = 0;      // manifest points at a nonexistent repo file (installer warns too)
 
@@ -188,15 +219,49 @@ function main() {
     const dstAbs = join(CLAUDE_DIR, dst);
     if (!existsSync(srcAbs)) { srcMissing++; continue; }
 
-    let differs, kind;
-    if (!existsSync(dstAbs)) { differs = true; kind = 'missing-installed'; }
-    else if (sha256(srcAbs) === sha256(dstAbs)) { differs = false; }
-    else { differs = true; kind = 'content-differs'; }
-    if (!differs) { matched++; continue; }
+    const isDirty = dirty !== null && dirty.has(src);
 
-    if (dirty === null) unverified.push({file: src, kind});
-    else if (dirty.has(src)) skippedDirty++;
-    else drift.push({file: src, kind});
+    if (!existsSync(dstAbs)) {
+      // Not installed at all — same anti-cry-wolf treatment as before.
+      if (dirty === null) unverified.push({file: src, kind: 'missing-installed'});
+      else if (isDirty) skippedDirty++;
+      else drift.push({file: src, kind: 'missing-installed'});
+      continue;
+    }
+
+    const dstHash = sha256(dstAbs);
+    const workingHash = sha256(srcAbs);
+
+    if (dirty === null) {
+      // Git unavailable: best-effort working-tree compare only, never "drift".
+      if (workingHash === dstHash) matched++;
+      else unverified.push({file: src, kind: 'content-differs'});
+      continue;
+    }
+
+    if (!isDirty) {
+      // Clean file: working-tree bytes ARE the committed (HEAD) bytes.
+      if (workingHash === dstHash) matched++;
+      else drift.push({file: src, kind: 'content-differs'});
+      continue;
+    }
+
+    // Dirty file: tell "edited but not yet deployed" (benign, quiet) apart
+    // from "the uncommitted edit WAS deployed" (committed/deployed gap).
+    const headHash = gitHeadHash(REPO_ROOT, src); // null: no HEAD blob (new/untracked)
+    if (headHash !== null && headHash === dstHash) {
+      // Installed copy still reflects the last committed version — the
+      // dirty edit sitting in the working tree hasn't been deployed yet.
+      skippedDirty++;
+    } else if (workingHash === dstHash) {
+      // Installed copy matches the UNCOMMITTED working-tree content.
+      deployedUncommitted.push({file: src});
+    } else {
+      // Installed matches neither HEAD nor the working tree. Unrelated
+      // staleness while the file happens to be dirty — anti-cry-wolf still
+      // applies (don't report drift on a dirty file), but flag for review.
+      skippedDirty++;
+    }
   }
 
   // Version markers — context, not drift by itself
@@ -218,6 +283,8 @@ function main() {
     drift_count: drift.length,
     drift,
     skipped_dirty: skippedDirty,
+    deployed_uncommitted_count: deployedUncommitted.length,
+    deployed_uncommitted: deployedUncommitted,
     unverified,
     git_available: dirty !== null,
     elapsed_ms: elapsedMs,
@@ -229,7 +296,7 @@ function main() {
     log(`[prism-drift-check] repo=${REPO_ROOT}`);
     log(`[prism-drift-check] install=${CLAUDE_DIR}`);
     log(`[prism-drift-check] versions: shipped=${result.shipped_version} installed=${installedVersion ?? '(no .prism-version marker)'}`);
-    log(`[prism-drift-check] compared ${result.files_compared} files in ${elapsedMs}ms — ${matched} match, ${drift.length} drift, ${skippedDirty} skipped (uncommitted in repo), ${unverified.length} unverified`);
+    log(`[prism-drift-check] compared ${result.files_compared} files in ${elapsedMs}ms — ${matched} match, ${drift.length} drift, ${skippedDirty} skipped (uncommitted in repo), ${deployedUncommitted.length} deployed-uncommitted, ${unverified.length} unverified`);
     if (drift.length > 0) {
       log('');
       log('DRIFT — committed repo state differs from the installed copy:');
@@ -237,11 +304,21 @@ function main() {
       log('');
       log('The live session is NOT running what the repo ships. Fix:');
       log('  node tools/prism-installer.mjs update');
-    } else if (unverified.length > 0) {
-      log('NOTE: git unavailable — differences found but committedness unverifiable (not reported as drift):');
-      for (const d of unverified) log(`  ${d.kind}: ${d.file}`);
-    } else {
-      log('[prism-drift-check] no drift — installed copy matches committed repo state.');
+    }
+    if (deployedUncommitted.length > 0) {
+      log('');
+      log('WARNING — installed copy matches an UNCOMMITTED repo edit (deployed but not committed):');
+      for (const d of deployedUncommitted) log(`  ${d.file}`);
+      log('');
+      log('Not drift (nothing to reinstall) — but this content has no committed record. Commit it.');
+    }
+    if (drift.length === 0 && deployedUncommitted.length === 0) {
+      if (unverified.length > 0) {
+        log('NOTE: git unavailable — differences found but committedness unverifiable (not reported as drift):');
+        for (const d of unverified) log(`  ${d.kind}: ${d.file}`);
+      } else {
+        log('[prism-drift-check] no drift — installed copy matches committed repo state.');
+      }
     }
   }
 

@@ -1,0 +1,47 @@
+Repo: C:\dev\prism_3. You are closing out a governance queue (tasks #50 and #51). Use the Edit/Write TOOLS for all file changes — never Bash/PowerShell redirection (`>`, Set-Content, Out-File default to UTF-8-with-BOM on Windows and will mangle these files).
+
+PRISM-LEASE: agent=governance-worker files=docs/prism/adjudications/D088-prose-only-command-docs-need-a-backing-script-for-state-writes.md,docs/prism/adjudications/D082-*.md,docs/prism/adjudications/D086-*.md
+
+Do NOT touch: any file under hooks/, tests/, or .claude/agents/MEMORY.md. Sibling workers are live in hooks/ and reading MEMORY.md right now.
+Do NOT run `node tools/prism-installer.mjs install` — deployment is the orchestrator's single post-batch step (D081, Locked).
+
+Emit your step list FIRST, then execute. Tool-call budget: ~30.
+Compute and report YOUR OWN result; do NOT spawn a child agent and relay its status as your answer. A final message that is a holding string is a FAILED result.
+
+=== TASK 1 — RATIFY D088 (the owner has ruled: RATIFY) ===
+The owner was presented with D088 this session and chose "Ratify → Locked". Execute that verdict.
+
+D088 is "Prose-only command docs are acceptable for read paths; a doc that writes persistent machine state needs a backing script". Its §3 previously contained a contradiction (it asserted blanket "no state-write risk" for prism-roster, contradicting commands/prism-roster.md:163 "Step 6 — Write updated roster.json"). That was FIXED in a prior session, but the worker who fixed it was barred from clearing its own fix, so the file still reads Proposed.
+
+Steps:
+1. Find the file: `ls docs/prism/adjudications/D088*`. Read it IN FULL.
+2. VERIFY the §3 fix actually landed before you promote it — confirm §3 no longer asserts blanket no-write-risk for prism-roster, and that it scopes the claim to prism-roster's DEFAULT (report) mode with --reconcile assessed separately. If §3 still contains the contradiction, STOP and report that; do NOT ratify a file whose stated blocker is undischarged.
+3. QUOTE the `**Status:**` line before your edit.
+4. Edit ONLY that one line: `Proposed` → `Locked`. Change nothing else in the file.
+5. QUOTE the `**Status:**` line after your edit, read back from disk.
+6. Confirm the file has a well-formed single-line `**Rule:**` field. This matters mechanically: tools/lib/memory-heal.mjs `regenerateStandingRules` collects Rule lines from Locked adjudications into the always-on Standing Rules block. A malformed or multi-line Rule silently collects nothing.
+
+This is a FILE MUTATION, verified on disk — never a conversational assertion that something "is now Locked" (project capture convention, explicit on this point).
+
+=== TASK 2 — RECORD THE TWO REMAINING HOLDS ===
+Two adjudications are stuck Proposed with real, substantive hold reasons. The project convention says a Proposed file "should not drift indefinitely" and must carry an explicit ratify-or-supersede decision rather than sitting Proposed forever with no owner. Neither is being ratified now — your job is to make the hold reason DISCOVERABLE IN THE FILE so it stops being tribal knowledge in a handoff doc.
+
+- D082: §0's gate (D043, now Locked) IS met, but §2 lists a SECOND condition — real caller-dimension design work — which D043's own ratification says CANNOT be met. That is an internal contradiction. Do not ratify. Add a short dated note recording precisely this contradiction as the hold reason.
+- D086: needs exactly one more supporting instance; currently at 3. Task #51 did NOT supply a fourth (it was refuted — all three consumers emit visible warnings, so D086 REMAINS AT 3). Add a short dated note recording "HOLD: at 3 of 4 required instances as of 2026-07-28" and that #51 was assessed and did not qualify.
+
+Both files are Proposed, so in-place edits are legitimate (the convention permits editing Proposed/Draft; only Locked files are immutable). Keep each note to 2-3 lines. Do NOT change either Status line.
+
+=== TASK 3 — ASSEMBLE THE #51 DECISION PACKET (do NOT decide, do NOT build) ===
+Read docs/prism/plans/2026-07-28-prism-index-options-and-schema-reconciliation.md, Parts A and B in full. Two owner decisions are open and D088's ratification just unblocked the first:
+
+(a) /prism-index has NO deterministic implementation — commands/prism-index.md is an LLM-executed markdown protocol that WRITES roster.json. This is exactly the defect class D088 now governs. Options: build tools/prism-index.mjs, OR land the low-cost "improvised, not deterministic" caveat now.
+(c) THREE writers share the roster.skills[<name>] namespace with three DIFFERENT schemas: hooks/prism-skill-write-register.mjs (create-only, guarded), tools/prism-capability-promote.mjs:179-192 (UNCONDITIONAL full-object overwrite), tools/prism-capability-learn.mjs (mutates corrections_*/version fields on an assumed-existing entry). No schema is a superset of another, so a naive full-object-replace indexer would SILENTLY WIPE version/acl_promoted/corrections_* on every re-index.
+
+VERIFY the three writer citations against the current files before repeating them — the prismHome sweep (d5e63c246) touched 55 files and line numbers may have moved. Re-derive them.
+
+IMPORTANT: (c) is filed as a LATENT risk. No instance of the collision actually firing has been found or claimed. Per D080 (Locked) do NOT promote it to a live defect without a shipped-artifact citation showing it fired. If you find such evidence, that is a significant finding — report it prominently. If you do not, say so plainly and keep it labelled latent.
+
+Summarise both decisions for the owner in your final message: the concrete options, and for each the cost and the irreversibility. Do NOT implement anything for #51. Do NOT write tools/prism-index.mjs.
+
+=== RETURN ===
+In your final message give me: (1) D088's before/after Status lines quoted from disk and its Rule line; (2) confirmation the §3 fix was verified present BEFORE you promoted; (3) the two hold notes you added, quoted; (4) the #51 (a)/(c) decision packet with re-derived file:line citations. Put the substance in your reply — do not say "done, see the files".
